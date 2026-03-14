@@ -1,92 +1,86 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
+function computeSentraAttention(video: any, creator: any) {
+  const V = video.view_count || 0;
+  const L = video.like_count || 0;
+  const C = video.comment_count || 0;
+
+  if (V === 0) return 0;
+
+  const likeRate = L / V;
+  const commentRate = C / V;
+
+  const base = V + 8 * L + 20 * C;
+
+  const engagementMultiplier =
+    1 + 4 * likeRate + 10 * commentRate;
+
+  const published = new Date(video.video_published_at).getTime();
+  const now = Date.now();
+
+  const ageHours = (now - published) / (1000 * 60 * 60);
+
+  const recency = Math.exp(-ageHours / 72);
+
+  const subs = creator?.subscriber_count || 0;
+
+  const creatorWeight = Math.log10(subs + 10);
+
+  return base * engagementMultiplier * recency * creatorWeight;
+}
+
 export async function GET() {
   const supabase = supabaseServer();
 
-  const { data: positionRows, error: positionsError } = await supabase
+  const { data } = await supabase
     .from("video_positions")
-    .select("ticker, video_id");
+    .select(`
+      ticker,
+      videos (
+        id,
+        title,
+        view_count,
+        like_count,
+        comment_count,
+        video_published_at,
+        creators (
+          name,
+          subscriber_count
+        )
+      )
+    `);
 
-  if (positionsError) {
-    return NextResponse.json(
-      { error: positionsError.message },
-      { status: 500 }
-    );
-  }
+  const tickerStats: any = {};
 
-  const videoIds = Array.from(
-    new Set((positionRows ?? []).map((row) => row.video_id).filter(Boolean))
-  );
+  data?.forEach((row: any) => {
+    const ticker = row.ticker;
+    const video = row.videos;
+    const creator = video?.creators;
 
-  const { data: videoRows, error: videosError } = await supabase
-    .from("videos")
-    .select("id, title, view_count")
-    .in("id", videoIds);
+    if (!video) return;
 
-  if (videosError) {
-    return NextResponse.json(
-      { error: videosError.message },
-      { status: 500 }
-    );
-  }
+    const score = computeSentraAttention(video, creator);
 
-  const videoMap = new Map<number, { title: string | null; view_count: number }>();
-  (videoRows ?? []).forEach((row) => {
-    videoMap.set(row.id, {
-      title: row.title ?? null,
-      view_count: row.view_count ?? 0,
-    });
-  });
-
-  const tickerToVideoIds = new Map<string, Set<number>>();
-
-  (positionRows ?? []).forEach((row) => {
-    const ticker = row.ticker?.trim().toUpperCase();
-    const videoId = row.video_id;
-
-    if (!ticker || !videoId) return;
-
-    if (!tickerToVideoIds.has(ticker)) {
-      tickerToVideoIds.set(ticker, new Set<number>());
+    if (!tickerStats[ticker]) {
+      tickerStats[ticker] = {
+        ticker,
+        mentions: 0,
+        sentiment: 0,
+        attention: 0,
+      };
     }
 
-    tickerToVideoIds.get(ticker)!.add(videoId);
+    tickerStats[ticker].mentions += 1;
+    tickerStats[ticker].attention += score;
   });
 
-  const results = Array.from(tickerToVideoIds.entries())
-    .map(([ticker, uniqueVideoIds]) => {
-      let attention = 0;
-
-      uniqueVideoIds.forEach((videoId) => {
-        attention += videoMap.get(videoId)?.view_count ?? 0;
-      });
-
-      return {
-        ticker,
-        mentions: uniqueVideoIds.size,
-        sentiment: 0,
-        velocity: 0,
-        attention,
-      };
-    })
-    .sort((a, b) => b.attention - a.attention);
-
-  const tslaVideoBreakdown = Array.from(tickerToVideoIds.get("TSLA") ?? [])
-    .map((videoId) => ({
-      video_id: videoId,
-      title: videoMap.get(videoId)?.title ?? null,
-      view_count: videoMap.get(videoId)?.view_count ?? 0,
-    }))
-    .sort((a, b) => b.view_count - a.view_count)
-    .slice(0, 20);
+  const tickers = Object.values(tickerStats)
+    .sort((a: any, b: any) => b.attention - a.attention);
 
   return NextResponse.json({
     success: true,
-    version: "unique-video-attention-v3-debug",
-    tickers: results,
-    debug: {
-      tslaVideoBreakdown,
-    },
+    version: "sentra-attention-v2",
+    tickers
   });
 }

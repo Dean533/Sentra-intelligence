@@ -1,0 +1,22 @@
+export const FINANCE_KEYWORDS = [
+  "stock",
+  "stocks",
+  "market",
+  "earnings",
+  "invest",
+  "investing",
+  "analysis",
+  "price",
+  "valuation",
+  "trading",
+  "bullish",
+  "bearish",
+  "portfolio",
+  "nasdaq",
+  "s&p",
+  "wall street",
+  "revenue",
+  "profit",
+  "guidance",
+  "forecast"
+];
