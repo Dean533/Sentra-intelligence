@@ -7,7 +7,9 @@ type Stance = "bullish" | "bearish" | "neutral";
 
 function dedupeByKey<T>(items: T[], keyFn: (x: T) => string): T[] {
   const map = new Map<string, T>();
-  for (const item of items) map.set(keyFn(item), item);
+  for (const item of items) {
+    map.set(keyFn(item), item);
+  }
   return Array.from(map.values());
 }
 
@@ -43,18 +45,17 @@ function extractTickersFromText(textRaw: string): string[] {
   const found = new Set<string>();
   const lower = text.toLowerCase();
 
-  // 1) Explicit ticker symbols like $TSLA
   for (const m of text.matchAll(/\$([A-Z]{1,5})\b/g)) {
     found.add(m[1].toUpperCase());
   }
 
-  // 2) Generic company-name mapping (except Tesla)
   for (const [name, ticker] of Object.entries(COMPANY_TO_TICKER)) {
     const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
-    if (re.test(lower)) found.add(ticker.toUpperCase());
+    if (re.test(lower)) {
+      found.add(ticker.toUpperCase());
+    }
   }
 
-  // 3) Special Tesla handling: only map to TSLA if finance context exists
   const hasTeslaWord = /\btesla\b/i.test(lower);
   const teslaFinanceContext = [
     "stock",
@@ -182,8 +183,13 @@ function classifyStance(textRaw: string): { stance: Stance; confidence: number }
   let b = 0;
   let r = 0;
 
-  for (const w of bullish) if (text.includes(w)) b++;
-  for (const w of bearish) if (text.includes(w)) r++;
+  for (const w of bullish) {
+    if (text.includes(w)) b++;
+  }
+
+  for (const w of bearish) {
+    if (text.includes(w)) r++;
+  }
 
   if (b === 0 && r === 0) return { stance: "neutral", confidence: 0.4 };
   if (b === r) return { stance: "neutral", confidence: 0.5 };
@@ -223,7 +229,9 @@ export async function GET(req: Request) {
     const rawItems = searchRes.data.items ?? [];
 
     const items = rawItems.filter((it) => {
-      const sn = it.snippet!;
+      const sn = it.snippet;
+      if (!sn) return false;
+
       const combined = `${sn.title ?? ""} ${sn.description ?? ""}`;
 
       if (!ALLOWED_CHANNEL_IDS.includes(sn.channelId || "")) return false;
@@ -240,6 +248,10 @@ export async function GET(req: Request) {
         creatorsUpserted: 0,
         videosUpserted: 0,
         positionsUpserted: 0,
+        debug: {
+          rawSearchItems: rawItems.length,
+          filteredItems: 0,
+        },
       });
     }
 
@@ -247,80 +259,166 @@ export async function GET(req: Request) {
       .map((it) => it.id?.videoId)
       .filter(Boolean) as string[];
 
-    const statsRes = await youtube.videos.list({
-      part: ["statistics"],
-      id: youtubeVideoIds,
-    });
+    if (youtubeVideoIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        q,
+        creatorsUpserted: 0,
+        videosUpserted: 0,
+        positionsUpserted: 0,
+        debug: {
+          rawSearchItems: rawItems.length,
+          filteredItems: items.length,
+          videoIdsFound: 0,
+        },
+      });
+    }
 
-    const statsMap = new Map<string, { view_count: number; like_count: number }>();
+const detailsRes = await youtube.videos.list({
+  part: ["snippet", "statistics"],
+  id: youtubeVideoIds,
+});
 
-    for (const v of statsRes.data.items ?? []) {
+const detailsItems = detailsRes.data.items ?? [];
+
+    const detailsMap = new Map<
+      string,
+      {
+        title: string | null;
+        description: string | null;
+        publishedAt: string | null;
+        view_count: number;
+        like_count: number;
+      }
+    >();
+
+    for (const v of detailsItems) {
       if (!v.id) continue;
 
-      statsMap.set(v.id, {
+      detailsMap.set(v.id, {
+        title: v.snippet?.title ?? null,
+        description: v.snippet?.description ?? null,
+        publishedAt: v.snippet?.publishedAt ?? null,
         view_count: Number(v.statistics?.viewCount ?? 0),
         like_count: Number(v.statistics?.likeCount ?? 0),
       });
     }
 
     const creatorsRaw = items.map((it) => ({
-      youtube_channel_id: it.snippet!.channelId!,
-      name: it.snippet!.channelTitle || null,
+      youtube_channel_id: it.snippet?.channelId || "",
+      name: it.snippet?.channelTitle || null,
     }));
 
-    const creators = dedupeByKey(creatorsRaw, (c) => c.youtube_channel_id);
+    const creators = dedupeByKey(
+      creatorsRaw.filter((c) => c.youtube_channel_id),
+      (c) => c.youtube_channel_id
+    );
 
-    await supabase
+    const { error: creatorsUpsertError } = await supabase
       .from("creators")
       .upsert(creators, { onConflict: "youtube_channel_id" });
 
-    const { data: creatorRows } = await supabase
+    if (creatorsUpsertError) {
+      return NextResponse.json(
+        { error: `Creators upsert failed: ${creatorsUpsertError.message}` },
+        { status: 500 }
+      );
+    }
+
+    const { data: creatorRows, error: creatorFetchError } = await supabase
       .from("creators")
       .select("id,youtube_channel_id")
       .in("youtube_channel_id", creators.map((c) => c.youtube_channel_id));
 
+    if (creatorFetchError) {
+      return NextResponse.json(
+        { error: `Creators fetch failed: ${creatorFetchError.message}` },
+        { status: 500 }
+      );
+    }
+
     const channelToCreator = new Map<string, number>();
-    creatorRows?.forEach((r) => channelToCreator.set(r.youtube_channel_id, r.id));
+    for (const row of creatorRows ?? []) {
+      channelToCreator.set(row.youtube_channel_id, row.id);
+    }
 
     const videosRaw = items.map((it) => {
-      const id = it.id!.videoId!;
-      const stats = statsMap.get(id) ?? { view_count: 0, like_count: 0 };
+      const youtubeVideoId = it.id?.videoId || "";
+      const detail = detailsMap.get(youtubeVideoId);
+
+      const publishedAt =
+        detail?.publishedAt ??
+        it.snippet?.publishedAt ??
+        null;
 
       return {
-        youtube_video_id: id,
-        creator_id: channelToCreator.get(it.snippet!.channelId!) ?? null,
-        title: it.snippet!.title || null,
-        description: it.snippet!.description || null,
-        video_published_at: it.snippet!.publishedAt ?? null,
-        view_count: stats.view_count,
-        like_count: stats.like_count,
+        youtube_video_id: youtubeVideoId,
+        creator_id: channelToCreator.get(it.snippet?.channelId || "") ?? null,
+        title: detail?.title ?? it.snippet?.title ?? null,
+        description: detail?.description ?? it.snippet?.description ?? null,
+        published_at: publishedAt,
+        video_published_at: publishedAt,
+        view_count: detail?.view_count ?? 0,
+        like_count: detail?.like_count ?? 0,
+        fetched_at: new Date().toISOString(),
+        processed_status: "new",
       };
     });
 
-    const videos = dedupeByKey(videosRaw, (v) => v.youtube_video_id);
+    const videos = dedupeByKey(
+      videosRaw.filter((v) => v.youtube_video_id),
+      (v) => v.youtube_video_id
+    );
 
-    await supabase
+    const { error: videosUpsertError } = await supabase
       .from("videos")
       .upsert(videos, {
         onConflict: "youtube_video_id",
         ignoreDuplicates: false,
       });
 
-    const { data: videoRows } = await supabase
+    if (videosUpsertError) {
+      return NextResponse.json(
+        { error: `Videos upsert failed: ${videosUpsertError.message}` },
+        { status: 500 }
+      );
+    }
+
+    const { data: videoRows, error: videoFetchError } = await supabase
       .from("videos")
       .select("id,youtube_video_id,creator_id")
       .in("youtube_video_id", videos.map((v) => v.youtube_video_id));
 
-    const videoMap = new Map<string, any>();
-    videoRows?.forEach((v) => videoMap.set(v.youtube_video_id, v));
+    if (videoFetchError) {
+      return NextResponse.json(
+        { error: `Videos fetch failed: ${videoFetchError.message}` },
+        { status: 500 }
+      );
+    }
 
-    const positions: any[] = [];
+    const videoMap = new Map<string, { id: number; youtube_video_id: string; creator_id: number | null }>();
+    for (const row of videoRows ?? []) {
+      videoMap.set(row.youtube_video_id, row);
+    }
+
+    const positions: Array<{
+      video_id: number;
+      creator_id: number | null;
+      ticker: string;
+      stance: Stance;
+      confidence: number;
+      source: string;
+      video_published_at: string | null;
+    }> = [];
 
     for (const it of items) {
-      const internal = videoMap.get(it.id!.videoId!);
+      const youtubeVideoId = it.id?.videoId || "";
+      const internal = videoMap.get(youtubeVideoId);
       if (!internal) continue;
 
-      const text = `${it.snippet!.title} ${it.snippet!.description}`;
+      const detail = detailsMap.get(youtubeVideoId);
+
+      const text = `${detail?.title ?? it.snippet?.title ?? ""} ${detail?.description ?? it.snippet?.description ?? ""}`;
       const tickers = extractTickersFromText(text);
 
       if (tickers.length === 0) continue;
@@ -333,24 +431,34 @@ export async function GET(req: Request) {
         positions.push({
           video_id: internal.id,
           creator_id: internal.creator_id,
-          ticker,
+          ticker: ticker.toUpperCase(),
           stance,
           confidence,
           source: "youtube_search",
-          video_published_at: it.snippet!.publishedAt ?? null,
+          video_published_at:
+            detail?.publishedAt ??
+            it.snippet?.publishedAt ??
+            null,
         });
       }
     }
 
     const cleanPositions = dedupeByKey(
-      positions.map((p) => ({ ...p, ticker: p.ticker.toUpperCase() })),
+      positions,
       (p) => `${p.video_id}:${p.ticker}`
     );
 
     if (cleanPositions.length > 0) {
-      await supabase
+      const { error: positionsUpsertError } = await supabase
         .from("video_positions")
         .upsert(cleanPositions, { onConflict: "video_id,ticker" });
+
+      if (positionsUpsertError) {
+        return NextResponse.json(
+          { error: `Video positions upsert failed: ${positionsUpsertError.message}` },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -359,6 +467,13 @@ export async function GET(req: Request) {
       creatorsUpserted: creators.length,
       videosUpserted: videos.length,
       positionsUpserted: cleanPositions.length,
+      debug: {
+        rawSearchItems: rawItems.length,
+        filteredItems: items.length,
+        videoIdsFound: youtubeVideoIds.length,
+        detailsItemsFound: detailsItems.length,
+        sampleVideo: videos[0] ?? null,
+      },
     });
   } catch (e: any) {
     return NextResponse.json(

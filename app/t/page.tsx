@@ -7,6 +7,7 @@ type Ticker = {
   ticker: string;
   mentions: number;
   sentiment: number;
+  attention: number;
 };
 
 export default function TickersPage() {
@@ -17,7 +18,9 @@ export default function TickersPage() {
     async function fetchTickers() {
       const res = await fetch("/api/tickers");
       const data = await res.json();
-      setTickers(data.tickers);
+      setTickers(
+  data.tickers.sort((a: any, b: any) => b.attention - a.attention)
+);
       setLoading(false);
     }
 
@@ -38,6 +41,7 @@ export default function TickersPage() {
         <thead>
           <tr>
             <th style={th}>Ticker</th>
+            <th style={th}>Attention</th>
             <th style={th}>Mentions</th>
             <th style={th}>Sentiment</th>
           </tr>
@@ -51,6 +55,8 @@ export default function TickersPage() {
                   {t.ticker}
                 </Link>
               </td>
+
+              <td style={td}>{t.attention?.toLocaleString()}</td>
               <td style={td}>{t.mentions}</td>
               <td style={td}>{t.sentiment.toFixed(2)}</td>
             </tr>
