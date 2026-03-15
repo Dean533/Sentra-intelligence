@@ -2,22 +2,13 @@ import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
 import { ALLOWED_CHANNEL_IDS } from "@/lib/allowedChannels";
-
-type Stance = "bullish" | "bearish" | "neutral";
-
-function dedupeByKey<T>(items: T[], keyFn: (x: T) => string): T[] {
-  const map = new Map<string, T>();
-
-  for (const item of items) {
-    map.set(keyFn(item), item);
-  }
-
-  return Array.from(map.values());
-}
-
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+import { dedupeByKey } from "@/lib/youtubeIngestion/shared";
+import {
+  isFinanceRelevant,
+  isClearlyIrrelevant,
+} from "@/lib/youtubeIngestion/financeFilters";
+import { classifyStance, type Stance } from "@/lib/youtubeIngestion/stance";
+import { extractTickersFromText } from "@/lib/youtubeIngestion/tickerRules";
 
 function supabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -25,188 +16,12 @@ function supabaseAdmin() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-const COMPANY_TO_TICKER: Record<string, string> = {
-  nvidia: "NVDA",
-  apple: "AAPL",
-  microsoft: "MSFT",
-  amazon: "AMZN",
-  meta: "META",
-  google: "GOOGL",
-  alphabet: "GOOGL",
-  netflix: "NFLX",
-  amd: "AMD",
-  intel: "INTC",
-  coinbase: "COIN",
-  palantir: "PLTR",
-};
-
-function extractTickersFromText(textRaw: string): string[] {
-  const text = (textRaw || "").replace(/\s+/g, " ").trim();
-  if (!text) return [];
-
-  const found = new Set<string>();
-  const lower = text.toLowerCase();
-
-  for (const m of text.matchAll(/\$([A-Z]{1,5})\b/g)) {
-    found.add(m[1].toUpperCase());
-  }
-
-  for (const [name, ticker] of Object.entries(COMPANY_TO_TICKER)) {
-    const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
-    if (re.test(lower)) {
-      found.add(ticker.toUpperCase());
-    }
-  }
-
-  const hasTeslaWord = /\btesla\b/i.test(lower);
-  const teslaFinanceContext = [
-    "stock",
-    "shares",
-    "earnings",
-    "investor",
-    "investing",
-    "valuation",
-    "price target",
-    "market cap",
-    "analyst",
-    "tsla",
-    "$tsla",
-    "q1",
-    "q2",
-    "q3",
-    "q4",
-    "financial results",
-  ].some((word) => lower.includes(word));
-
-  if (hasTeslaWord && teslaFinanceContext) {
-    found.add("TSLA");
-  }
-
-  return Array.from(found);
-}
-
-function isFinanceRelevant(textRaw: string): boolean {
-  const text = (textRaw || "").toLowerCase();
-
-  const financeWords = [
-    "stock",
-    "stocks",
-    "shares",
-    "market",
-    "markets",
-    "earnings",
-    "revenue",
-    "guidance",
-    "valuation",
-    "price target",
-    "analyst",
-    "investor",
-    "investing",
-    "trade",
-    "trading",
-    "bullish",
-    "bearish",
-    "portfolio",
-    "nasdaq",
-    "nyse",
-    "company",
-    "companies",
-    "quarter",
-    "q1",
-    "q2",
-    "q3",
-    "q4",
-    "financial",
-    "tsla",
-    "nvda",
-    "aapl",
-    "msft",
-    "amzn",
-    "meta",
-    "googl",
-    "pltr",
-    "amd",
-    "intel",
-    "coin",
-  ];
-
-  return financeWords.some((word) => text.includes(word));
-}
-
-function isClearlyIrrelevant(textRaw: string): boolean {
-  const text = (textRaw || "").toLowerCase();
-
-  const badWords = [
-    "official music video",
-    "lyrics",
-    "remastered",
-    "live at",
-    "album",
-    "band",
-    "tour",
-    "concert",
-    "guitar",
-    "drum cover",
-    "karaoke",
-    "reaction video",
-    "dance video",
-  ];
-
-  return badWords.some((word) => text.includes(word));
-}
-
-function classifyStance(textRaw: string): { stance: Stance; confidence: number } {
-  const text = (textRaw || "").toLowerCase();
-
-  const bullish = [
-    "buy",
-    "bullish",
-    "undervalued",
-    "going up",
-    "breakout",
-    "upside",
-    "outperform",
-    "strong",
-    "long",
-  ];
-
-  const bearish = [
-    "sell",
-    "bearish",
-    "overvalued",
-    "going down",
-    "crash",
-    "bubble",
-    "downside",
-    "short",
-    "weak",
-  ];
-
-  let b = 0;
-  let r = 0;
-
-  for (const w of bullish) {
-    if (text.includes(w)) b++;
-  }
-
-  for (const w of bearish) {
-    if (text.includes(w)) r++;
-  }
-
-  if (b === 0 && r === 0) return { stance: "neutral", confidence: 0.4 };
-  if (b === r) return { stance: "neutral", confidence: 0.5 };
-
-  const stance: Stance = b > r ? "bullish" : "bearish";
-  const confidence = Math.min(0.9, 0.55 + Math.abs(b - r) * 0.1);
-
-  return { stance, confidence };
-}
-
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
     const maxResults = Number(searchParams.get("maxResults") || "10");
+    const targetTicker = q.toUpperCase().trim();
 
     if (!q) {
       return NextResponse.json({ error: "Missing q" }, { status: 400 });
@@ -230,16 +45,42 @@ export async function GET(req: Request) {
 
     const rawItems = searchRes.data.items ?? [];
 
+    const filterDebug = {
+      missingSnippet: 0,
+      clearlyIrrelevant: 0,
+      notFinanceRelevant: 0,
+      trustedCandidates: 0,
+      untrustedCandidates: 0,
+      passed: 0,
+    };
+
     const items = rawItems.filter((it) => {
       const sn = it.snippet;
-      if (!sn) return false;
+      if (!sn) {
+        filterDebug.missingSnippet += 1;
+        return false;
+      }
 
       const combined = `${sn.title ?? ""} ${sn.description ?? ""}`;
 
-      if (!ALLOWED_CHANNEL_IDS.includes(sn.channelId || "")) return false;
-      if (isClearlyIrrelevant(combined)) return false;
-      if (!isFinanceRelevant(combined)) return false;
+      if (isClearlyIrrelevant(combined)) {
+        filterDebug.clearlyIrrelevant += 1;
+        return false;
+      }
 
+      if (!isFinanceRelevant(combined)) {
+        filterDebug.notFinanceRelevant += 1;
+        return false;
+      }
+
+      const isTrustedSource = ALLOWED_CHANNEL_IDS.includes(sn.channelId || "");
+      if (isTrustedSource) {
+        filterDebug.trustedCandidates += 1;
+      } else {
+        filterDebug.untrustedCandidates += 1;
+      }
+
+      filterDebug.passed += 1;
       return true;
     });
 
@@ -253,6 +94,7 @@ export async function GET(req: Request) {
         debug: {
           rawSearchItems: rawItems.length,
           filteredItems: 0,
+          filterDebug,
         },
       });
     }
@@ -272,16 +114,17 @@ export async function GET(req: Request) {
           rawSearchItems: rawItems.length,
           filteredItems: items.length,
           videoIdsFound: 0,
+          filterDebug,
         },
       });
     }
 
-const detailsRes = await youtube.videos.list({
-  part: ["snippet", "statistics"],
-  id: youtubeVideoIds,
-});
+    const detailsRes = await youtube.videos.list({
+      part: ["snippet", "statistics"],
+      id: youtubeVideoIds,
+    });
 
-const detailsItems = detailsRes.data.items ?? [];
+    const detailsItems = detailsRes.data.items ?? [];
 
     const detailsMap = new Map<
       string,
@@ -291,6 +134,7 @@ const detailsItems = detailsRes.data.items ?? [];
         publishedAt: string | null;
         view_count: number;
         like_count: number;
+        comment_count: number;
       }
     >();
 
@@ -303,6 +147,7 @@ const detailsItems = detailsRes.data.items ?? [];
         publishedAt: v.snippet?.publishedAt ?? null,
         view_count: Number(v.statistics?.viewCount ?? 0),
         like_count: Number(v.statistics?.likeCount ?? 0),
+        comment_count: Number(v.statistics?.commentCount ?? 0),
       });
     }
 
@@ -347,11 +192,7 @@ const detailsItems = detailsRes.data.items ?? [];
     const videosRaw = items.map((it) => {
       const youtubeVideoId = it.id?.videoId || "";
       const detail = detailsMap.get(youtubeVideoId);
-
-      const publishedAt =
-        detail?.publishedAt ??
-        it.snippet?.publishedAt ??
-        null;
+      const publishedAt = detail?.publishedAt ?? it.snippet?.publishedAt ?? null;
 
       return {
         youtube_video_id: youtubeVideoId,
@@ -362,6 +203,7 @@ const detailsItems = detailsRes.data.items ?? [];
         video_published_at: publishedAt,
         view_count: detail?.view_count ?? 0,
         like_count: detail?.like_count ?? 0,
+        comment_count: detail?.comment_count ?? 0,
         fetched_at: new Date().toISOString(),
         processed_status: "new",
       };
@@ -372,12 +214,10 @@ const detailsItems = detailsRes.data.items ?? [];
       (v) => v.youtube_video_id
     );
 
-    const { error: videosUpsertError } = await supabase
-      .from("videos")
-      .upsert(videos, {
-        onConflict: "youtube_video_id",
-        ignoreDuplicates: false,
-      });
+    const { error: videosUpsertError } = await supabase.from("videos").upsert(videos, {
+      onConflict: "youtube_video_id",
+      ignoreDuplicates: false,
+    });
 
     if (videosUpsertError) {
       return NextResponse.json(
@@ -398,7 +238,11 @@ const detailsItems = detailsRes.data.items ?? [];
       );
     }
 
-    const videoMap = new Map<string, { id: number; youtube_video_id: string; creator_id: number | null }>();
+    const videoMap = new Map<
+      string,
+      { id: number; youtube_video_id: string; creator_id: number | null }
+    >();
+
     for (const row of videoRows ?? []) {
       videoMap.set(row.youtube_video_id, row);
     }
@@ -419,30 +263,33 @@ const detailsItems = detailsRes.data.items ?? [];
       if (!internal) continue;
 
       const detail = detailsMap.get(youtubeVideoId);
+      const title = detail?.title ?? it.snippet?.title ?? "";
+      const description = detail?.description ?? it.snippet?.description ?? "";
+      const text = `${title} ${description}`;
 
-      const text = `${detail?.title ?? it.snippet?.title ?? ""} ${detail?.description ?? it.snippet?.description ?? ""}`;
-      const tickers = extractTickersFromText(text);
+      const tickers = extractTickersFromText(title, description);
 
       if (tickers.length === 0) continue;
       if (!isFinanceRelevant(text)) continue;
       if (isClearlyIrrelevant(text)) continue;
+      if (!tickers.includes(targetTicker)) continue;
 
       const { stance, confidence } = classifyStance(text);
+      const isTrustedSource = ALLOWED_CHANNEL_IDS.includes(
+        it.snippet?.channelId || ""
+      );
 
-      for (const ticker of tickers) {
-        positions.push({
-          video_id: internal.id,
-          creator_id: internal.creator_id,
-          ticker: ticker.toUpperCase(),
-          stance,
-          confidence,
-          source: "youtube_search",
-          video_published_at:
-            detail?.publishedAt ??
-            it.snippet?.publishedAt ??
-            null,
-        });
-      }
+      positions.push({
+        video_id: internal.id,
+        creator_id: internal.creator_id,
+        ticker: targetTicker,
+        stance,
+        confidence,
+        source: isTrustedSource
+          ? "youtube_search_trusted"
+          : "youtube_search_untrusted",
+        video_published_at: detail?.publishedAt ?? it.snippet?.publishedAt ?? null,
+      });
     }
 
     const cleanPositions = dedupeByKey(
@@ -457,7 +304,9 @@ const detailsItems = detailsRes.data.items ?? [];
 
       if (positionsUpsertError) {
         return NextResponse.json(
-          { error: `Video positions upsert failed: ${positionsUpsertError.message}` },
+          {
+            error: `Video positions upsert failed: ${positionsUpsertError.message}`,
+          },
           { status: 500 }
         );
       }
@@ -475,6 +324,7 @@ const detailsItems = detailsRes.data.items ?? [];
         videoIdsFound: youtubeVideoIds.length,
         detailsItemsFound: detailsItems.length,
         sampleVideo: videos[0] ?? null,
+        filterDebug,
       },
     });
   } catch (e: any) {
