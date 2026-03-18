@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { computeVideoSentraScore, safeNumber } from "@/lib/sentraScore";
 import TickerMarketSection from "@/app/components/TickerMarketSection";
+import { getMarketProfile } from "@/lib/marketProfile";
 
 function hasUsableVideo(video: any, row: any) {
   const publishedAt =
@@ -24,6 +26,89 @@ function formatPublishedAt(value: string | null) {
   });
 }
 
+function formatCompactNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function formatFullNumber(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function shortenDescription(text: string | null | undefined, maxLength = 420) {
+  if (!text) return "No company description available.";
+
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= maxLength) return clean;
+
+  const shortened = clean.slice(0, maxLength);
+  const lastPeriod = shortened.lastIndexOf(".");
+  if (lastPeriod > 180) {
+    return shortened.slice(0, lastPeriod + 1);
+  }
+
+  const lastSpace = shortened.lastIndexOf(" ");
+  return `${shortened.slice(0, lastSpace)}...`;
+}
+
+function countTrackedTickers(title: string) {
+  const tracked = [
+    "NVDA",
+    "AMD",
+    "PLTR",
+    "TSLA",
+    "AAPL",
+    "AMZN",
+    "META",
+    "MSFT",
+    "GOOGL",
+    "NFLX",
+    "AVGO",
+    "TSM",
+    "INTC",
+    "COIN",
+  ];
+
+  const upper = title.toUpperCase();
+  let count = 0;
+
+  for (const ticker of tracked) {
+    const re = new RegExp(`\\b${ticker}\\b`, "i");
+    if (re.test(upper)) count += 1;
+  }
+
+  return count;
+}
+
+function isBroadMarketVideo(title: string) {
+  const lower = title.toLowerCase();
+
+  const broadPhrases = [
+    "market crash",
+    "stock recap",
+    "market recap",
+    "faang",
+    "magnificent 7",
+    "big tech",
+    "top ai stocks",
+    "best ai stocks",
+    "stock market today",
+    "the big 3",
+    "top stocks",
+    "stocks to buy",
+    "daily recap",
+  ];
+
+  const broadPhraseHit = broadPhrases.some((phrase) => lower.includes(phrase));
+  const trackedTickerCount = countTrackedTickers(title);
+
+  return broadPhraseHit || trackedTickerCount >= 3;
+}
+
 function getSentraInterpretation(input: {
   sentraScore: number;
   sentiment: number;
@@ -34,20 +119,22 @@ function getSentraInterpretation(input: {
   const { sentraScore, sentiment, mentions, bullishMentions, bearishMentions } =
     input;
 
-  let outlook = "Watch";
-  if (sentiment >= 0.35 && mentions >= 20) outlook = "Strong Buy";
-  else if (sentiment >= 0.15 && mentions >= 10) outlook = "Buy";
+  let outlook = "Neutral Watch";
+  if (sentiment >= 0.35 && mentions >= 20) outlook = "Strong Bullish";
+  else if (sentiment >= 0.18 && mentions >= 12) outlook = "Bullish Setup";
+  else if (sentiment >= 0.08 && mentions >= 10) outlook = "Constructive Watch";
   else if (sentiment <= -0.35 && bearishMentions >= bullishMentions)
-    outlook = "Strong Sell";
-  else if (sentiment <= -0.15 && bearishMentions >= bullishMentions)
-    outlook = "Sell";
+    outlook = "Strong Bearish";
+  else if (sentiment <= -0.18 && bearishMentions >= bullishMentions)
+    outlook = "Risk-Off";
+  else if (sentiment <= -0.08) outlook = "Weakening Tone";
 
   let confidence = "Low";
-  if (mentions >= 20 && Math.abs(sentiment) >= 0.25) confidence = "High";
-  else if (mentions >= 10 && Math.abs(sentiment) >= 0.12) confidence = "Medium";
+  if (mentions >= 20 && Math.abs(sentiment) >= 0.22) confidence = "High";
+  else if (mentions >= 10 && Math.abs(sentiment) >= 0.1) confidence = "Medium";
 
   let horizon = "Medium-term";
-  if (mentions >= 20) horizon = "Short-term";
+  if (mentions >= 18) horizon = "Short-term";
   if (mentions < 8) horizon = "Watchlist";
 
   let narrativePressure = "Moderate";
@@ -58,18 +145,24 @@ function getSentraInterpretation(input: {
   let summary =
     "Narrative activity is present, but the signal still needs confirmation from broader trend and price follow-through.";
 
-  if (outlook === "Strong Buy") {
+  if (outlook === "Strong Bullish") {
     summary =
-      "Narrative momentum is strong, coverage is broad, and bullish conviction is clearly outweighing bearish pressure.";
-  } else if (outlook === "Buy") {
+      "Coverage is broad, sentiment is strong, and bullish pressure is leading the conversation in a meaningful way.";
+  } else if (outlook === "Bullish Setup") {
     summary =
-      "The signal is constructive. Sentiment is positive and attention is strong enough to support a bullish near-term read.";
-  } else if (outlook === "Strong Sell") {
+      "The signal is leaning positive. Attention is strong enough to support upside, but conviction is not yet fully one-sided.";
+  } else if (outlook === "Constructive Watch") {
     summary =
-      "Negative pressure is dominating the conversation and the signal is pointing toward a clear risk-off setup.";
-  } else if (outlook === "Sell") {
+      "Momentum is improving and tone is slightly positive, but this still looks more like an emerging setup than a full breakout signal.";
+  } else if (outlook === "Strong Bearish") {
+    summary =
+      "Negative pressure is dominating attention and the current setup looks decisively risk-off.";
+  } else if (outlook === "Risk-Off") {
     summary =
       "Tone is leaning bearish and the signal suggests caution until narrative pressure improves.";
+  } else if (outlook === "Weakening Tone") {
+    summary =
+      "Coverage is still active, but the quality of sentiment is softening and the setup looks less convincing.";
   }
 
   return {
@@ -94,35 +187,38 @@ export default async function Page({ params }: any) {
 
   const supabase = supabaseServer();
 
-  const { data, error } = await supabase
-    .from("video_positions")
-    .select(`
-      ticker,
-      stance,
-      confidence,
-      video_published_at,
-      videos (
-        title,
-        youtube_video_id,
-        view_count,
-        like_count,
-        comment_count,
-        published_at,
+  const [profile, tickerResult] = await Promise.all([
+    getMarketProfile(symbol),
+    supabase
+      .from("video_positions")
+      .select(`
+        ticker,
+        stance,
+        confidence,
         video_published_at,
-        creators (
-          name
+        videos (
+          title,
+          youtube_video_id,
+          view_count,
+          like_count,
+          comment_count,
+          published_at,
+          video_published_at,
+          creators (
+            name
+          )
         )
-      )
-    `)
-    .eq("ticker", symbol)
-    .limit(100);
+      `)
+      .eq("ticker", symbol)
+      .limit(100),
+  ]);
+
+  const { data, error } = tickerResult;
 
   if (error) {
     return (
-      <div style={{ padding: "40px" }}>
-        <h1 style={{ fontSize: "28px", marginBottom: "20px" }}>
-          {symbol} Sentra Signal
-        </h1>
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "40px 24px" }}>
+        <h1 style={{ fontSize: "34px", marginBottom: "12px" }}>{symbol}</h1>
         <div style={{ color: "#ff6b6b" }}>
           Failed to load ticker data: {error.message}
         </div>
@@ -176,6 +272,7 @@ export default async function Page({ params }: any) {
       confidence: scoreData.confidence,
       publishedAt,
       videoSentraScore: scoreData.videoSentraScore,
+      isBroad: isBroadMarketVideo(video?.title ?? ""),
     };
   });
 
@@ -184,6 +281,12 @@ export default async function Page({ params }: any) {
   const sortedDrivers = drivers.sort(
     (a, b) => b.videoSentraScore - a.videoSentraScore
   );
+
+  const focusedDrivers = sortedDrivers.filter((driver) => !driver.isBroad);
+  const topDrivers =
+    focusedDrivers.length >= 4
+      ? focusedDrivers.slice(0, 6)
+      : sortedDrivers.slice(0, 6);
 
   const interpretation = getSentraInterpretation({
     sentraScore,
@@ -194,10 +297,34 @@ export default async function Page({ params }: any) {
   });
 
   return (
-    <div style={{ padding: "40px" }}>
-      <h1 style={{ fontSize: "28px", marginBottom: "20px" }}>
-        {symbol} Sentra Signal
-      </h1>
+    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "40px 24px" }}>
+      <div style={{ marginBottom: 24 }}>
+        <div
+          style={{
+            fontSize: 13,
+            color: "#9ca3af",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            marginBottom: 8,
+          }}
+        >
+          {profile?.exchange || "Market"} · {symbol}
+        </div>
+
+        <h1
+          style={{
+            fontSize: "40px",
+            lineHeight: 1.1,
+            marginBottom: 8,
+          }}
+        >
+          {symbol}
+        </h1>
+
+        <div style={{ fontSize: 18, color: "#d1d5db" }}>
+          {profile?.longName || `${symbol} Sentra Signal`}
+        </div>
+      </div>
 
       <div
         style={{
@@ -218,10 +345,8 @@ export default async function Page({ params }: any) {
           <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
             SENTRA SCORE
           </div>
-          <div style={{ fontSize: "20px", fontWeight: 700 }}>
-            {sentraScore.toLocaleString(undefined, {
-              maximumFractionDigits: 3,
-            })}
+          <div style={{ fontSize: "22px", fontWeight: 700 }}>
+            {formatCompactNumber(sentraScore)}
           </div>
         </div>
 
@@ -236,7 +361,7 @@ export default async function Page({ params }: any) {
           <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
             MENTIONS
           </div>
-          <div style={{ fontSize: "20px", fontWeight: 700 }}>{mentions}</div>
+          <div style={{ fontSize: "22px", fontWeight: 700 }}>{mentions}</div>
         </div>
 
         <div
@@ -250,7 +375,7 @@ export default async function Page({ params }: any) {
           <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
             SENTIMENT
           </div>
-          <div style={{ fontSize: "20px", fontWeight: 700 }}>
+          <div style={{ fontSize: "22px", fontWeight: 700 }}>
             {sentiment.toFixed(2)}
           </div>
         </div>
@@ -266,7 +391,7 @@ export default async function Page({ params }: any) {
           <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
             BULL / BEAR / NEUTRAL
           </div>
-          <div style={{ fontSize: "20px", fontWeight: 700 }}>
+          <div style={{ fontSize: "22px", fontWeight: 700 }}>
             {bullishMentions} / {bearishMentions} / {neutralMentions}
           </div>
         </div>
@@ -293,6 +418,7 @@ export default async function Page({ params }: any) {
             padding: 20,
             position: "sticky",
             top: 24,
+            alignSelf: "start",
           }}
         >
           <div
@@ -388,18 +514,245 @@ export default async function Page({ params }: any) {
             }}
           >
             This is a current Sentra read based on narrative pressure, sentiment,
-            mention breadth, and score concentration. Full time-series velocity
-            comes next.
+            mention breadth, and score concentration.
           </div>
         </aside>
       </div>
 
-      <div style={{ marginTop: 36 }}>
-        <h2 style={{ fontSize: "20px", marginBottom: "16px" }}>
-          Top Score Drivers
-        </h2>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)",
+          gap: 20,
+          marginTop: 28,
+        }}
+      >
+        <section
+          style={{
+            border: "1px solid #1f2937",
+            borderRadius: 20,
+            background: "#0b0b0c",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#9ca3af",
+              marginBottom: 10,
+            }}
+          >
+            Company Overview
+          </div>
 
-        {sortedDrivers.length === 0 ? (
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              marginBottom: 10,
+            }}
+          >
+            {profile?.longName || symbol}
+          </div>
+
+          <div
+            style={{
+              color: "#d1d5db",
+              lineHeight: 1.75,
+              fontSize: 15,
+            }}
+          >
+            {shortenDescription(profile?.description)}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+              marginTop: 16,
+            }}
+          >
+            <div
+              style={{
+                border: "1px solid #222833",
+                background: "#11141b",
+                borderRadius: 999,
+                padding: "8px 12px",
+                fontSize: 12,
+              }}
+            >
+              Sector: {profile?.sector || "—"}
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #222833",
+                background: "#11141b",
+                borderRadius: 999,
+                padding: "8px 12px",
+                fontSize: 12,
+              }}
+            >
+              Industry: {profile?.industry || "—"}
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #222833",
+                background: "#11141b",
+                borderRadius: 999,
+                padding: "8px 12px",
+                fontSize: 12,
+              }}
+            >
+              Exchange: {profile?.exchange || "—"}
+            </div>
+
+            {profile?.website ? (
+              <a
+                href={profile.website}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  border: "1px solid #222833",
+                  background: "#11141b",
+                  borderRadius: 999,
+                  padding: "8px 12px",
+                  fontSize: 12,
+                  color: "#93c5fd",
+                  textDecoration: "none",
+                }}
+              >
+                Website →
+              </a>
+            ) : null}
+          </div>
+        </section>
+
+        <section
+          style={{
+            border: "1px solid #1f2937",
+            borderRadius: 20,
+            background: "#0b0b0c",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#9ca3af",
+              marginBottom: 14,
+            }}
+          >
+            Key Facts
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                Market Cap
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {formatCompactNumber(profile?.marketCap)}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                Avg Volume
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {formatCompactNumber(profile?.avgVolume)}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                52W High
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {formatFullNumber(profile?.fiftyTwoWeekHigh)}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                52W Low
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {formatFullNumber(profile?.fiftyTwoWeekLow)}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                Employees
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {formatFullNumber(profile?.employees)}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                EPS
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {profile?.eps ?? "—"}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                Sector
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {profile?.sector || "—"}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                Industry
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {profile?.industry || "—"}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div style={{ marginTop: 36 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "center",
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <h2 style={{ fontSize: "20px", margin: 0 }}>Top Score Drivers</h2>
+
+          <div style={{ fontSize: 13, color: "#9ca3af" }}>
+            Showing top {topDrivers.length} focused videos by Sentra contribution
+          </div>
+        </div>
+
+        {topDrivers.length === 0 ? (
           <div style={{ opacity: 0.75 }}>
             No scored videos found for {symbol}.
           </div>
@@ -411,14 +764,18 @@ export default async function Page({ params }: any) {
               gap: "16px",
             }}
           >
-            {sortedDrivers.map((driver, i) => (
-              <div
+            {topDrivers.map((driver, i) => (
+              <Link
                 key={`${driver.youtubeVideoId}-${i}`}
+                href={`/t/${symbol}/drivers/${driver.youtubeVideoId}`}
                 style={{
                   border: "1px solid #1f2937",
                   borderRadius: 18,
                   background: "#0b0b0c",
                   padding: 18,
+                  textDecoration: "none",
+                  color: "inherit",
+                  display: "block",
                 }}
               >
                 <div
@@ -459,7 +816,7 @@ export default async function Page({ params }: any) {
                       fontSize: 12,
                     }}
                   >
-                    {driver.viewCount.toLocaleString()} views
+                    {formatCompactNumber(driver.viewCount)} views
                   </div>
 
                   <div
@@ -471,7 +828,7 @@ export default async function Page({ params }: any) {
                       fontSize: 12,
                     }}
                   >
-                    {driver.likeCount.toLocaleString()} likes
+                    {formatCompactNumber(driver.likeCount)} likes
                   </div>
 
                   <div
@@ -483,7 +840,7 @@ export default async function Page({ params }: any) {
                       fontSize: 12,
                     }}
                   >
-                    {driver.commentCount.toLocaleString()} comments
+                    {formatCompactNumber(driver.commentCount)} comments
                   </div>
                 </div>
 
@@ -518,7 +875,7 @@ export default async function Page({ params }: any) {
                   style={{
                     fontSize: 14,
                     color: "#e5e7eb",
-                    marginBottom: 14,
+                    marginBottom: 12,
                   }}
                 >
                   Sentra contribution{" "}
@@ -529,23 +886,15 @@ export default async function Page({ params }: any) {
                   </span>
                 </div>
 
-                {driver.youtubeVideoId ? (
-                  <a
-                    href={`https://www.youtube.com/watch?v=${driver.youtubeVideoId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: "inline-block",
-                      marginTop: 4,
-                      color: "#93c5fd",
-                      fontSize: 14,
-                      textDecoration: "none",
-                    }}
-                  >
-                    Watch video →
-                  </a>
-                ) : null}
-              </div>
+                <div
+                  style={{
+                    color: "#93c5fd",
+                    fontSize: 14,
+                  }}
+                >
+                  Open evidence page →
+                </div>
+              </Link>
             ))}
           </div>
         )}
