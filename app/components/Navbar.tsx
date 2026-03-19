@@ -1,24 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function Navbar() {
-  const [query, setQuery] = useState("");
-  const router = useRouter();
-
-function handleSearch(e: React.FormEvent) {
-  e.preventDefault();
-
-  const ticker = query.trim().toUpperCase();
-
-  if (!ticker) return;
-
-  router.push(`/t/${ticker}`);
-  setQuery("");
-}
-
   return (
     <nav
       style={{
@@ -48,34 +32,6 @@ function handleSearch(e: React.FormEvent) {
       <Link href="/t" style={linkStyle}>
         Tickers
       </Link>
-
-      <form onSubmit={handleSearch} style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search ticker..."
-          style={{
-            background: "#111",
-            border: "1px solid #333",
-            color: "white",
-            padding: "6px 10px",
-            borderRadius: "6px",
-          }}
-        />
-        <button
-          type="submit"
-          style={{
-            background: "white",
-            color: "black",
-            border: "none",
-            padding: "6px 12px",
-            borderRadius: "6px",
-            cursor: "pointer",
-          }}
-        >
-          Go
-        </button>
-      </form>
     </nav>
   );
 }

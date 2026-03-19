@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+import YahooFinance from "yahoo-finance2";
 import { supabaseServer } from "@/lib/supabase/server";
 import { computeVideoSentraScore } from "@/lib/sentraScore";
+import { TICKER_UNIVERSE } from "@/lib/tickerUniverse";
+
+const yahooFinance = new YahooFinance();
 
 function hasUsableStats(video: any, row: any) {
   const publishedAt =
@@ -10,6 +14,10 @@ function hasUsableStats(video: any, row: any) {
     null;
 
   return video && video.view_count !== null && publishedAt !== null;
+}
+
+function toNumberOrNull(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export async function GET() {
@@ -70,10 +78,10 @@ export async function GET() {
         continue;
       }
 
-    if (!hasUsableStats(video, row)) {
-      skippedNullStats += 1;
-      continue;
-    }
+      if (!hasUsableStats(video, row)) {
+        skippedNullStats += 1;
+        continue;
+      }
 
       const publishedAt =
         video?.video_published_at ??
@@ -120,19 +128,97 @@ export async function GET() {
       }
     }
 
-    const tickers = Object.values(tickerStats)
-      .map((t) => ({
-        ticker: t.ticker,
-        mentions: t.mentions,
-        bullishMentions: t.bullishMentions,
-        bearishMentions: t.bearishMentions,
-        neutralMentions: t.neutralMentions,
-        avgConfidence: t.mentions > 0 ? t.avgConfidenceSum / t.mentions : 0,
-        sentiment: t.mentions > 0 ? t.sentimentSum / t.mentions : 0,
-        sentraScore: t.sentraScore,
-        rawReach: t.rawReach,
-      }))
-      .sort((a, b) => b.sentraScore - a.sentraScore);
+    const sentraMap = new Map(
+      Object.values(tickerStats).map((t) => [
+        t.ticker,
+        {
+          mentions: t.mentions,
+          bullishMentions: t.bullishMentions,
+          bearishMentions: t.bearishMentions,
+          neutralMentions: t.neutralMentions,
+          avgConfidence: t.mentions > 0 ? t.avgConfidenceSum / t.mentions : null,
+          sentiment: t.mentions > 0 ? t.sentimentSum / t.mentions : null,
+          sentraScore: t.mentions > 0 ? t.sentraScore : null,
+          rawReach: t.mentions > 0 ? t.rawReach : null,
+        },
+      ])
+    );
+
+    const extraTickers = Object.keys(tickerStats)
+      .filter(
+        (ticker) => !TICKER_UNIVERSE.some((item) => item.ticker === ticker)
+      )
+      .map((ticker) => ({
+        ticker,
+        sector: "Other",
+      }));
+
+    const universe = [...TICKER_UNIVERSE, ...extraTickers];
+
+    const quoteFields = [
+      "shortName",
+      "longName",
+      "regularMarketPrice",
+      "regularMarketChangePercent",
+      "regularMarketVolume",
+      "marketCap",
+    ];
+
+    const tickers = await Promise.all(
+      universe.map(async (item) => {
+        const sentra = sentraMap.get(item.ticker);
+
+        try {
+          const quote: any = await (yahooFinance as any).quoteCombine(
+            item.ticker,
+            { fields: quoteFields }
+          );
+
+          return {
+            ticker: item.ticker,
+            sector: item.sector,
+            companyName:
+              quote?.shortName ?? quote?.longName ?? item.ticker,
+
+            price: toNumberOrNull(quote?.regularMarketPrice),
+            dayChangePercent: toNumberOrNull(
+              quote?.regularMarketChangePercent
+            ),
+            volume: toNumberOrNull(quote?.regularMarketVolume),
+            marketCap: toNumberOrNull(quote?.marketCap),
+
+            mentions: sentra?.mentions ?? null,
+            bullishMentions: sentra?.bullishMentions ?? null,
+            bearishMentions: sentra?.bearishMentions ?? null,
+            neutralMentions: sentra?.neutralMentions ?? null,
+            avgConfidence: sentra?.avgConfidence ?? null,
+            sentiment: sentra?.sentiment ?? null,
+            sentraScore: sentra?.sentraScore ?? null,
+            rawReach: sentra?.rawReach ?? null,
+          };
+        } catch {
+          return {
+            ticker: item.ticker,
+            sector: item.sector,
+            companyName: item.ticker,
+
+            price: null,
+            dayChangePercent: null,
+            volume: null,
+            marketCap: null,
+
+            mentions: sentra?.mentions ?? null,
+            bullishMentions: sentra?.bullishMentions ?? null,
+            bearishMentions: sentra?.bearishMentions ?? null,
+            neutralMentions: sentra?.neutralMentions ?? null,
+            avgConfidence: sentra?.avgConfidence ?? null,
+            sentiment: sentra?.sentiment ?? null,
+            sentraScore: sentra?.sentraScore ?? null,
+            rawReach: sentra?.rawReach ?? null,
+          };
+        }
+      })
+    );
 
     return NextResponse.json({
       success: true,
@@ -142,7 +228,11 @@ export async function GET() {
         totalRowsRead: data?.length ?? 0,
         skippedMissingVideo,
         skippedNullStats,
-        scoredRows: tickers.reduce((sum, t) => sum + t.mentions, 0),
+        scoredRows: Object.values(tickerStats).reduce(
+          (sum, t) => sum + t.mentions,
+          0
+        ),
+        totalUniverse: universe.length,
       },
     });
   } catch (e: any) {
