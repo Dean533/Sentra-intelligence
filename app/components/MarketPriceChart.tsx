@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 
-type MarketRange = "1d" | "5d" | "1mo" | "3mo" | "1y";
+type MarketRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y";
 
 type Point = {
   date: string;
@@ -117,9 +117,11 @@ function CustomTooltip({
 export default function MarketPriceChart({
   points,
   range,
+  color = "#9ecbff",
 }: {
   points: Point[];
   range: MarketRange;
+  color?: string;
 }) {
   const chartData = points
     .filter((p) => p.close !== null && p.date)
@@ -142,8 +144,8 @@ export default function MarketPriceChart({
         >
           <defs>
             <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#9ecbff" stopOpacity={0.28} />
-              <stop offset="100%" stopColor="#9ecbff" stopOpacity={0.02} />
+              <stop offset="0%" stopColor={color} stopOpacity={0.22} />
+              <stop offset="100%" stopColor={color} stopOpacity={0.01} />
             </linearGradient>
           </defs>
 
@@ -175,15 +177,15 @@ export default function MarketPriceChart({
           <Area
             type="monotone"
             dataKey="close"
-            stroke="#f8fafc"
-            strokeWidth={2.5}
+            stroke={color}
+            strokeWidth={2}
             fill="url(#priceFill)"
             dot={false}
             activeDot={{
               r: 5,
-              stroke: "#ffffff",
+              stroke: color,
               strokeWidth: 2,
-              fill: "#111827",
+              fill: "#0a0e14",
             }}
           />
         </AreaChart>

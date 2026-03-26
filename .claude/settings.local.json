@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s --max-time 20 \"http://localhost:3000/api/ticker/TSLA\")",
+      "Bash(python3 -c \":*)",
+      "Bash(curl -s --max-time 20 \"http://localhost:3000/api/ticker/AAPL\")"
+    ]
+  }
+}

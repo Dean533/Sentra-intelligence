@@ -1,904 +1,705 @@
-import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase/server";
-import { computeVideoSentraScore, safeNumber } from "@/lib/sentraScore";
-import TickerMarketSection from "@/app/components/TickerMarketSection";
-import { getMarketProfile } from "@/lib/marketProfile";
+'use client'
 
-function hasUsableVideo(video: any, row: any) {
-  const publishedAt =
-    video?.video_published_at ??
-    video?.published_at ??
-    row?.video_published_at ??
-    null;
+import { useEffect, useState } from 'react'
+import { useParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
+import type { MarketRange } from '@/lib/marketData'
 
-  return video && video.view_count !== null && publishedAt !== null;
+const MarketPriceChart = dynamic(() => import('@/app/components/MarketPriceChart'), {
+  ssr: false,
+})
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+function fmt$(n: number | null | undefined, decimals = 2) {
+  if (n == null) return '—'
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
 }
 
-function formatPublishedAt(value: string | null) {
-  if (!value) return "Unknown date";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown date";
-
-  return date.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function fmtLarge(n: number | null | undefined) {
+  if (n == null) return '—'
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
+  return `$${n.toLocaleString()}`
 }
 
-function formatCompactNumber(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+function fmtVol(n: number | null | undefined) {
+  if (n == null) return '—'
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`
+  return `${n}`
 }
 
-function formatFullNumber(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat("en-US").format(value);
+function fmtPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  // yahoo returns dividend yield as a decimal (0.0052), or sometimes as a %
+  const val = Math.abs(n) < 1 ? n * 100 : n
+  return `${val.toFixed(2)}%`
 }
 
-function shortenDescription(text: string | null | undefined, maxLength = 420) {
-  if (!text) return "No company description available.";
+function fmtDate(s: string | null | undefined) {
+  if (!s) return '—'
+  return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (clean.length <= maxLength) return clean;
+function scoreColor(s: number) {
+  if (s >= 65) return '#3fb950'
+  if (s >= 35) return '#d29922'
+  return '#f85149'
+}
 
-  const shortened = clean.slice(0, maxLength);
-  const lastPeriod = shortened.lastIndexOf(".");
-  if (lastPeriod > 180) {
-    return shortened.slice(0, lastPeriod + 1);
+function scoreLabel(s: number) {
+  if (s >= 65) return 'Bullish'
+  if (s >= 35) return 'Neutral'
+  return 'Bearish'
+}
+
+const ITEM_LABELS: Record<string, string> = {
+  '1.01': 'Material Agreement',
+  '1.02': 'Agreement Terminated',
+  '2.01': 'Asset Acquisition',
+  '2.02': 'Earnings Release',
+  '2.05': 'Officer Departure',
+  '2.06': 'Asset Impairment',
+  '3.01': 'Exchange Delisting',
+  '4.01': 'Auditor Change',
+  '4.02': 'Financial Restatement',
+  '5.01': 'Change of Control',
+  '5.02': 'Director/Officer Change',
+  '5.03': 'Bylaw Amendment',
+  '5.07': 'Shareholder Vote',
+  '7.01': 'Reg FD Disclosure',
+  '8.01': 'Other Events',
+}
+
+function parseItems(rawText: string | null): string[] {
+  if (!rawText) return []
+  try {
+    const parsed = JSON.parse(rawText)
+    const raw = parsed.items
+    if (!raw) return []
+    const codes: string[] = Array.isArray(raw)
+      ? raw
+      : String(raw).split(',').map((s: string) => s.trim())
+    return codes.filter((c) => c !== '9.01')
+  } catch {
+    return []
   }
-
-  const lastSpace = shortened.lastIndexOf(" ");
-  return `${shortened.slice(0, lastSpace)}...`;
 }
 
-function countTrackedTickers(title: string) {
-  const tracked = [
-    "NVDA",
-    "AMD",
-    "PLTR",
-    "TSLA",
-    "AAPL",
-    "AMZN",
-    "META",
-    "MSFT",
-    "GOOGL",
-    "NFLX",
-    "AVGO",
-    "TSM",
-    "INTC",
-    "COIN",
-  ];
-
-  const upper = title.toUpperCase();
-  let count = 0;
-
-  for (const ticker of tracked) {
-    const re = new RegExp(`\\b${ticker}\\b`, "i");
-    if (re.test(upper)) count += 1;
-  }
-
-  return count;
+function itemBorderColor(items: string[]): string {
+  if (items.includes('2.02')) return '#3fb950'
+  if (items.some((i) => ['5.02', '5.01', '2.05'].includes(i))) return '#d29922'
+  if (items.some((i) => ['4.01', '4.02'].includes(i))) return '#f85149'
+  if (items.some((i) => ['1.01', '1.02'].includes(i))) return '#9ecbff'
+  return '#2a3040'
 }
 
-function isBroadMarketVideo(title: string) {
-  const lower = title.toLowerCase();
+// ─── types ────────────────────────────────────────────────────────────────────
 
-  const broadPhrases = [
-    "market crash",
-    "stock recap",
-    "market recap",
-    "faang",
-    "magnificent 7",
-    "big tech",
-    "top ai stocks",
-    "best ai stocks",
-    "stock market today",
-    "the big 3",
-    "top stocks",
-    "stocks to buy",
-    "daily recap",
-  ];
-
-  const broadPhraseHit = broadPhrases.some((phrase) => lower.includes(phrase));
-  const trackedTickerCount = countTrackedTickers(title);
-
-  return broadPhraseHit || trackedTickerCount >= 3;
+type TickerData = {
+  symbol: string
+  quote: any
+  summary: any
+  ticker: any
+  events: any[]
+  related: any[]
 }
 
-function getSentraInterpretation(input: {
-  sentraScore: number;
-  sentiment: number;
-  mentions: number;
-  bullishMentions: number;
-  bearishMentions: number;
-}) {
-  const { sentraScore, sentiment, mentions, bullishMentions, bearishMentions } =
-    input;
-
-  let outlook = "Neutral Watch";
-  if (sentiment >= 0.35 && mentions >= 20) outlook = "Strong Bullish";
-  else if (sentiment >= 0.18 && mentions >= 12) outlook = "Bullish Setup";
-  else if (sentiment >= 0.08 && mentions >= 10) outlook = "Constructive Watch";
-  else if (sentiment <= -0.35 && bearishMentions >= bullishMentions)
-    outlook = "Strong Bearish";
-  else if (sentiment <= -0.18 && bearishMentions >= bullishMentions)
-    outlook = "Risk-Off";
-  else if (sentiment <= -0.08) outlook = "Weakening Tone";
-
-  let confidence = "Low";
-  if (mentions >= 20 && Math.abs(sentiment) >= 0.22) confidence = "High";
-  else if (mentions >= 10 && Math.abs(sentiment) >= 0.1) confidence = "Medium";
-
-  let horizon = "Medium-term";
-  if (mentions >= 18) horizon = "Short-term";
-  if (mentions < 8) horizon = "Watchlist";
-
-  let narrativePressure = "Moderate";
-  if (sentraScore >= 35000) narrativePressure = "Very High";
-  else if (sentraScore >= 18000) narrativePressure = "High";
-  else if (sentraScore >= 8000) narrativePressure = "Building";
-
-  let summary =
-    "Narrative activity is present, but the signal still needs confirmation from broader trend and price follow-through.";
-
-  if (outlook === "Strong Bullish") {
-    summary =
-      "Coverage is broad, sentiment is strong, and bullish pressure is leading the conversation in a meaningful way.";
-  } else if (outlook === "Bullish Setup") {
-    summary =
-      "The signal is leaning positive. Attention is strong enough to support upside, but conviction is not yet fully one-sided.";
-  } else if (outlook === "Constructive Watch") {
-    summary =
-      "Momentum is improving and tone is slightly positive, but this still looks more like an emerging setup than a full breakout signal.";
-  } else if (outlook === "Strong Bearish") {
-    summary =
-      "Negative pressure is dominating attention and the current setup looks decisively risk-off.";
-  } else if (outlook === "Risk-Off") {
-    summary =
-      "Tone is leaning bearish and the signal suggests caution until narrative pressure improves.";
-  } else if (outlook === "Weakening Tone") {
-    summary =
-      "Coverage is still active, but the quality of sentiment is softening and the setup looks less convincing.";
-  }
-
-  return {
-    outlook,
-    confidence,
-    horizon,
-    narrativePressure,
-    summary,
-  };
+type ChartPoint = {
+  date: string
+  open: number | null
+  high: number | null
+  low: number | null
+  close: number | null
+  volume: number | null
 }
 
-function stanceBadgeColor(stance: string) {
-  if (stance === "bullish") return "#14532d";
-  if (stance === "bearish") return "#7f1d1d";
-  return "#1f2937";
+const RANGES: { label: string; value: MarketRange }[] = [
+  { label: '1D', value: '1d' },
+  { label: '5D', value: '5d' },
+  { label: '1M', value: '1mo' },
+  { label: '3M', value: '3mo' },
+  { label: '6M', value: '6mo' },
+  { label: '1Y', value: '1y' },
+]
+
+const SENTRA_SCORE = 50 // placeholder — Phase 4
+
+// ─── shared style tokens ──────────────────────────────────────────────────────
+
+const card: React.CSSProperties = {
+  background: '#0d1117',
+  border: '1px solid #1e2530',
+  borderRadius: '12px',
+  padding: '24px',
 }
 
-export default async function Page({ params }: any) {
-  const resolvedParams = await Promise.resolve(params);
-  const ticker = resolvedParams?.ticker;
-  const symbol = String(ticker || "").toUpperCase();
+const label: React.CSSProperties = {
+  fontSize: '11px',
+  letterSpacing: '1.5px',
+  color: '#7b8498',
+  marginBottom: '4px',
+}
 
-  const supabase = supabaseServer();
+const sectionTitle: React.CSSProperties = {
+  fontSize: '11px',
+  letterSpacing: '2px',
+  color: '#7b8498',
+  margin: '0 0 20px',
+  textTransform: 'uppercase' as const,
+}
 
-  const [profile, tickerResult] = await Promise.all([
-    getMarketProfile(symbol),
-    supabase
-      .from("video_positions")
-      .select(`
-        ticker,
-        stance,
-        confidence,
-        video_published_at,
-        videos (
-          title,
-          youtube_video_id,
-          view_count,
-          like_count,
-          comment_count,
-          published_at,
-          video_published_at,
-          creators (
-            name
-          )
-        )
-      `)
-      .eq("ticker", symbol)
-      .limit(100),
-  ]);
+// ─── component ────────────────────────────────────────────────────────────────
 
-  const { data, error } = tickerResult;
+export default function TickerPage() {
+  const params = useParams()
+  const ticker = (params?.ticker as string)?.toUpperCase()
 
-  if (error) {
+  const [data, setData] = useState<TickerData | null>(null)
+  const [chartPoints, setChartPoints] = useState<ChartPoint[]>([])
+  const [range, setRange] = useState<MarketRange>('1mo')
+  const [loading, setLoading] = useState(true)
+  const [loadingChart, setLoadingChart] = useState(true)
+  const [showFullSummary, setShowFullSummary] = useState(false)
+  const [news, setNews] = useState<any[]>([])
+  const [loadingNews, setLoadingNews] = useState(true)
+
+  useEffect(() => {
+    if (!ticker) return
+    setLoading(true)
+    fetch(`/api/ticker/${ticker}`)
+      .then((r) => r.json())
+      .then(setData)
+      .finally(() => setLoading(false))
+  }, [ticker])
+
+  useEffect(() => {
+    if (!ticker) return
+    setLoadingChart(true)
+    fetch(`/api/market/history?ticker=${ticker}&range=${range}`)
+      .then((r) => r.json())
+      .then((d) => setChartPoints(d.points ?? []))
+      .finally(() => setLoadingChart(false))
+  }, [ticker, range])
+
+  useEffect(() => {
+    if (!ticker) return
+    setLoadingNews(true)
+    fetch(`/api/news?ticker=${ticker}`)
+      .then((r) => r.json())
+      .then((d) => setNews(d.articles ?? []))
+      .finally(() => setLoadingNews(false))
+  }, [ticker])
+
+  const q = data?.quote ?? null
+  const s = data?.summary ?? null
+  const meta = data?.ticker ?? null
+  const events = data?.events ?? []
+  const related = data?.related ?? []
+
+  const isUp = (q?.regularMarketChangePercent ?? 0) >= 0
+  const priceColor = isUp ? '#3fb950' : '#f85149'
+  const changeSign = isUp ? '+' : ''
+  const displayName = q?.longName ?? q?.shortName ?? meta?.name ?? ticker
+  const sector = meta?.sector ?? q?.sector ?? null
+
+  const ceo = s?.assetProfile?.companyOfficers?.find(
+    (o: any) => o.title?.toLowerCase().includes('ceo') || o.title?.toLowerCase().includes('chief executive')
+  )
+  const hq = [s?.assetProfile?.city, s?.assetProfile?.state ?? s?.assetProfile?.country]
+    .filter(Boolean).join(', ')
+  const summary = s?.assetProfile?.longBusinessSummary ?? null
+  const SUMMARY_LIMIT = 280
+
+  if (loading) {
     return (
-      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "40px 24px" }}>
-        <h1 style={{ fontSize: "34px", marginBottom: "12px" }}>{symbol}</h1>
-        <div style={{ color: "#ff6b6b" }}>
-          Failed to load ticker data: {error.message}
-        </div>
+      <div style={{ background: '#0a0e14', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: '#7b8498', fontSize: '14px', letterSpacing: '1px' }}>LOADING {ticker}…</div>
       </div>
-    );
+    )
   }
-
-  const rows = (data ?? []) as any[];
-  const usableRows = rows.filter((row) => hasUsableVideo(row.videos, row));
-
-  let mentions = 0;
-  let bullishMentions = 0;
-  let bearishMentions = 0;
-  let neutralMentions = 0;
-  let sentimentSum = 0;
-  let sentraScore = 0;
-
-  const drivers = usableRows.map((row) => {
-    const video = row.videos;
-    const publishedAt =
-      video?.video_published_at ??
-      video?.published_at ??
-      row?.video_published_at ??
-      null;
-
-    const scoreData = computeVideoSentraScore({
-      view_count: video?.view_count,
-      like_count: video?.like_count,
-      comment_count: video?.comment_count,
-      video_published_at: publishedAt,
-      stance: row.stance,
-      confidence: row.confidence,
-    });
-
-    mentions += 1;
-    sentimentSum += scoreData.stanceValue * scoreData.confidence;
-    sentraScore += scoreData.videoSentraScore;
-
-    if (scoreData.stanceValue > 0) bullishMentions += 1;
-    else if (scoreData.stanceValue < 0) bearishMentions += 1;
-    else neutralMentions += 1;
-
-    return {
-      title: video?.title ?? "Untitled video",
-      youtubeVideoId: video?.youtube_video_id ?? "",
-      creatorName: video?.creators?.name ?? "Unknown creator",
-      viewCount: safeNumber(video?.view_count),
-      likeCount: safeNumber(video?.like_count),
-      commentCount: safeNumber(video?.comment_count),
-      stance: row.stance ?? "neutral",
-      confidence: scoreData.confidence,
-      publishedAt,
-      videoSentraScore: scoreData.videoSentraScore,
-      isBroad: isBroadMarketVideo(video?.title ?? ""),
-    };
-  });
-
-  const sentiment = mentions > 0 ? sentimentSum / mentions : 0;
-
-  const sortedDrivers = drivers.sort(
-    (a, b) => b.videoSentraScore - a.videoSentraScore
-  );
-
-  const focusedDrivers = sortedDrivers.filter((driver) => !driver.isBroad);
-  const topDrivers =
-    focusedDrivers.length >= 4
-      ? focusedDrivers.slice(0, 6)
-      : sortedDrivers.slice(0, 6);
-
-  const interpretation = getSentraInterpretation({
-    sentraScore,
-    sentiment,
-    mentions,
-    bullishMentions,
-    bearishMentions,
-  });
 
   return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "40px 24px" }}>
-      <div style={{ marginBottom: 24 }}>
-        <div
-          style={{
-            fontSize: 13,
-            color: "#9ca3af",
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            marginBottom: 8,
-          }}
-        >
-          {profile?.exchange || "Market"} · {symbol}
+    <div style={{ background: '#0a0e14', minHeight: '100vh', color: '#e6edf3', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 40px 80px' }}>
+
+        {/* ── back ────────────────────────────────────────────────────────────── */}
+        <div style={{ paddingTop: '24px', paddingBottom: '20px' }}>
+          <a href="/explore" style={{ color: '#7b8498', fontSize: '12px', letterSpacing: '1.5px', textDecoration: 'none' }}>
+            ← EXPLORE
+          </a>
         </div>
 
-        <h1
-          style={{
-            fontSize: "40px",
-            lineHeight: 1.1,
-            marginBottom: 8,
-          }}
-        >
-          {symbol}
-        </h1>
-
-        <div style={{ fontSize: 18, color: "#d1d5db" }}>
-          {profile?.longName || `${symbol} Sentra Signal`}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(180px, 1fr))",
-          gap: "16px",
-          marginBottom: "28px",
-        }}
-      >
-        <div
-          style={{
-            border: "1px solid #222",
-            borderRadius: "14px",
-            padding: "16px",
-            background: "#0b0b0c",
-          }}
-        >
-          <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
-            SENTRA SCORE
-          </div>
-          <div style={{ fontSize: "22px", fontWeight: 700 }}>
-            {formatCompactNumber(sentraScore)}
-          </div>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #222",
-            borderRadius: "14px",
-            padding: "16px",
-            background: "#0b0b0c",
-          }}
-        >
-          <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
-            MENTIONS
-          </div>
-          <div style={{ fontSize: "22px", fontWeight: 700 }}>{mentions}</div>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #222",
-            borderRadius: "14px",
-            padding: "16px",
-            background: "#0b0b0c",
-          }}
-        >
-          <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
-            SENTIMENT
-          </div>
-          <div style={{ fontSize: "22px", fontWeight: 700 }}>
-            {sentiment.toFixed(2)}
-          </div>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #222",
-            borderRadius: "14px",
-            padding: "16px",
-            background: "#0b0b0c",
-          }}
-        >
-          <div style={{ fontSize: "12px", opacity: 0.7, marginBottom: "8px" }}>
-            BULL / BEAR / NEUTRAL
-          </div>
-          <div style={{ fontSize: "22px", fontWeight: 700 }}>
-            {bullishMentions} / {bearishMentions} / {neutralMentions}
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 2fr) minmax(320px, 1fr)",
-          gap: "20px",
-          alignItems: "start",
-        }}
-      >
-        <div>
-          <TickerMarketSection ticker={symbol} />
-        </div>
-
-        <aside
-          style={{
-            border: "1px solid #1f2937",
-            borderRadius: 20,
-            background:
-              "linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(9,11,15,0.98) 100%)",
-            padding: 20,
-            position: "sticky",
-            top: 24,
-            alignSelf: "start",
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#9ca3af",
-              marginBottom: 8,
-            }}
-          >
-            Sentra Outlook
-          </div>
-
-          <div
-            style={{
-              fontSize: 30,
-              fontWeight: 800,
-              marginBottom: 18,
-            }}
-          >
-            {interpretation.outlook}
-          </div>
-
-          <div style={{ display: "grid", gap: 12, marginBottom: 18 }}>
-            <div
-              style={{
-                border: "1px solid #222833",
-                borderRadius: 14,
-                padding: "12px 14px",
-                background: "#0f1115",
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Confidence
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {interpretation.confidence}
-              </div>
+        {/* ── header bar ──────────────────────────────────────────────────────── */}
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: '24px', paddingBottom: '28px',
+          borderBottom: '1px solid #1e2530', marginBottom: '24px',
+        }}>
+          {/* left */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+              <h1 style={{ fontSize: '52px', fontWeight: 800, margin: 0, lineHeight: 1, letterSpacing: '-1px' }}>
+                {ticker}
+              </h1>
+              {sector && (
+                <span style={{
+                  fontSize: '12px', padding: '4px 12px', borderRadius: '20px',
+                  border: '1px solid #2a3a50', background: 'rgba(158,203,255,0.06)',
+                  color: '#9ecbff', letterSpacing: '0.5px', whiteSpace: 'nowrap',
+                  alignSelf: 'center', marginTop: '6px',
+                }}>
+                  {sector}
+                </span>
+              )}
             </div>
-
-            <div
-              style={{
-                border: "1px solid #222833",
-                borderRadius: 14,
-                padding: "12px 14px",
-                background: "#0f1115",
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Horizon
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {interpretation.horizon}
-              </div>
+            <div style={{ color: '#c9d1d9', fontSize: '17px', marginTop: '2px' }}>
+              {displayName}
             </div>
-
-            <div
-              style={{
-                border: "1px solid #222833",
-                borderRadius: 14,
-                padding: "12px 14px",
-                background: "#0f1115",
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Narrative Pressure
+            {q?.exchange && (
+              <div style={{ color: '#7b8498', fontSize: '12px', marginTop: '6px' }}>
+                {q.exchange} · {q?.currency ?? 'USD'}
               </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {interpretation.narrativePressure}
-              </div>
-            </div>
+            )}
           </div>
 
-          <div
-            style={{
-              borderTop: "1px solid #222833",
-              paddingTop: 16,
-              color: "#d1d5db",
-              lineHeight: 1.6,
-              fontSize: 14,
-            }}
-          >
-            {interpretation.summary}
-          </div>
-
-          <div
-            style={{
-              marginTop: 18,
-              fontSize: 13,
-              color: "#9ca3af",
-              lineHeight: 1.6,
-            }}
-          >
-            This is a current Sentra read based on narrative pressure, sentiment,
-            mention breadth, and score concentration.
-          </div>
-        </aside>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)",
-          gap: 20,
-          marginTop: 28,
-        }}
-      >
-        <section
-          style={{
-            border: "1px solid #1f2937",
-            borderRadius: 20,
-            background: "#0b0b0c",
-            padding: 20,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#9ca3af",
-              marginBottom: 10,
-            }}
-          >
-            Company Overview
-          </div>
-
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 700,
-              marginBottom: 10,
-            }}
-          >
-            {profile?.longName || symbol}
-          </div>
-
-          <div
-            style={{
-              color: "#d1d5db",
-              lineHeight: 1.75,
-              fontSize: 15,
-            }}
-          >
-            {shortenDescription(profile?.description)}
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 10,
-              marginTop: 16,
-            }}
-          >
-            <div
-              style={{
-                border: "1px solid #222833",
-                background: "#11141b",
-                borderRadius: 999,
-                padding: "8px 12px",
-                fontSize: 12,
-              }}
-            >
-              Sector: {profile?.sector || "—"}
-            </div>
-
-            <div
-              style={{
-                border: "1px solid #222833",
-                background: "#11141b",
-                borderRadius: 999,
-                padding: "8px 12px",
-                fontSize: 12,
-              }}
-            >
-              Industry: {profile?.industry || "—"}
-            </div>
-
-            <div
-              style={{
-                border: "1px solid #222833",
-                background: "#11141b",
-                borderRadius: 999,
-                padding: "8px 12px",
-                fontSize: 12,
-              }}
-            >
-              Exchange: {profile?.exchange || "—"}
-            </div>
-
-            {profile?.website ? (
-              <a
-                href={profile.website}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  border: "1px solid #222833",
-                  background: "#11141b",
-                  borderRadius: 999,
-                  padding: "8px 12px",
-                  fontSize: 12,
-                  color: "#93c5fd",
-                  textDecoration: "none",
-                }}
-              >
-                Website →
-              </a>
-            ) : null}
-          </div>
-        </section>
-
-        <section
-          style={{
-            border: "1px solid #1f2937",
-            borderRadius: 20,
-            background: "#0b0b0c",
-            padding: 20,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#9ca3af",
-              marginBottom: 14,
-            }}
-          >
-            Key Facts
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Market Cap
+          {/* right */}
+          {q?.regularMarketPrice != null && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '48px', fontWeight: 700, lineHeight: 1, letterSpacing: '-1px' }}>
+                {fmt$(q.regularMarketPrice)}
               </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {formatCompactNumber(profile?.marketCap)}
+              <div style={{ fontSize: '18px', color: priceColor, marginTop: '6px', fontWeight: 500 }}>
+                {changeSign}{q.regularMarketChange?.toFixed(2)}&nbsp;
+                <span style={{ opacity: 0.85 }}>
+                  ({changeSign}{q.regularMarketChangePercent?.toFixed(2)}%)
+                </span>
               </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Avg Volume
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {formatCompactNumber(profile?.avgVolume)}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                52W High
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {formatFullNumber(profile?.fiftyTwoWeekHigh)}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                52W Low
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {formatFullNumber(profile?.fiftyTwoWeekLow)}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Employees
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {formatFullNumber(profile?.employees)}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                EPS
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {profile?.eps ?? "—"}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Sector
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {profile?.sector || "—"}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
-                Industry
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {profile?.industry || "—"}
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div style={{ marginTop: 36 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
-            marginBottom: 16,
-            flexWrap: "wrap",
-          }}
-        >
-          <h2 style={{ fontSize: "20px", margin: 0 }}>Top Score Drivers</h2>
-
-          <div style={{ fontSize: 13, color: "#9ca3af" }}>
-            Showing top {topDrivers.length} focused videos by Sentra contribution
-          </div>
-        </div>
-
-        {topDrivers.length === 0 ? (
-          <div style={{ opacity: 0.75 }}>
-            No scored videos found for {symbol}.
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-              gap: "16px",
-            }}
-          >
-            {topDrivers.map((driver, i) => (
-              <Link
-                key={`${driver.youtubeVideoId}-${i}`}
-                href={`/t/${symbol}/drivers/${driver.youtubeVideoId}`}
-                style={{
-                  border: "1px solid #1f2937",
-                  borderRadius: 18,
-                  background: "#0b0b0c",
-                  padding: 18,
-                  textDecoration: "none",
-                  color: "inherit",
-                  display: "block",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 700,
-                    lineHeight: 1.4,
-                    marginBottom: 12,
-                  }}
-                >
-                  {driver.title}
+              {q?.marketState && (
+                <div style={{ fontSize: '11px', color: '#7b8498', marginTop: '6px', letterSpacing: '1px' }}>
+                  {q.marketState === 'REGULAR' ? '● MARKET OPEN' : '● MARKET CLOSED'}
                 </div>
+              )}
+            </div>
+          )}
+        </div>
 
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "#9ca3af",
-                    marginBottom: 14,
-                  }}
-                >
-                  {driver.creatorName} · {formatPublishedAt(driver.publishedAt)}
+        {/* ── range selector ──────────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+          {RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => setRange(r.value)}
+              style={{
+                padding: '5px 14px', borderRadius: '6px', border: 'none',
+                background: range === r.value ? 'rgba(255,255,255,0.08)' : 'transparent',
+                color: range === r.value ? '#ffffff' : '#7b8498',
+                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={(e) => { if (range !== r.value) e.currentTarget.style.color = '#c9d1d9' }}
+              onMouseLeave={(e) => { if (range !== r.value) e.currentTarget.style.color = '#7b8498' }}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── chart ───────────────────────────────────────────────────────────── */}
+        <div style={{
+          ...card,
+          padding: '20px 12px 12px',
+          marginBottom: '16px',
+          opacity: loadingChart ? 0.5 : 1,
+          transition: 'opacity 0.2s',
+        }}>
+          {chartPoints.length > 0 ? (
+            <MarketPriceChart points={chartPoints} range={range} color={priceColor} />
+          ) : (
+            <div style={{ height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7b8498' }}>
+              {loadingChart ? 'Loading chart…' : 'No chart data available'}
+            </div>
+          )}
+        </div>
+
+        {/* ── stats bar ───────────────────────────────────────────────────────── */}
+        <div style={{
+          ...card,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          padding: '0',
+          marginBottom: '16px',
+          overflow: 'hidden',
+        }}>
+          {[
+            { label: 'Open', value: fmt$(q?.regularMarketOpen) },
+            { label: 'High', value: fmt$(q?.regularMarketDayHigh) },
+            { label: 'Low', value: fmt$(q?.regularMarketDayLow) },
+            { label: 'Volume', value: fmtVol(q?.regularMarketVolume) },
+            { label: 'Mkt Cap', value: fmtLarge(q?.marketCap) },
+            { label: '52W High', value: fmt$(q?.fiftyTwoWeekHigh) },
+            { label: '52W Low', value: fmt$(q?.fiftyTwoWeekLow) },
+          ].map(({ label: lbl, value }, i, arr) => (
+            <div
+              key={lbl}
+              style={{
+                padding: '16px 20px',
+                borderRight: i < arr.length - 1 ? '1px solid #1e2530' : 'none',
+              }}
+            >
+              <div style={label}>{lbl}</div>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: '#e6edf3' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── two-column main section ─────────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '16px', alignItems: 'start' }}>
+
+          {/* ── LEFT COLUMN ─────────────────────────────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+            {/* sentra score */}
+            <div style={card}>
+              <p style={sectionTitle}>Sentra Score</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '24px' }}>
+                <span style={{ fontSize: '64px', fontWeight: 800, color: scoreColor(SENTRA_SCORE), lineHeight: 1 }}>
+                  {SENTRA_SCORE}
+                </span>
+                <span style={{ color: '#7b8498', fontSize: '22px' }}>/100</span>
+                <span style={{
+                  marginLeft: '8px', fontSize: '13px', fontWeight: 600,
+                  color: scoreColor(SENTRA_SCORE), padding: '3px 10px',
+                  borderRadius: '20px', border: `1px solid ${scoreColor(SENTRA_SCORE)}22`,
+                  background: `${scoreColor(SENTRA_SCORE)}11`,
+                }}>
+                  {scoreLabel(SENTRA_SCORE)}
+                </span>
+              </div>
+
+              {/* heat bar */}
+              <div style={{ position: 'relative', height: '6px', borderRadius: '3px', background: 'linear-gradient(to right, #f85149 0%, #d29922 50%, #3fb950 100%)', marginBottom: '24px' }}>
+                <div style={{
+                  position: 'absolute', top: '-4px',
+                  left: `calc(${SENTRA_SCORE}% - 7px)`,
+                  width: '14px', height: '14px', borderRadius: '50%',
+                  background: scoreColor(SENTRA_SCORE),
+                  border: '2.5px solid #0d1117',
+                  boxShadow: `0 0 10px ${scoreColor(SENTRA_SCORE)}88`,
+                }} />
+              </div>
+
+              <p style={{ color: '#7b8498', fontSize: '12px', margin: 0, lineHeight: 1.6 }}>
+                Signal strength based on SEC filings, insider activity, and market events.
+                Full scoring model launches in Phase 4.
+              </p>
+            </div>
+
+            {/* SEC filings */}
+            <div style={card}>
+              <p style={sectionTitle}>SEC Filings & Events</p>
+              {events.length === 0 ? (
+                <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>
+                  No recent filings for {ticker}.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                  {events.map((ev, i) => {
+                    const items = parseItems(ev.raw_text)
+                    const borderColor = itemBorderColor(items)
+                    const visibleItems = items.slice(0, 3)
+
+                    return (
+                      <div
+                        key={ev.id}
+                        style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '16px',
+                          padding: '14px 0 14px 16px',
+                          borderLeft: `3px solid ${borderColor}`,
+                          marginLeft: '-24px', paddingLeft: '21px',
+                          borderBottom: i < events.length - 1 ? '1px solid #141920' : 'none',
+                        }}
+                      >
+                        {/* date */}
+                        <div style={{ color: '#7b8498', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '72px', paddingTop: '2px' }}>
+                          {fmtDate(ev.published_at)}
+                        </div>
+
+                        {/* title + tags */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '14px', fontWeight: 500, color: '#c9d1d9', marginBottom: '6px', lineHeight: 1.3 }}>
+                            {ev.title.replace(/^8-K — /, '')}
+                          </div>
+                          {visibleItems.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {visibleItems.map((code) => (
+                                <span
+                                  key={code}
+                                  style={{
+                                    fontSize: '11px', padding: '2px 8px', borderRadius: '4px',
+                                    background: '#151c28', border: '1px solid #1e2a3a',
+                                    color: '#9ecbff', letterSpacing: '0.3px',
+                                  }}
+                                >
+                                  {code} · {ITEM_LABELS[code] ?? code}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* link */}
+                        {ev.source_url && (
+                          <a
+                            href={ev.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: '#7b8498', fontSize: '12px', textDecoration: 'none',
+                              whiteSpace: 'nowrap', paddingTop: '2px',
+                              transition: 'color 0.15s',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = '#9ecbff')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}
+                          >
+                            View →
+                          </a>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
+              )}
+            </div>
 
+            {/* recent news */}
+            <div style={card}>
+              <p style={sectionTitle}>Recent News</p>
+              {loadingNews ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} style={{ height: '52px', borderRadius: '6px', background: '#1a1f2a', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  ))}
+                </div>
+              ) : news.length === 0 ? (
+                <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>No recent news for {ticker}.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                  {news.map((article, i) => {
+                    let source = ''
+                    let sentiment: string = article.summary ?? 'neutral'
+                    try {
+                      const raw = JSON.parse(article.raw_text ?? '{}')
+                      source = raw.source ?? ''
+                      sentiment = raw.sentiment ?? sentiment
+                    } catch { /* ok */ }
+
+                    const sentimentColor =
+                      sentiment === 'bullish' ? '#3fb950'
+                      : sentiment === 'bearish' ? '#f85149'
+                      : '#7b8498'
+
+                    const pubDate = article.published_at ? new Date(article.published_at) : null
+                    const relTime = pubDate ? (() => {
+                      const diffMs = Date.now() - pubDate.getTime()
+                      const diffH = Math.floor(diffMs / 3600000)
+                      if (diffH < 1) return `${Math.floor(diffMs / 60000)}m ago`
+                      if (diffH < 24) return `${diffH}h ago`
+                      return `${Math.floor(diffH / 24)}d ago`
+                    })() : ''
+
+                    return (
+                      <div
+                        key={article.id}
+                        style={{
+                          padding: '14px 0 14px 16px',
+                          borderLeft: `3px solid ${sentimentColor}`,
+                          marginLeft: '-24px', paddingLeft: '21px',
+                          borderBottom: i < news.length - 1 ? '1px solid #141920' : 'none',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: 500, color: '#c9d1d9', lineHeight: 1.4, marginBottom: '6px' }}>
+                              {article.title}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              {source && <span style={{ fontSize: '11px', color: '#7b8498' }}>{source}</span>}
+                              {source && relTime && <span style={{ fontSize: '11px', color: '#3a4a60' }}>·</span>}
+                              {relTime && <span style={{ fontSize: '11px', color: '#7b8498' }}>{relTime}</span>}
+                              <span style={{
+                                fontSize: '10px', padding: '1px 7px', borderRadius: '4px',
+                                background: `${sentimentColor}14`, border: `1px solid ${sentimentColor}30`,
+                                color: sentimentColor, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px',
+                              }}>
+                                {sentiment}
+                              </span>
+                            </div>
+                          </div>
+                          {article.source_url && (
+                            <a
+                              href={article.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: '#7b8498', fontSize: '12px', textDecoration: 'none', whiteSpace: 'nowrap', paddingTop: '2px', transition: 'color 0.15s' }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = '#9ecbff')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}
+                            >
+                              View →
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* ── RIGHT COLUMN ────────────────────────────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+            {/* company overview */}
+            <div style={card}>
+              <p style={sectionTitle}>Company Overview</p>
+
+              {/* description */}
+              {summary && (
+                <div style={{ marginBottom: '20px' }}>
+                  <p style={{
+                    color: '#c9d1d9', fontSize: '13px', lineHeight: 1.7, margin: 0,
+                    display: showFullSummary ? 'block' : '-webkit-box',
+                    WebkitLineClamp: showFullSummary ? undefined : 4,
+                    WebkitBoxOrient: 'vertical' as any,
+                    overflow: showFullSummary ? 'visible' : 'hidden',
+                  }}>
+                    {summary}
+                  </p>
+                  {summary.length > SUMMARY_LIMIT && (
+                    <button
+                      onClick={() => setShowFullSummary((v) => !v)}
+                      style={{
+                        background: 'none', border: 'none', color: '#9ecbff',
+                        fontSize: '12px', cursor: 'pointer', padding: '6px 0 0',
+                      }}
+                    >
+                      {showFullSummary ? 'Show less ↑' : 'Show more ↓'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* meta rows */}
+              {[
+                { label: 'CEO', value: ceo?.name ?? '—' },
+                { label: 'Industry', value: s?.assetProfile?.industry ?? '—' },
+                { label: 'HQ', value: hq || '—' },
+                { label: 'Employees', value: s?.assetProfile?.fullTimeEmployees ? s.assetProfile.fullTimeEmployees.toLocaleString() : '—' },
+                {
+                  label: 'Website',
+                  value: s?.assetProfile?.website ?? null,
+                  link: true,
+                },
+              ].map(({ label: lbl, value, link }) => (
                 <div
+                  key={lbl}
                   style={{
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                    marginBottom: 14,
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                    padding: '9px 0', borderBottom: '1px solid #141920', gap: '12px',
                   }}
                 >
+                  <span style={{ color: '#7b8498', fontSize: '13px', flexShrink: 0 }}>{lbl}</span>
+                  {link && value ? (
+                    <a
+                      href={value as string}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#9ecbff', fontSize: '13px', textDecoration: 'none', textAlign: 'right', wordBreak: 'break-all' }}
+                    >
+                      {(value as string).replace(/^https?:\/\/(www\.)?/, '')}
+                    </a>
+                  ) : (
+                    <span style={{ color: '#c9d1d9', fontSize: '13px', textAlign: 'right' }}>{value as string}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* key statistics */}
+            <div style={card}>
+              <p style={sectionTitle}>Key Statistics</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0' }}>
+                {[
+                  { label: 'P/E Ratio', value: s?.defaultKeyStatistics?.forwardPE ? s.defaultKeyStatistics.forwardPE.toFixed(1) : (s?.defaultKeyStatistics?.trailingPE ? s.defaultKeyStatistics.trailingPE.toFixed(1) : '—') },
+                  { label: 'EPS (TTM)', value: s?.defaultKeyStatistics?.trailingEps ? fmt$(s.defaultKeyStatistics.trailingEps) : '—' },
+                  { label: 'Revenue', value: fmtLarge(s?.financialData?.totalRevenue) },
+                  { label: 'Net Income', value: fmtLarge(s?.financialData?.netIncomeToCommon) },
+                  { label: 'Div Yield', value: s?.defaultKeyStatistics?.dividendYield ? fmtPct(s.defaultKeyStatistics.dividendYield) : (s?.defaultKeyStatistics?.trailingAnnualDividendYield ? fmtPct(s.defaultKeyStatistics.trailingAnnualDividendYield) : '—') },
+                  { label: 'Beta', value: s?.defaultKeyStatistics?.beta ? s.defaultKeyStatistics.beta.toFixed(2) : '—' },
+                ].map(({ label: lbl, value }, i) => (
                   <div
+                    key={lbl}
                     style={{
-                      border: "1px solid #222833",
-                      background: "#11141b",
-                      borderRadius: 999,
-                      padding: "7px 10px",
-                      fontSize: 12,
+                      padding: '12px 0',
+                      borderBottom: i < 4 ? '1px solid #141920' : 'none',
+                      borderRight: i % 2 === 0 ? '1px solid #141920' : 'none',
+                      paddingRight: i % 2 === 0 ? '16px' : '0',
+                      paddingLeft: i % 2 === 1 ? '16px' : '0',
                     }}
                   >
-                    {formatCompactNumber(driver.viewCount)} views
+                    <div style={label}>{lbl}</div>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#e6edf3' }}>{value}</div>
                   </div>
+                ))}
+              </div>
+            </div>
 
-                  <div
-                    style={{
-                      border: "1px solid #222833",
-                      background: "#11141b",
-                      borderRadius: 999,
-                      padding: "7px 10px",
-                      fontSize: 12,
-                    }}
-                  >
-                    {formatCompactNumber(driver.likeCount)} likes
+          </div>
+        </div>
+
+        {/* ── related tickers ─────────────────────────────────────────────────── */}
+        {related.length > 0 && (
+          <div style={{ marginTop: '16px' }}>
+            <p style={{ ...sectionTitle, marginBottom: '12px' }}>You May Also Like</p>
+            <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {related.map((r) => (
+                <a
+                  key={r.symbol}
+                  href={`/t/${r.symbol}`}
+                  style={{
+                    ...card,
+                    flexShrink: 0,
+                    width: '160px',
+                    textDecoration: 'none',
+                    color: 'inherit',
+                    transition: 'border-color 0.15s',
+                    display: 'block',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3a4a60')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1e2530')}
+                >
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#e6edf3', marginBottom: '4px' }}>
+                    {r.symbol}
                   </div>
-
-                  <div
-                    style={{
-                      border: "1px solid #222833",
-                      background: "#11141b",
-                      borderRadius: 999,
-                      padding: "7px 10px",
-                      fontSize: 12,
-                    }}
-                  >
-                    {formatCompactNumber(driver.commentCount)} comments
+                  <div style={{ fontSize: '12px', color: '#7b8498', marginBottom: '8px', lineHeight: 1.3,
+                    overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
+                    {r.name}
                   </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    marginBottom: 12,
-                  }}
-                >
-                  <span
-                    style={{
-                      background: stanceBadgeColor(driver.stance),
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 999,
-                      padding: "6px 10px",
-                      fontSize: 12,
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {driver.stance}
-                  </span>
-
-                  <span style={{ fontSize: 13, color: "#cbd5e1" }}>
-                    Confidence {driver.confidence.toFixed(2)}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 14,
-                    color: "#e5e7eb",
-                    marginBottom: 12,
-                  }}
-                >
-                  Sentra contribution{" "}
-                  <span style={{ fontWeight: 700 }}>
-                    {driver.videoSentraScore.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    color: "#93c5fd",
-                    fontSize: 14,
-                  }}
-                >
-                  Open evidence page →
-                </div>
-              </Link>
-            ))}
+                  <div style={{ fontSize: '11px', color: '#7b8498' }}>
+                    {fmtLarge(r.market_cap)}
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
         )}
+
       </div>
     </div>
-  );
+  )
 }

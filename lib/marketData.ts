@@ -2,7 +2,7 @@ import YahooFinance from "yahoo-finance2";
 
 const yahooFinance = new YahooFinance();
 
-export type MarketRange = "1d" | "5d" | "1mo" | "3mo" | "1y";
+export type MarketRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y";
 
 export type MarketPoint = {
   date: string;
@@ -32,6 +32,10 @@ function getStartDate(range: MarketRange) {
 
     case "3mo":
       start.setMonth(now.getMonth() - 3);
+      return { period1: start, interval: "1d" as const };
+
+    case "6mo":
+      start.setMonth(now.getMonth() - 6);
       return { period1: start, interval: "1d" as const };
 
     case "1y":
