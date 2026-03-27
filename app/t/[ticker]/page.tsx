@@ -126,8 +126,6 @@ const RANGES: { label: string; value: MarketRange }[] = [
   { label: '1Y', value: '1y' },
 ]
 
-const SENTRA_SCORE = 50 // placeholder — Phase 4
-
 // ─── shared style tokens ──────────────────────────────────────────────────────
 
 const card: React.CSSProperties = {
@@ -166,6 +164,10 @@ export default function TickerPage() {
   const [showFullSummary, setShowFullSummary] = useState(false)
   const [news, setNews] = useState<any[]>([])
   const [loadingNews, setLoadingNews] = useState(true)
+  const [scoreData, setScoreData] = useState<{ score: number; breakdown: { news: number; sec: number; mispricing: number; reasons: string[] } } | null>(null)
+  const [loadingScore, setLoadingScore] = useState(true)
+  const [valuation, setValuation] = useState<{ analystTarget: number | null; currentPrice: number | null; analystGap: number | null; weekRange52Position: number | null; recommendation: string | null; signal: string | null } | null>(null)
+  const [loadingValuation, setLoadingValuation] = useState(true)
 
   useEffect(() => {
     if (!ticker) return
@@ -192,6 +194,24 @@ export default function TickerPage() {
       .then((r) => r.json())
       .then((d) => setNews(d.articles ?? []))
       .finally(() => setLoadingNews(false))
+  }, [ticker])
+
+  useEffect(() => {
+    if (!ticker) return
+    setLoadingScore(true)
+    fetch(`/api/score/${ticker}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.score != null) setScoreData(d) })
+      .finally(() => setLoadingScore(false))
+  }, [ticker])
+
+  useEffect(() => {
+    if (!ticker) return
+    setLoadingValuation(true)
+    fetch(`/api/valuation/${ticker}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.currentPrice != null || d.analystTarget != null) setValuation(d) })
+      .finally(() => setLoadingValuation(false))
   }, [ticker])
 
   const q = data?.quote ?? null
@@ -365,37 +385,164 @@ export default function TickerPage() {
             {/* sentra score */}
             <div style={card}>
               <p style={sectionTitle}>Sentra Score</p>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '24px' }}>
-                <span style={{ fontSize: '64px', fontWeight: 800, color: scoreColor(SENTRA_SCORE), lineHeight: 1 }}>
-                  {SENTRA_SCORE}
-                </span>
-                <span style={{ color: '#7b8498', fontSize: '22px' }}>/100</span>
-                <span style={{
-                  marginLeft: '8px', fontSize: '13px', fontWeight: 600,
-                  color: scoreColor(SENTRA_SCORE), padding: '3px 10px',
-                  borderRadius: '20px', border: `1px solid ${scoreColor(SENTRA_SCORE)}22`,
-                  background: `${scoreColor(SENTRA_SCORE)}11`,
-                }}>
-                  {scoreLabel(SENTRA_SCORE)}
-                </span>
-              </div>
+              {loadingScore ? (
+                <div style={{ height: '120px', borderRadius: '8px', background: '#1a1f2a', animation: 'pulse 1.5s ease-in-out infinite' }} />
+              ) : (() => {
+                const s = scoreData?.score ?? 50
+                const bd = scoreData?.breakdown
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '24px' }}>
+                      <span style={{ fontSize: '64px', fontWeight: 800, color: scoreColor(s), lineHeight: 1 }}>
+                        {s}
+                      </span>
+                      <span style={{ color: '#7b8498', fontSize: '22px' }}>/100</span>
+                      <span style={{
+                        marginLeft: '8px', fontSize: '13px', fontWeight: 600,
+                        color: scoreColor(s), padding: '3px 10px',
+                        borderRadius: '20px', border: `1px solid ${scoreColor(s)}22`,
+                        background: `${scoreColor(s)}11`,
+                      }}>
+                        {scoreLabel(s)}
+                      </span>
+                    </div>
 
-              {/* heat bar */}
-              <div style={{ position: 'relative', height: '6px', borderRadius: '3px', background: 'linear-gradient(to right, #f85149 0%, #d29922 50%, #3fb950 100%)', marginBottom: '24px' }}>
-                <div style={{
-                  position: 'absolute', top: '-4px',
-                  left: `calc(${SENTRA_SCORE}% - 7px)`,
-                  width: '14px', height: '14px', borderRadius: '50%',
-                  background: scoreColor(SENTRA_SCORE),
-                  border: '2.5px solid #0d1117',
-                  boxShadow: `0 0 10px ${scoreColor(SENTRA_SCORE)}88`,
-                }} />
-              </div>
+                    {/* heat bar */}
+                    <div style={{ position: 'relative', height: '6px', borderRadius: '3px', background: 'linear-gradient(to right, #f85149 0%, #d29922 50%, #3fb950 100%)', marginBottom: '24px' }}>
+                      <div style={{
+                        position: 'absolute', top: '-4px',
+                        left: `calc(${s}% - 7px)`,
+                        width: '14px', height: '14px', borderRadius: '50%',
+                        background: scoreColor(s),
+                        border: '2.5px solid #0d1117',
+                        boxShadow: `0 0 10px ${scoreColor(s)}88`,
+                      }} />
+                    </div>
 
-              <p style={{ color: '#7b8498', fontSize: '12px', margin: 0, lineHeight: 1.6 }}>
-                Signal strength based on SEC filings, insider activity, and market events.
-                Full scoring model launches in Phase 4.
-              </p>
+                    {/* breakdown */}
+                    {bd && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                        {[
+                          { key: 'News',      pts: bd.news,       max: 40, reason: bd.reasons[0] },
+                          { key: 'SEC',       pts: bd.sec,        max: 35, reason: bd.reasons[1] },
+                          { key: 'Signal',    pts: bd.mispricing, max: 25, reason: bd.reasons[2] },
+                        ].map(({ key, pts, max, reason }, i, arr) => (
+                          <div key={key} style={{
+                            padding: '10px 0',
+                            borderBottom: i < arr.length - 1 ? '1px solid #141920' : 'none',
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>{key.toUpperCase()}</span>
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: '#c9d1d9' }}>{pts}<span style={{ color: '#7b8498', fontWeight: 400 }}>/{max}</span></span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#7b8498', lineHeight: 1.5 }}>{reason}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+
+            {/* fair value & valuation */}
+            <div style={card}>
+              <p style={sectionTitle}>Fair Value &amp; Valuation</p>
+              {loadingValuation ? (
+                <div style={{ height: '130px', borderRadius: '8px', background: '#1a1f2a', animation: 'pulse 1.5s ease-in-out infinite' }} />
+              ) : !valuation ? (
+                <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>Valuation data unavailable.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+
+                  {/* signal badge */}
+                  {valuation.signal && (() => {
+                    const sigColor =
+                      valuation.signal === 'undervalued' ? '#3fb950' :
+                      valuation.signal === 'overvalued'  ? '#f85149' : '#d29922'
+                    return (
+                      <div style={{ marginBottom: '20px' }}>
+                        <span style={{
+                          fontSize: '12px', fontWeight: 600, padding: '4px 12px',
+                          borderRadius: '20px', textTransform: 'uppercase' as const,
+                          letterSpacing: '0.8px', color: sigColor,
+                          border: `1px solid ${sigColor}33`, background: `${sigColor}11`,
+                        }}>
+                          {valuation.signal}
+                        </span>
+                      </div>
+                    )
+                  })()}
+
+                  {/* analyst target row */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #141920' }}>
+                    <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>ANALYST TARGET</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 600, color: '#e6edf3' }}>
+                        {valuation.analystTarget != null ? fmt$(valuation.analystTarget) : '—'}
+                      </span>
+                      {valuation.analystGap != null && (
+                        <span style={{
+                          fontSize: '12px', fontWeight: 600,
+                          color: valuation.analystGap >= 0 ? '#3fb950' : '#f85149',
+                        }}>
+                          {valuation.analystGap >= 0 ? '+' : ''}{valuation.analystGap}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* current price row */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #141920' }}>
+                    <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>CURRENT PRICE</span>
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: '#e6edf3' }}>
+                      {valuation.currentPrice != null ? fmt$(valuation.currentPrice) : '—'}
+                    </span>
+                  </div>
+
+                  {/* 52-week range bar */}
+                  <div style={{ padding: '14px 0', borderBottom: '1px solid #141920' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>52-WEEK RANGE</span>
+                      {valuation.weekRange52Position != null && (
+                        <span style={{ fontSize: '11px', color: '#7b8498' }}>{valuation.weekRange52Position}% of range</span>
+                      )}
+                    </div>
+                    <div style={{ position: 'relative', height: '5px', borderRadius: '3px', background: '#1e2530' }}>
+                      {valuation.weekRange52Position != null && (
+                        <div style={{
+                          position: 'absolute', top: '-4px',
+                          left: `calc(${Math.min(100, Math.max(0, valuation.weekRange52Position))}% - 6px)`,
+                          width: '13px', height: '13px', borderRadius: '50%',
+                          background: '#9ecbff', border: '2px solid #0d1117',
+                        }} />
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                      <span style={{ fontSize: '11px', color: '#7b8498' }}>{fmt$(q?.fiftyTwoWeekLow)}</span>
+                      <span style={{ fontSize: '11px', color: '#7b8498' }}>{fmt$(q?.fiftyTwoWeekHigh)}</span>
+                    </div>
+                  </div>
+
+                  {/* recommendation row */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
+                    <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>ANALYST REC.</span>
+                    {valuation.recommendation ? (() => {
+                      const recColor =
+                        valuation.recommendation === 'Strong Buy' ? '#3fb950' :
+                        valuation.recommendation === 'Buy'        ? '#52d175' :
+                        valuation.recommendation === 'Hold'       ? '#d29922' :
+                        valuation.recommendation === 'Sell'       ? '#f85149' : '#f85149'
+                      return (
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: recColor }}>
+                          {valuation.recommendation}
+                        </span>
+                      )
+                    })() : <span style={{ fontSize: '13px', color: '#7b8498' }}>—</span>}
+                  </div>
+
+                </div>
+              )}
             </div>
 
             {/* SEC filings */}

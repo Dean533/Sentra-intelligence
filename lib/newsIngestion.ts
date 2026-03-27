@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { SupabaseClient } from '@supabase/supabase-js'
 
 // ── sentiment ──────────────────────────────────────────────────────────────────
 
@@ -65,8 +65,10 @@ async function fetchFeed(url: string): Promise<RSSItem[]> {
 
 export async function ingestTicker(
   ticker: string,
-  supabase: ReturnType<typeof createClient>
+  supabase: SupabaseClient<any, any, any>
 ): Promise<{ inserted: number; total_found: number; articles: any[] }> {
+  ticker = ticker.trim().toUpperCase()
+
   const articles: RSSItem[] = []
 
   // Source 1: Google News RSS
@@ -83,7 +85,15 @@ export async function ingestTicker(
     items.forEach((i) => articles.push({ ...i, sourceName: 'Benzinga' }))
   } catch { /* Benzinga returns 404 for many tickers — expected */ }
 
-  const total_found = articles.length
+  // Deduplicate within this batch (same URL from Google + Benzinga)
+  const seenInBatch = new Set<string>()
+  const uniqueArticles = articles.filter((a) => {
+    if (!a.link || seenInBatch.has(a.link)) return false
+    seenInBatch.add(a.link)
+    return true
+  })
+
+  const total_found = uniqueArticles.length
 
   // Always return existing DB articles even if no new ones fetched
   if (total_found === 0) {
@@ -97,15 +107,16 @@ export async function ingestTicker(
     return { inserted: 0, total_found: 0, articles: data ?? [] }
   }
 
-  // Deduplication against existing events
-  const urls = articles.map((a) => a.link).filter(Boolean)
+  // Deduplication against existing events for this ticker
+  const urls = uniqueArticles.map((a) => a.link).filter(Boolean)
   const { data: existing } = await supabase
     .from('events')
     .select('source_url')
+    .eq('ticker', ticker)
     .in('source_url', urls)
   const seenUrls = new Set((existing ?? []).map((e: any) => e.source_url))
 
-  const newRows = articles
+  const newRows = uniqueArticles
     .filter((a) => !seenUrls.has(a.link))
     .map((a) => {
       const sentiment = sentimentLabel(a.title)
@@ -124,7 +135,7 @@ export async function ingestTicker(
     })
 
   if (newRows.length > 0) {
-    await supabase.from('events').insert(newRows)
+    await supabase.from('events').upsert(newRows, { onConflict: 'ticker,source_url', ignoreDuplicates: true })
   }
 
   // Return latest 8 from DB (includes newly inserted)

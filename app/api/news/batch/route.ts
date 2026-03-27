@@ -12,7 +12,6 @@ function sleep(ms: number) {
 }
 
 export async function GET() {
-  // Fetch all tickers from DB
   const { data: rows, error } = await supabase
     .from('tickers')
     .select('symbol')
@@ -23,25 +22,23 @@ export async function GET() {
   }
 
   const symbols = (rows ?? []).map((r: any) => r.symbol as string)
-  const results: { ticker: string; inserted: number; total_found: number }[] = []
+  let success = 0
+  let failed = 0
 
-  for (const symbol of symbols) {
-    try {
-      const r = await ingestTicker(symbol, supabase)
-      results.push({ ticker: symbol, inserted: r.inserted, total_found: r.total_found })
-    } catch {
-      results.push({ ticker: symbol, inserted: 0, total_found: 0 })
+  for (let i = 0; i < symbols.length; i += 5) {
+    const batch = symbols.slice(i, i + 5)
+
+    const results = await Promise.allSettled(
+      batch.map((symbol) => ingestTicker(symbol, supabase))
+    )
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') success++
+      else failed++
     }
-    await sleep(1000)
+
+    if (i + 5 < symbols.length) await sleep(1000)
   }
 
-  const totalInserted = results.reduce((s, r) => s + r.inserted, 0)
-  const totalFound    = results.reduce((s, r) => s + r.total_found, 0)
-
-  return NextResponse.json({
-    tickers_processed: symbols.length,
-    total_inserted: totalInserted,
-    total_found: totalFound,
-    results,
-  })
+  return NextResponse.json({ total: symbols.length, success, failed })
 }

@@ -48,7 +48,8 @@ function sentimentColor(s: string | undefined): string {
 function eventBorderColor(ev: EventItem): string {
   if (ev.event_type === 'news') return sentimentColor(parseMeta(ev.raw_text).sentiment)
   // SEC: derive from items
-  const items: string[] = parseMeta(ev.raw_text).items ?? []
+  const parsed = parseMeta(ev.raw_text)
+  const items: string[] = Array.isArray(parsed?.items) ? parsed.items : []
   if (items.includes('2.02')) return '#3fb950'
   if (items.some((i) => ['5.02', '5.01', '2.05'].includes(i))) return '#d29922'
   if (items.some((i) => ['4.01', '4.02'].includes(i))) return '#f85149'

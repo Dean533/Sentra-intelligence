@@ -8,7 +8,7 @@ const NAV_LINKS = [
   { label: 'Signals', href: '/signals' },
   { label: 'Narratives', href: '/narratives' },
   { label: 'Top 10', href: '/top' },
-  { label: 'Sources', href: '/sources' },
+  { label: 'About', href: '/about' },
 ]
 
 export default function Navbar() {
