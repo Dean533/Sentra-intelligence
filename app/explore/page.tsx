@@ -152,7 +152,7 @@ export default function ExplorePage() {
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search any ticker… e.g. NVDA, AAPL, UBER"
+          placeholder="Search by ticker or company name… NVDA, Apple, Tesla"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={handleKeyDown}

@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation'
 const NAV_LINKS = [
   { label: 'Explore', href: '/explore' },
   { label: 'Signals', href: '/signals' },
-  { label: 'Narratives', href: '/narratives' },
   { label: 'Top 10', href: '/top' },
   { label: 'About', href: '/about' },
 ]
@@ -15,63 +14,54 @@ export default function Navbar() {
   const pathname = usePathname()
 
   return (
-    <nav
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '0 40px',
-        height: '56px',
-        borderBottom: '1px solid #1e2530',
-        background: '#0a0e14',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-      }}
-    >
-      {/* logo */}
-      <Link
-        href="/"
-        style={{
-          color: 'white',
-          textDecoration: 'none',
-          fontWeight: 800,
-          fontSize: '17px',
-          letterSpacing: '-0.3px',
-          marginRight: '16px',
-        }}
-      >
+    <nav style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 100,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 40px',
+      height: '60px',
+      background: 'transparent',
+      borderBottom: '1px solid rgba(255,255,255,0.05)',
+    }}>
+      <Link href="/" style={{
+        color: '#fff',
+        textDecoration: 'none',
+        fontWeight: 700,
+        fontSize: '16px',
+        letterSpacing: '-0.3px',
+      }}>
         Sentra
       </Link>
 
-      {/* nav links */}
-      {NAV_LINKS.map(({ label, href }) => {
-        const active = pathname === href || (href !== '/' && pathname.startsWith(href))
-        return (
-          <Link
-            key={href}
-            href={href}
-            style={{
-              color: active ? '#ffffff' : '#7b8498',
-              textDecoration: 'none',
-              fontSize: '14px',
-              fontWeight: active ? 600 : 400,
-              padding: '6px 12px',
-              borderRadius: '6px',
-              background: active ? 'rgba(255,255,255,0.07)' : 'transparent',
-              transition: 'color 0.15s, background 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              if (!active) e.currentTarget.style.color = '#c9d1d9'
-            }}
-            onMouseLeave={(e) => {
-              if (!active) e.currentTarget.style.color = '#7b8498'
-            }}
-          >
-            {label}
-          </Link>
-        )
-      })}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        {NAV_LINKS.map(({ label, href }) => {
+          const active = pathname === href || (href !== '/' && pathname.startsWith(href))
+          return (
+            <Link
+              key={href}
+              href={href}
+              style={{
+                color: active ? '#fff' : '#6b7280',
+                textDecoration: 'none',
+                fontSize: '14px',
+                fontWeight: active ? 500 : 400,
+                padding: '6px 14px',
+                borderRadius: '6px',
+                transition: 'color 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#fff' }}
+              onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = '#6b7280' }}
+            >
+              {label}
+            </Link>
+          )
+        })}
+      </div>
     </nav>
   )
 }
