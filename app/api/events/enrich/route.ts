@@ -50,7 +50,7 @@ async function fetchHistory(symbol: string, from: Date, to: Date): Promise<HistR
       period1: from,
       period2: to,
       interval: '1d',
-    })
+    }) as any[]
     return rows.map((r) => ({
       date: r.date,
       close: r.adjClose ?? r.close,
