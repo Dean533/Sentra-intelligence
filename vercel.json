@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/ingest/news-all",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/ingest/sec-all",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/scores/compute-all",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/events/enrich",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}

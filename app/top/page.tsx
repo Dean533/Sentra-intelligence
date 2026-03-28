@@ -71,7 +71,9 @@ function TickerCard({ row, rank }: { row: SignalRow; rank: number }) {
       <div
         style={{
           background: hovered ? '#111620' : '#0d1117',
-          border: `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
+          borderTop: `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
+          borderRight: `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
+          borderBottom: `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
           borderLeft: `3px solid ${borderColor}`,
           borderRadius: '10px',
           padding: '16px 20px',
