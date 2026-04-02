@@ -4,11 +4,12 @@ export function authorizeCron(req: Request): NextResponse | null {
   if (process.env.NODE_ENV === 'development') return null
 
   const secret = process.env.CRON_SECRET
-  const auth   = req.headers.get('authorization')
+  if (!secret) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  if (!secret || auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const auth        = req.headers.get('authorization')
+  const querySecret = new URL(req.url).searchParams.get('secret')
 
-  return null
+  if (auth === `Bearer ${secret}` || querySecret === secret) return null
+
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 }
