@@ -12,6 +12,8 @@ const SEC_HEADERS = {
   Accept: 'application/json, text/xml, */*',
 }
 
+const XML_FETCH_CAP = 200
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
@@ -21,9 +23,6 @@ function padCik(cik: string | number) {
 }
 
 // ─── XML helpers ─────────────────────────────────────────────────────────────
-// Form 4 XML uses two patterns:
-//   Direct:  <rptOwnerName>COOK TIMOTHY D</rptOwnerName>
-//   Nested:  <transactionShares><value>1000</value></transactionShares>
 
 function decodeEntities(s: string): string {
   return s
@@ -83,7 +82,7 @@ function parseForm4(xml: string): ParsedTx[] {
 
   for (const block of txBlocks) {
     const code = directVal(block, 'transactionCode')
-    if (code !== 'P') continue   // open market purchases only
+    if (code !== 'P') continue
 
     const dateStr        = nestedVal(block, 'transactionDate')
     const sharesStr      = nestedVal(block, 'transactionShares')
@@ -94,7 +93,7 @@ function parseForm4(xml: string): ParsedTx[] {
     const price  = priceStr  ? parseFloat(priceStr)  : 0
 
     if (!dateStr || shares <= 0 || price <= 0) continue
-    if (shares * price < 10_000) continue   // skip trivial buys under $10k
+    if (shares * price < 10_000) continue
 
     results.push({
       insiderName,
@@ -114,27 +113,181 @@ function parseForm4(xml: string): ParsedTx[] {
   return results
 }
 
-// ─── filing index lookup ─────────────────────────────────────────────────────
-// primaryDocument in submissions JSON points to the XSLT viewer (xslF345X0*),
-// not the raw XML. We fetch index.json to find the real document.
+// ─── process a single filing ─────────────────────────────────────────────────
+
+let skipLogCount = 0
 
 async function findRawXmlUrl(cikInt: number, adshClean: string): Promise<string | null> {
-  const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/index.json`
-  const res = await fetch(indexUrl, { headers: SEC_HEADERS })
-  if (!res.ok) return null
-
-  const json = await res.json()
-  const items: { name: string; href?: string }[] = json?.directory?.item ?? []
-
-  const rawXml = items.find(
-    (f) => f.name.toLowerCase().endsWith('.xml') && !f.name.toLowerCase().includes('xsl')
+  const res = await fetch(
+    `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/index.json`,
+    { headers: SEC_HEADERS }
   )
-  if (!rawXml) return null
-
-  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${rawXml.name}`
+  if (!res.ok) return null
+  const items: { name: string }[] = (await res.json())?.directory?.item ?? []
+  const f = items.find((i) => i.name.toLowerCase().endsWith('.xml') && !i.name.toLowerCase().includes('xsl'))
+  return f ? `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${f.name}` : null
 }
 
-// ─── per-ticker ingestion ─────────────────────────────────────────────────────
+async function processFiling(
+  ticker: string,
+  cikInt: number,
+  adsh: string,
+  primaryDoc: string | null,
+  filedDate: string
+): Promise<{ inserted: number; skipped: number }> {
+  const adshClean = adsh.replace(/-/g, '')
+  const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${adsh}-index.htm`
+
+  const xmlUrl = primaryDoc
+    ? `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${primaryDoc}`
+    : await findRawXmlUrl(cikInt, adshClean)
+  if (!xmlUrl) return { inserted: 0, skipped: 1 }
+
+  await sleep(20)
+
+  const xmlRes = await fetch(xmlUrl, { headers: SEC_HEADERS })
+  if (!xmlRes.ok) return { inserted: 0, skipped: 1 }
+
+  const xml = await xmlRes.text()
+
+  if (!xml.includes('<ownershipDocument') && !xml.includes('<rptOwnerName')) {
+    return { inserted: 0, skipped: 1 }
+  }
+
+  const allTxBlocks = allBlocks(xml, 'nonDerivativeTransaction')
+  const codes = allTxBlocks.map((b) => directVal(b, 'transactionCode')).filter(Boolean)
+
+  const transactions = parseForm4(xml)
+  if (transactions.length === 0) {
+    if (skipLogCount < 5) {
+      skipLogCount++
+      const reasons = allTxBlocks.length === 0
+        ? 'no nonDerivativeTx blocks'
+        : allTxBlocks.map((block) => {
+            const code = directVal(block, 'transactionCode')
+            if (code !== 'P') return `code=${code}`
+            const shares = parseFloat(nestedVal(block, 'transactionShares') ?? '0')
+            const price  = parseFloat(nestedVal(block, 'transactionPricePerShare') ?? '0')
+            if (shares <= 0 || price <= 0) return `missing shares/price`
+            return `under $10k ($${Math.round(shares * price).toLocaleString()})`
+          }).join(' | ')
+      console.log(`[skip] ${ticker} ${adsh} — codes: [${codes.join(', ')}] — ${reasons}`)
+    }
+    return { inserted: 0, skipped: 1 }
+  }
+
+  let inserted = 0
+
+  for (const tx of transactions) {
+    const payload = {
+      ticker,
+      insider_name:       tx.insiderName,
+      role:               tx.role,
+      is_director:        tx.isDirector,
+      is_officer:         tx.isOfficer,
+      officer_title:      tx.officerTitle,
+      transaction_date:   tx.transactionDate,
+      transaction_code:   tx.transactionCode,
+      shares:             tx.shares,
+      price_per_share:    tx.pricePerShare,
+      total_value:        tx.totalValue,
+      shares_owned_after: tx.sharesOwnedAfter,
+      accession_number:   adsh,
+      filed_date:         filedDate,
+      source_url:         sourceUrl,
+    }
+
+    const { error: insertErr } = await supabase
+      .from('insider_transactions')
+      .insert([payload])
+
+    if (insertErr) continue
+
+    await supabase.from('events').upsert({
+      ticker,
+      event_type:   'insider',
+      title:        `${tx.insiderName} purchased ${tx.shares.toLocaleString()} shares of ${ticker}`,
+      summary:      `${tx.role} · ${tx.shares.toLocaleString()} shares @ $${tx.pricePerShare.toFixed(2)} · Total $${(tx.totalValue / 1000).toFixed(0)}K`,
+      source_url:   sourceUrl,
+      published_at: tx.transactionDate,
+      event_date:   tx.transactionDate,
+      raw_text:     JSON.stringify({
+        form:            '4',
+        insiderName:     tx.insiderName,
+        role:            tx.role,
+        transactionCode: tx.transactionCode,
+        shares:          tx.shares,
+        price:           tx.pricePerShare,
+        totalValue:      tx.totalValue,
+        adsh,
+      }),
+    }, { onConflict: 'ticker,source_url', ignoreDuplicates: true })
+
+    inserted++
+  }
+
+  return { inserted, skipped: inserted === 0 ? 1 : 0 }
+}
+
+// ─── EDGAR full-text search fetcher ─────────────────────────────────────────
+// Returns only filings for tracked tickers, capped at XML_FETCH_CAP entries.
+
+type FeedEntry = { cik: number; adsh: string; primaryDoc: string; filedDate: string }
+
+async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, string>): Promise<FeedEntry[]> {
+  const base = `https://efts.sec.gov/LATEST/search-index?forms=4&dateRange=custom&startdt=${today}&enddt=${today}`
+  const PAGE_SIZE = 50
+  const results: FeedEntry[] = []
+
+  function extractHits(json: any): boolean {
+    // Returns true if we hit the cap and should stop paginating
+    const hits: any[] = json?.hits?.hits ?? []
+    for (const hit of hits) {
+      if (results.length >= XML_FETCH_CAP) return true
+
+      // _id format: "0001234567-24-000001:somefile.xml"
+      const rawId     = (hit._id as string | undefined) ?? ''
+      const [adsh, primaryDoc] = rawId.split(':')
+      if (!adsh || !primaryDoc) continue
+
+      const src       = hit._source ?? {}
+      const filedDate: string = src.file_date ?? today
+
+      // "ciks" is an array of zero-padded CIK strings; find first that matches our tickers
+      const cikList: string[] = Array.isArray(src.ciks) ? src.ciks : []
+      let cik = 0
+      for (const c of cikList) {
+        const parsed = parseInt(c, 10)
+        if (cikToTicker[parsed]) { cik = parsed; break }
+      }
+      if (!cik) continue
+
+      results.push({ cik, adsh, primaryDoc, filedDate })
+    }
+    return results.length >= XML_FETCH_CAP
+  }
+
+  const firstRes = await fetch(`${base}&from=0&size=${PAGE_SIZE}`, { headers: SEC_HEADERS })
+  if (!firstRes.ok) throw new Error(`EDGAR search failed: ${firstRes.status}`)
+
+  const firstJson = await firstRes.json()
+  const total: number = firstJson?.hits?.total?.value ?? 0
+  const capped = extractHits(firstJson)
+
+  if (!capped) {
+    const pages = Math.ceil(total / PAGE_SIZE)
+    for (let page = 1; page < pages; page++) {
+      await sleep(200)
+      const res = await fetch(`${base}&from=${page * PAGE_SIZE}&size=${PAGE_SIZE}`, { headers: SEC_HEADERS })
+      if (!res.ok) break
+      if (extractHits(await res.json())) break
+    }
+  }
+
+  return results
+}
+
+// ─── single-ticker fallback (for ?ticker= manual testing) ────────────────────
 
 async function ingestTickerInsiders(
   ticker: string,
@@ -165,77 +318,11 @@ async function ingestTickerInsiders(
     const adsh = adshList[i]
     if (!adsh) { skipped++; continue }
 
-    const adshClean = adsh.replace(/-/g, '')
-    const cikInt    = parseInt(cikStr, 10)
-    const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${adsh}-index.htm`
+    await sleep(150)
 
-    await sleep(100)
-
-    const xmlUrl = await findRawXmlUrl(cikInt, adshClean)
-    if (!xmlUrl) { skipped++; continue }
-
-    await sleep(100)
-
-    const xmlRes = await fetch(xmlUrl, { headers: SEC_HEADERS })
-    if (!xmlRes.ok) { skipped++; continue }
-
-    const xml = await xmlRes.text()
-
-    if (!xml.includes('<ownershipDocument') && !xml.includes('<rptOwnerName')) {
-      skipped++
-      continue
-    }
-
-    const transactions = parseForm4(xml)
-    if (transactions.length === 0) { skipped++; continue }
-
-    for (const tx of transactions) {
-      const payload = {
-        ticker,
-        insider_name:       tx.insiderName,
-        role:               tx.role,
-        is_director:        tx.isDirector,
-        is_officer:         tx.isOfficer,
-        officer_title:      tx.officerTitle,
-        transaction_date:   tx.transactionDate,
-        transaction_code:   tx.transactionCode,
-        shares:             tx.shares,
-        price_per_share:    tx.pricePerShare,
-        total_value:        tx.totalValue,
-        shares_owned_after: tx.sharesOwnedAfter,
-        accession_number:   adsh,
-        filed_date:         dates[i],
-        source_url:         sourceUrl,
-      }
-
-      const { error: insertErr } = await supabase
-        .from('insider_transactions')
-        .insert([payload])
-
-      if (insertErr) continue
-
-      await supabase.from('events').upsert({
-        ticker,
-        event_type:   'insider',
-        title:        `${tx.insiderName} purchased ${tx.shares.toLocaleString()} shares of ${ticker}`,
-        summary:      `${tx.role} · ${tx.shares.toLocaleString()} shares @ $${tx.pricePerShare.toFixed(2)} · Total $${(tx.totalValue / 1000).toFixed(0)}K`,
-        source_url:   sourceUrl,
-        published_at: tx.transactionDate,
-        event_date:   tx.transactionDate,
-        raw_text:     JSON.stringify({
-          form:            '4',
-          insiderName:     tx.insiderName,
-          role:            tx.role,
-          transactionCode: tx.transactionCode,
-          shares:          tx.shares,
-          price:           tx.pricePerShare,
-          totalValue:      tx.totalValue,
-          adsh,
-        }),
-      }, { onConflict: 'ticker,source_url', ignoreDuplicates: true })
-
-      inserted++
-    }
+    const result = await processFiling(ticker, parseInt(cikStr, 10), adsh, null, dates[i])
+    inserted += result.inserted
+    skipped  += result.skipped
   }
 
   return { inserted, skipped }
@@ -257,56 +344,73 @@ export async function GET(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const symbols   = (tickerRows ?? []).map((r: any) => r.symbol as string)
-  const symbolSet = new Set(symbols)
+  const symbolSet = new Set((tickerRows ?? []).map((r: any) => r.symbol as string))
 
   const cikRes = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS })
   if (!cikRes.ok) return NextResponse.json({ error: 'Failed to fetch CIK map' }, { status: 502 })
 
   const cikRaw: Record<string, { cik_str: string; ticker: string }> = await cikRes.json()
+
   const tickerToCik: Record<string, string> = {}
+  const cikToTicker: Record<number, string> = {}
   for (const entry of Object.values(cikRaw)) {
-    if (symbolSet.has(entry.ticker)) tickerToCik[entry.ticker] = entry.cik_str
+    if (symbolSet.has(entry.ticker)) {
+      tickerToCik[entry.ticker] = entry.cik_str
+      cikToTicker[parseInt(entry.cik_str, 10)] = entry.ticker
+    }
   }
 
-  const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-  const allEntries = Object.entries(tickerToCik)
-  const entries    = singleTicker
-    ? allEntries.filter(([t]) => t === singleTicker)
-    : allEntries
-
-  if (singleTicker && entries.length === 0) {
-    return NextResponse.json({ error: `Ticker ${singleTicker} not found in CIK map` }, { status: 404 })
+  // ── single-ticker mode ────────────────────────────────────────────────────
+  if (singleTicker) {
+    const cikStr = tickerToCik[singleTicker]
+    if (!cikStr) {
+      return NextResponse.json({ error: `Ticker ${singleTicker} not found in CIK map` }, { status: 404 })
+    }
+    const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const { inserted, skipped } = await ingestTickerInsiders(singleTicker, cikStr, cutoffDate)
+    return NextResponse.json({ ticker: singleTicker, inserted, skipped })
   }
+
+  // ── full-text search mode (normal cron path) ─────────────────────────────
+  const today      = searchParams.get('date') ?? new Date().toISOString().split('T')[0]
+  const batchParam = searchParams.get('batch')
+  const batch      = batchParam !== null ? Math.max(0, Math.min(3, parseInt(batchParam, 10))) : null
+
+  let entries: FeedEntry[]
+  try {
+    entries = await fetchTodaysForm4s(today, cikToTicker)
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message ?? 'Search fetch failed' }, { status: 502 })
+  }
+
+  const BATCH_SIZE = 50
+  const slice = batch !== null
+    ? entries.slice(batch * BATCH_SIZE, (batch + 1) * BATCH_SIZE)
+    : entries
 
   let totalInserted = 0
   let totalSkipped  = 0
   let failed        = 0
 
-  for (let i = 0; i < entries.length; i += 5) {
-    const batch = entries.slice(i, i + 5)
-
-    const results = await Promise.allSettled(
-      batch.map(([ticker, cikStr]) => ingestTickerInsiders(ticker, cikStr, cutoffDate))
-    )
-
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        totalInserted += r.value.inserted
-        totalSkipped  += r.value.skipped
-      } else {
-        failed++
-      }
+  for (const entry of slice) {
+    const ticker = cikToTicker[entry.cik]
+    try {
+      await sleep(150)
+      const { inserted, skipped } = await processFiling(ticker, entry.cik, entry.adsh, entry.primaryDoc, entry.filedDate)
+      totalInserted += inserted
+      totalSkipped  += skipped
+    } catch {
+      failed++
     }
-
-    if (i + 5 < entries.length) await sleep(1000)
   }
 
   return NextResponse.json({
-    total:    entries.length,
-    inserted: totalInserted,
-    skipped:  totalSkipped,
+    date:          today,
+    total_fetched: entries.length,
+    batch:         batch,
+    processed:     slice.length,
+    inserted:      totalInserted,
+    skipped:       totalSkipped,
     failed,
   })
 }
