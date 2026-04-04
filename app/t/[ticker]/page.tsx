@@ -45,17 +45,6 @@ function fmtDate(s: string | null | undefined) {
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function scoreColor(s: number) {
-  if (s >= 65) return '#3fb950'
-  if (s >= 35) return '#d29922'
-  return '#f85149'
-}
-
-function scoreLabel(s: number) {
-  if (s >= 65) return 'Bullish'
-  if (s >= 35) return 'Neutral'
-  return 'Bearish'
-}
 
 const ITEM_LABELS: Record<string, string> = {
   '1.01': 'Material Agreement',
@@ -143,13 +132,6 @@ const label: React.CSSProperties = {
   marginBottom: '4px',
 }
 
-const sectionTitle: React.CSSProperties = {
-  fontSize: '11px',
-  letterSpacing: '2px',
-  color: '#7b8498',
-  margin: '0 0 20px',
-  textTransform: 'uppercase' as const,
-}
 
 // ─── component ────────────────────────────────────────────────────────────────
 
@@ -165,10 +147,6 @@ export default function TickerPage() {
   const [showFullSummary, setShowFullSummary] = useState(false)
   const [news, setNews] = useState<any[]>([])
   const [loadingNews, setLoadingNews] = useState(true)
-  const [scoreData, setScoreData] = useState<{ score: number; breakdown: { news: number; sec: number; mispricing: number; reasons: string[] } } | null>(null)
-  const [loadingScore, setLoadingScore] = useState(true)
-  const [valuation, setValuation] = useState<{ analystTarget: number | null; currentPrice: number | null; analystGap: number | null; weekRange52Position: number | null; recommendation: string | null; signal: string | null } | null>(null)
-  const [loadingValuation, setLoadingValuation] = useState(true)
 
   useEffect(() => {
     if (!ticker) return
@@ -197,23 +175,6 @@ export default function TickerPage() {
       .finally(() => setLoadingNews(false))
   }, [ticker])
 
-  useEffect(() => {
-    if (!ticker) return
-    setLoadingScore(true)
-    fetch(`/api/score/${ticker}`)
-      .then((r) => r.json())
-      .then((d) => { if (d.score != null) setScoreData(d) })
-      .finally(() => setLoadingScore(false))
-  }, [ticker])
-
-  useEffect(() => {
-    if (!ticker) return
-    setLoadingValuation(true)
-    fetch(`/api/valuation/${ticker}`)
-      .then((r) => r.json())
-      .then((d) => { if (d.currentPrice != null || d.analystTarget != null) setValuation(d) })
-      .finally(() => setLoadingValuation(false))
-  }, [ticker])
 
   const q = data?.quote ?? null
   const s = data?.summary ?? null
@@ -241,6 +202,19 @@ export default function TickerPage() {
         <div style={{ color: '#7b8498', fontSize: '14px', letterSpacing: '1px' }}>LOADING {ticker}…</div>
       </div>
     )
+  }
+
+  const sec: React.CSSProperties = {
+    padding: '40px 0',
+    borderBottom: '1px solid #1e2530',
+  }
+
+  const secTitle: React.CSSProperties = {
+    fontSize: '11px',
+    letterSpacing: '2px',
+    color: '#7b8498',
+    textTransform: 'uppercase' as const,
+    margin: '0 0 24px',
   }
 
   return (
@@ -377,473 +351,244 @@ export default function TickerPage() {
           ))}
         </div>
 
-        {/* ── two-column main section ─────────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: '16px', alignItems: 'start' }}>
+        {/* ── 2. MISPRICING WIDGET — full width ───────────────────────────────── */}
+        <div style={{ padding: '32px 0', borderBottom: '1px solid #1e2530' }}>
+          <MispricingWidget ticker={ticker} />
+        </div>
 
-          {/* ── LEFT COLUMN ─────────────────────────────────────────────────── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* ── 3. COMPANY INFO ROW ─────────────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr', ...sec, gap: '0' }}>
 
-            {/* sentra score */}
-            <div style={card}>
-              <p style={sectionTitle}>Sentra Score</p>
-              {loadingScore ? (
-                <div style={{ height: '120px', borderRadius: '8px', background: '#1a1f2a', animation: 'pulse 1.5s ease-in-out infinite' }} />
-              ) : (() => {
-                const s = scoreData?.score ?? 50
-                const bd = scoreData?.breakdown
-                return (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '24px' }}>
-                      <span style={{ fontSize: '64px', fontWeight: 800, color: scoreColor(s), lineHeight: 1 }}>
-                        {s}
-                      </span>
-                      <span style={{ color: '#7b8498', fontSize: '22px' }}>/100</span>
-                      <span style={{
-                        marginLeft: '8px', fontSize: '13px', fontWeight: 600,
-                        color: scoreColor(s), padding: '3px 10px',
-                        borderRadius: '20px', border: `1px solid ${scoreColor(s)}22`,
-                        background: `${scoreColor(s)}11`,
-                      }}>
-                        {scoreLabel(s)}
-                      </span>
-                    </div>
-
-                    {/* heat bar */}
-                    <div style={{ position: 'relative', height: '6px', borderRadius: '3px', background: 'linear-gradient(to right, #f85149 0%, #d29922 50%, #3fb950 100%)', marginBottom: '24px' }}>
-                      <div style={{
-                        position: 'absolute', top: '-4px',
-                        left: `calc(${s}% - 7px)`,
-                        width: '14px', height: '14px', borderRadius: '50%',
-                        background: scoreColor(s),
-                        border: '2.5px solid #0d1117',
-                        boxShadow: `0 0 10px ${scoreColor(s)}88`,
-                      }} />
-                    </div>
-
-                    {/* breakdown */}
-                    {bd && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-                        {[
-                          { key: 'News',      pts: bd.news,       max: 40, reason: bd.reasons[0] },
-                          { key: 'SEC',       pts: bd.sec,        max: 35, reason: bd.reasons[1] },
-                          { key: 'Signal',    pts: bd.mispricing, max: 25, reason: bd.reasons[2] },
-                        ].map(({ key, pts, max, reason }, i, arr) => (
-                          <div key={key} style={{
-                            padding: '10px 0',
-                            borderBottom: i < arr.length - 1 ? '1px solid #141920' : 'none',
-                          }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                              <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>{key.toUpperCase()}</span>
-                              <span style={{ fontSize: '12px', fontWeight: 600, color: '#c9d1d9' }}>{pts}<span style={{ color: '#7b8498', fontWeight: 400 }}>/{max}</span></span>
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#7b8498', lineHeight: 1.5 }}>{reason}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )
-              })()}
-            </div>
-
-            {/* fair value & valuation */}
-            <div style={card}>
-              <p style={sectionTitle}>Fair Value &amp; Valuation</p>
-              {loadingValuation ? (
-                <div style={{ height: '130px', borderRadius: '8px', background: '#1a1f2a', animation: 'pulse 1.5s ease-in-out infinite' }} />
-              ) : !valuation ? (
-                <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>Valuation data unavailable.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-
-                  {/* signal badge */}
-                  {valuation.signal && (() => {
-                    const sigColor =
-                      valuation.signal === 'undervalued' ? '#3fb950' :
-                      valuation.signal === 'overvalued'  ? '#f85149' : '#d29922'
-                    return (
-                      <div style={{ marginBottom: '20px' }}>
-                        <span style={{
-                          fontSize: '12px', fontWeight: 600, padding: '4px 12px',
-                          borderRadius: '20px', textTransform: 'uppercase' as const,
-                          letterSpacing: '0.8px', color: sigColor,
-                          border: `1px solid ${sigColor}33`, background: `${sigColor}11`,
-                        }}>
-                          {valuation.signal}
-                        </span>
-                      </div>
-                    )
-                  })()}
-
-                  {/* analyst target row */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #141920' }}>
-                    <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>ANALYST TARGET</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: 600, color: '#e6edf3' }}>
-                        {valuation.analystTarget != null ? fmt$(valuation.analystTarget) : '—'}
-                      </span>
-                      {valuation.analystGap != null && (
-                        <span style={{
-                          fontSize: '12px', fontWeight: 600,
-                          color: valuation.analystGap >= 0 ? '#3fb950' : '#f85149',
-                        }}>
-                          {valuation.analystGap >= 0 ? '+' : ''}{valuation.analystGap}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* current price row */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #141920' }}>
-                    <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>CURRENT PRICE</span>
-                    <span style={{ fontSize: '15px', fontWeight: 600, color: '#e6edf3' }}>
-                      {valuation.currentPrice != null ? fmt$(valuation.currentPrice) : '—'}
-                    </span>
-                  </div>
-
-                  {/* 52-week range bar */}
-                  <div style={{ padding: '14px 0', borderBottom: '1px solid #141920' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>52-WEEK RANGE</span>
-                      {valuation.weekRange52Position != null && (
-                        <span style={{ fontSize: '11px', color: '#7b8498' }}>{valuation.weekRange52Position}% of range</span>
-                      )}
-                    </div>
-                    <div style={{ position: 'relative', height: '5px', borderRadius: '3px', background: '#1e2530' }}>
-                      {valuation.weekRange52Position != null && (
-                        <div style={{
-                          position: 'absolute', top: '-4px',
-                          left: `calc(${Math.min(100, Math.max(0, valuation.weekRange52Position))}% - 6px)`,
-                          width: '13px', height: '13px', borderRadius: '50%',
-                          background: '#9ecbff', border: '2px solid #0d1117',
-                        }} />
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-                      <span style={{ fontSize: '11px', color: '#7b8498' }}>{fmt$(q?.fiftyTwoWeekLow)}</span>
-                      <span style={{ fontSize: '11px', color: '#7b8498' }}>{fmt$(q?.fiftyTwoWeekHigh)}</span>
-                    </div>
-                  </div>
-
-                  {/* recommendation row */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
-                    <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498' }}>ANALYST REC.</span>
-                    {valuation.recommendation ? (() => {
-                      const recColor =
-                        valuation.recommendation === 'Strong Buy' ? '#3fb950' :
-                        valuation.recommendation === 'Buy'        ? '#52d175' :
-                        valuation.recommendation === 'Hold'       ? '#d29922' :
-                        valuation.recommendation === 'Sell'       ? '#f85149' : '#f85149'
-                      return (
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: recColor }}>
-                          {valuation.recommendation}
-                        </span>
-                      )
-                    })() : <span style={{ fontSize: '13px', color: '#7b8498' }}>—</span>}
-                  </div>
-
-                </div>
-              )}
-            </div>
-
-            {/* mispricing widget */}
-            <MispricingWidget ticker={ticker} />
-
-            {/* SEC filings */}
-            <div style={card}>
-              <p style={sectionTitle}>SEC Filings & Events</p>
-              {events.length === 0 ? (
-                <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>
-                  No recent filings for {ticker}.
+          {/* left — description */}
+          <div style={{ paddingRight: '48px', borderRight: '1px solid #1e2530' }}>
+            <p style={secTitle}>Company Overview</p>
+            {summary ? (
+              <>
+                <p style={{
+                  color: '#c9d1d9', fontSize: '14px', lineHeight: 1.8, margin: 0,
+                  display: showFullSummary ? 'block' : '-webkit-box',
+                  WebkitLineClamp: showFullSummary ? undefined : 8,
+                  WebkitBoxOrient: 'vertical' as any,
+                  overflow: showFullSummary ? 'visible' : 'hidden',
+                }}>
+                  {summary}
                 </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-                  {events.map((ev, i) => {
-                    const items = parseItems(ev.raw_text)
-                    const borderColor = itemBorderColor(items)
-                    const visibleItems = items.slice(0, 3)
-
-                    return (
-                      <div
-                        key={ev.id}
-                        style={{
-                          display: 'flex', alignItems: 'flex-start', gap: '16px',
-                          padding: '14px 0 14px 16px',
-                          borderLeft: `3px solid ${borderColor}`,
-                          marginLeft: '-24px', paddingLeft: '21px',
-                          borderBottom: i < events.length - 1 ? '1px solid #141920' : 'none',
-                        }}
-                      >
-                        {/* date */}
-                        <div style={{ color: '#7b8498', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '72px', paddingTop: '2px' }}>
-                          {fmtDate(ev.published_at)}
-                        </div>
-
-                        {/* title + tags */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '14px', fontWeight: 500, color: '#c9d1d9', marginBottom: '6px', lineHeight: 1.3 }}>
-                            {ev.title.replace(/^8-K — /, '')}
-                          </div>
-                          {visibleItems.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                              {visibleItems.map((code) => (
-                                <span
-                                  key={code}
-                                  style={{
-                                    fontSize: '11px', padding: '2px 8px', borderRadius: '4px',
-                                    background: '#151c28', border: '1px solid #1e2a3a',
-                                    color: '#9ecbff', letterSpacing: '0.3px',
-                                  }}
-                                >
-                                  {code} · {ITEM_LABELS[code] ?? code}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* link */}
-                        {ev.source_url && (
-                          <a
-                            href={ev.source_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              color: '#7b8498', fontSize: '12px', textDecoration: 'none',
-                              whiteSpace: 'nowrap', paddingTop: '2px',
-                              transition: 'color 0.15s',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = '#9ecbff')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}
-                          >
-                            View →
-                          </a>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* recent news */}
-            <div style={card}>
-              <p style={sectionTitle}>Recent News</p>
-              {loadingNews ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} style={{ height: '52px', borderRadius: '6px', background: '#1a1f2a', animation: 'pulse 1.5s ease-in-out infinite' }} />
-                  ))}
-                </div>
-              ) : news.length === 0 ? (
-                <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>No recent news for {ticker}.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-                  {news.map((article, i) => {
-                    let source = ''
-                    let sentiment: string = article.summary ?? 'neutral'
-                    try {
-                      const raw = JSON.parse(article.raw_text ?? '{}')
-                      source = raw.source ?? ''
-                      sentiment = raw.sentiment ?? sentiment
-                    } catch { /* ok */ }
-
-                    const sentimentColor =
-                      sentiment === 'bullish' ? '#3fb950'
-                      : sentiment === 'bearish' ? '#f85149'
-                      : '#7b8498'
-
-                    const pubDate = article.published_at ? new Date(article.published_at) : null
-                    const relTime = pubDate ? (() => {
-                      const diffMs = Date.now() - pubDate.getTime()
-                      const diffH = Math.floor(diffMs / 3600000)
-                      if (diffH < 1) return `${Math.floor(diffMs / 60000)}m ago`
-                      if (diffH < 24) return `${diffH}h ago`
-                      return `${Math.floor(diffH / 24)}d ago`
-                    })() : ''
-
-                    return (
-                      <div
-                        key={article.id}
-                        style={{
-                          padding: '14px 0 14px 16px',
-                          borderLeft: `3px solid ${sentimentColor}`,
-                          marginLeft: '-24px', paddingLeft: '21px',
-                          borderBottom: i < news.length - 1 ? '1px solid #141920' : 'none',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '13px', fontWeight: 500, color: '#c9d1d9', lineHeight: 1.4, marginBottom: '6px' }}>
-                              {article.title}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              {source && <span style={{ fontSize: '11px', color: '#7b8498' }}>{source}</span>}
-                              {source && relTime && <span style={{ fontSize: '11px', color: '#3a4a60' }}>·</span>}
-                              {relTime && <span style={{ fontSize: '11px', color: '#7b8498' }}>{relTime}</span>}
-                              <span style={{
-                                fontSize: '10px', padding: '1px 7px', borderRadius: '4px',
-                                background: `${sentimentColor}14`, border: `1px solid ${sentimentColor}30`,
-                                color: sentimentColor, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px',
-                              }}>
-                                {sentiment}
-                              </span>
-                            </div>
-                          </div>
-                          {article.source_url && (
-                            <a
-                              href={article.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: '#7b8498', fontSize: '12px', textDecoration: 'none', whiteSpace: 'nowrap', paddingTop: '2px', transition: 'color 0.15s' }}
-                              onMouseEnter={(e) => (e.currentTarget.style.color = '#9ecbff')}
-                              onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}
-                            >
-                              View →
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
+                {summary.length > SUMMARY_LIMIT && (
+                  <button
+                    onClick={() => setShowFullSummary((v) => !v)}
+                    style={{ background: 'none', border: 'none', color: '#9ecbff', fontSize: '12px', cursor: 'pointer', padding: '10px 0 0', letterSpacing: '0.5px' }}
+                  >
+                    {showFullSummary ? 'Show less ↑' : 'Show more ↓'}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>No description available.</p>
+            )}
           </div>
 
-          {/* ── RIGHT COLUMN ────────────────────────────────────────────────── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-            {/* company overview */}
-            <div style={card}>
-              <p style={sectionTitle}>Company Overview</p>
-
-              {/* description */}
-              {summary && (
-                <div style={{ marginBottom: '20px' }}>
-                  <p style={{
-                    color: '#c9d1d9', fontSize: '13px', lineHeight: 1.7, margin: 0,
-                    display: showFullSummary ? 'block' : '-webkit-box',
-                    WebkitLineClamp: showFullSummary ? undefined : 4,
-                    WebkitBoxOrient: 'vertical' as any,
-                    overflow: showFullSummary ? 'visible' : 'hidden',
-                  }}>
-                    {summary}
-                  </p>
-                  {summary.length > SUMMARY_LIMIT && (
-                    <button
-                      onClick={() => setShowFullSummary((v) => !v)}
-                      style={{
-                        background: 'none', border: 'none', color: '#9ecbff',
-                        fontSize: '12px', cursor: 'pointer', padding: '6px 0 0',
-                      }}
-                    >
-                      {showFullSummary ? 'Show less ↑' : 'Show more ↓'}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* meta rows */}
+          {/* middle — company details */}
+          <div style={{ padding: '0 40px', borderRight: '1px solid #1e2530' }}>
+            <p style={secTitle}>Company Details</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
               {[
-                { label: 'CEO', value: ceo?.name ?? '—' },
-                { label: 'Industry', value: s?.assetProfile?.industry ?? '—' },
-                { label: 'HQ', value: hq || '—' },
-                { label: 'Employees', value: s?.assetProfile?.fullTimeEmployees ? s.assetProfile.fullTimeEmployees.toLocaleString() : '—' },
-                {
-                  label: 'Website',
-                  value: s?.assetProfile?.website ?? null,
-                  link: true,
-                },
-              ].map(({ label: lbl, value, link }) => (
-                <div
-                  key={lbl}
-                  style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                    padding: '9px 0', borderBottom: '1px solid #141920', gap: '12px',
-                  }}
-                >
-                  <span style={{ color: '#7b8498', fontSize: '13px', flexShrink: 0 }}>{lbl}</span>
-                  {link && value ? (
-                    <a
-                      href={value as string}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#9ecbff', fontSize: '13px', textDecoration: 'none', textAlign: 'right', wordBreak: 'break-all' }}
-                    >
-                      {(value as string).replace(/^https?:\/\/(www\.)?/, '')}
+                { lbl: 'CEO',      val: ceo?.name ?? null },
+                { lbl: 'Industry', val: s?.assetProfile?.industry ?? null },
+                { lbl: 'Sector',   val: sector },
+                { lbl: 'HQ',       val: hq || null },
+                { lbl: 'Employees',val: s?.assetProfile?.fullTimeEmployees ? s.assetProfile.fullTimeEmployees.toLocaleString() : null },
+                { lbl: 'Website',  val: s?.assetProfile?.website ?? null, link: true },
+              ].filter(({ val }) => val != null).map(({ lbl, val, link }, i, arr) => (
+                <div key={lbl} style={{ padding: '10px 0', borderBottom: i < arr.length - 1 ? '1px solid #141920' : 'none' }}>
+                  <div style={{ fontSize: '10px', letterSpacing: '1.5px', color: '#7b8498', marginBottom: '4px', textTransform: 'uppercase' as const }}>{lbl}</div>
+                  {link ? (
+                    <a href={val as string} target="_blank" rel="noopener noreferrer"
+                      style={{ color: '#9ecbff', fontSize: '13px', textDecoration: 'none', wordBreak: 'break-all', display: 'block' }}>
+                      {(val as string).replace(/^https?:\/\/(www\.)?/, '')}
                     </a>
                   ) : (
-                    <span style={{ color: '#c9d1d9', fontSize: '13px', textAlign: 'right' }}>{value as string}</span>
+                    <div style={{ fontSize: '13px', fontWeight: 500, color: '#e6edf3', lineHeight: 1.3 }}>{val as string}</div>
                   )}
                 </div>
               ))}
             </div>
+          </div>
 
-            {/* key statistics */}
-            <div style={card}>
-              <p style={sectionTitle}>Key Statistics</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0' }}>
-                {[
-                  { label: 'P/E Ratio', value: s?.defaultKeyStatistics?.forwardPE ? s.defaultKeyStatistics.forwardPE.toFixed(1) : (s?.defaultKeyStatistics?.trailingPE ? s.defaultKeyStatistics.trailingPE.toFixed(1) : '—') },
-                  { label: 'EPS (TTM)', value: s?.defaultKeyStatistics?.trailingEps ? fmt$(s.defaultKeyStatistics.trailingEps) : '—' },
-                  { label: 'Revenue', value: fmtLarge(s?.financialData?.totalRevenue) },
-                  { label: 'Net Income', value: fmtLarge(s?.financialData?.netIncomeToCommon) },
-                  { label: 'Div Yield', value: s?.defaultKeyStatistics?.dividendYield ? fmtPct(s.defaultKeyStatistics.dividendYield) : (s?.defaultKeyStatistics?.trailingAnnualDividendYield ? fmtPct(s.defaultKeyStatistics.trailingAnnualDividendYield) : '—') },
-                  { label: 'Beta', value: s?.defaultKeyStatistics?.beta ? s.defaultKeyStatistics.beta.toFixed(2) : '—' },
-                ].map(({ label: lbl, value }, i) => (
-                  <div
-                    key={lbl}
-                    style={{
-                      padding: '12px 0',
-                      borderBottom: i < 4 ? '1px solid #141920' : 'none',
-                      borderRight: i % 2 === 0 ? '1px solid #141920' : 'none',
-                      paddingRight: i % 2 === 0 ? '16px' : '0',
-                      paddingLeft: i % 2 === 1 ? '16px' : '0',
-                    }}
-                  >
-                    <div style={label}>{lbl}</div>
-                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#e6edf3' }}>{value}</div>
-                  </div>
-                ))}
-              </div>
+          {/* right — key statistics */}
+          <div style={{ paddingLeft: '40px' }}>
+            <p style={secTitle}>Key Statistics</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0' }}>
+              {[
+                { lbl: 'P/E Ratio',  val: s?.defaultKeyStatistics?.forwardPE ? s.defaultKeyStatistics.forwardPE.toFixed(1) : (s?.defaultKeyStatistics?.trailingPE ? s.defaultKeyStatistics.trailingPE.toFixed(1) : '—') },
+                { lbl: 'EPS (TTM)',  val: s?.defaultKeyStatistics?.trailingEps ? fmt$(s.defaultKeyStatistics.trailingEps) : '—' },
+                { lbl: 'Revenue',    val: fmtLarge(s?.financialData?.totalRevenue) },
+                { lbl: 'Net Income', val: fmtLarge(s?.financialData?.netIncomeToCommon) },
+                { lbl: 'Div Yield',  val: s?.defaultKeyStatistics?.dividendYield ? fmtPct(s.defaultKeyStatistics.dividendYield) : (s?.defaultKeyStatistics?.trailingAnnualDividendYield ? fmtPct(s.defaultKeyStatistics.trailingAnnualDividendYield) : '—') },
+                { lbl: 'Beta',       val: s?.defaultKeyStatistics?.beta ? s.defaultKeyStatistics.beta.toFixed(2) : '—' },
+                { lbl: 'Market Cap', val: fmtLarge(q?.marketCap) },
+                { lbl: '52W High',   val: fmt$(q?.fiftyTwoWeekHigh) },
+                { lbl: '52W Low',    val: fmt$(q?.fiftyTwoWeekLow) },
+              ].map(({ lbl, val }, i, arr) => (
+                <div key={lbl} style={{
+                  padding: '10px 0',
+                  borderBottom: i < arr.length - 2 ? '1px solid #141920' : 'none',
+                  borderRight: i % 2 === 0 ? '1px solid #141920' : 'none',
+                  paddingRight: i % 2 === 0 ? '16px' : '0',
+                  paddingLeft:  i % 2 === 1 ? '16px' : '0',
+                }}>
+                  <div style={{ fontSize: '10px', letterSpacing: '1.5px', color: '#7b8498', marginBottom: '4px', textTransform: 'uppercase' as const }}>{lbl}</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#e6edf3' }}>{val}</div>
+                </div>
+              ))}
             </div>
-
           </div>
         </div>
 
-        {/* ── related tickers ─────────────────────────────────────────────────── */}
+        {/* ── 4. FILINGS + NEWS ROW ───────────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', ...sec }}>
+
+          {/* recent filings */}
+          <div>
+            <p style={secTitle}>Recent Filings</p>
+            {events.length === 0 ? (
+              <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>No recent filings for {ticker}.</p>
+            ) : (
+              <div>
+                {events.map((ev, i) => {
+                  const items = parseItems(ev.raw_text)
+                  const borderColor = itemBorderColor(items)
+                  const visibleItems = items.slice(0, 3)
+                  return (
+                    <div key={ev.id} style={{
+                      display: 'flex', alignItems: 'flex-start', gap: '16px',
+                      padding: '14px 0 14px 16px',
+                      borderLeft: `3px solid ${borderColor}`,
+                      marginLeft: '-16px', paddingLeft: '13px',
+                      borderBottom: i < events.length - 1 ? '1px solid #141920' : 'none',
+                    }}>
+                      <div style={{ color: '#7b8498', fontSize: '12px', whiteSpace: 'nowrap', minWidth: '72px', paddingTop: '2px' }}>
+                        {fmtDate(ev.published_at)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '14px', fontWeight: 500, color: '#c9d1d9', marginBottom: '6px', lineHeight: 1.3 }}>
+                          {ev.title.replace(/^8-K — /, '')}
+                        </div>
+                        {visibleItems.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {visibleItems.map((code) => (
+                              <span key={code} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: '#151c28', border: '1px solid #1e2a3a', color: '#9ecbff', letterSpacing: '0.3px' }}>
+                                {code} · {ITEM_LABELS[code] ?? code}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {ev.source_url && (
+                        <a href={ev.source_url} target="_blank" rel="noopener noreferrer"
+                          style={{ color: '#7b8498', fontSize: '12px', textDecoration: 'none', whiteSpace: 'nowrap', paddingTop: '2px', transition: 'color 0.15s' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = '#9ecbff')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}>
+                          View →
+                        </a>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* recent news */}
+          <div>
+            <p style={secTitle}>Recent News</p>
+            {loadingNews ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} style={{ height: '52px', borderRadius: '6px', background: '#1a1f2a', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                ))}
+              </div>
+            ) : news.length === 0 ? (
+              <p style={{ color: '#7b8498', fontSize: '14px', margin: 0 }}>No recent news for {ticker}.</p>
+            ) : (
+              <div>
+                {news.map((article, i) => {
+                  let source = ''
+                  let sentiment: string = article.summary ?? 'neutral'
+                  try {
+                    const raw = JSON.parse(article.raw_text ?? '{}')
+                    source = raw.source ?? ''
+                    sentiment = raw.sentiment ?? sentiment
+                  } catch { /* ok */ }
+
+                  const sentimentColor =
+                    sentiment === 'bullish' ? '#3fb950'
+                    : sentiment === 'bearish' ? '#f85149'
+                    : '#7b8498'
+
+                  const pubDate = article.published_at ? new Date(article.published_at) : null
+                  const relTime = pubDate ? (() => {
+                    const diffMs = Date.now() - pubDate.getTime()
+                    const diffH = Math.floor(diffMs / 3600000)
+                    if (diffH < 1) return `${Math.floor(diffMs / 60000)}m ago`
+                    if (diffH < 24) return `${diffH}h ago`
+                    return `${Math.floor(diffH / 24)}d ago`
+                  })() : ''
+
+                  return (
+                    <div key={article.id} style={{
+                      padding: '14px 0 14px 16px',
+                      borderLeft: `3px solid ${sentimentColor}`,
+                      marginLeft: '-16px', paddingLeft: '13px',
+                      borderBottom: i < news.length - 1 ? '1px solid #141920' : 'none',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '14px', fontWeight: 500, color: '#c9d1d9', lineHeight: 1.4, marginBottom: '6px' }}>
+                            {article.title}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {source && <span style={{ fontSize: '11px', color: '#7b8498' }}>{source}</span>}
+                            {source && relTime && <span style={{ fontSize: '11px', color: '#3a4a60' }}>·</span>}
+                            {relTime && <span style={{ fontSize: '11px', color: '#7b8498' }}>{relTime}</span>}
+                            <span style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '4px', background: `${sentimentColor}14`, border: `1px solid ${sentimentColor}30`, color: sentimentColor, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
+                              {sentiment}
+                            </span>
+                          </div>
+                        </div>
+                        {article.source_url && (
+                          <a href={article.source_url} target="_blank" rel="noopener noreferrer"
+                            style={{ color: '#7b8498', fontSize: '12px', textDecoration: 'none', whiteSpace: 'nowrap', paddingTop: '2px', transition: 'color 0.15s' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = '#9ecbff')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}>
+                            View →
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── 5. YOU MAY ALSO LIKE ────────────────────────────────────────────── */}
         {related.length > 0 && (
-          <div style={{ marginTop: '16px' }}>
-            <p style={{ ...sectionTitle, marginBottom: '12px' }}>You May Also Like</p>
+          <div style={{ padding: '40px 0' }}>
+            <p style={{ ...secTitle, marginBottom: '20px' }}>You May Also Like</p>
             <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
               {related.map((r) => (
-                <a
-                  key={r.symbol}
-                  href={`/t/${r.symbol}`}
-                  style={{
-                    ...card,
-                    flexShrink: 0,
-                    width: '160px',
-                    textDecoration: 'none',
-                    color: 'inherit',
-                    transition: 'border-color 0.15s',
-                    display: 'block',
-                  }}
+                <a key={r.symbol} href={`/t/${r.symbol}`} style={{
+                  ...card, flexShrink: 0, width: '160px',
+                  textDecoration: 'none', color: 'inherit',
+                  transition: 'border-color 0.15s', display: 'block',
+                }}
                   onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#3a4a60')}
                   onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1e2530')}
                 >
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#e6edf3', marginBottom: '4px' }}>
-                    {r.symbol}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#7b8498', marginBottom: '8px', lineHeight: 1.3,
-                    overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
-                    {r.name}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#7b8498' }}>
-                    {fmtLarge(r.market_cap)}
-                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#e6edf3', marginBottom: '4px' }}>{r.symbol}</div>
+                  <div style={{ fontSize: '12px', color: '#7b8498', marginBottom: '8px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{r.name}</div>
+                  <div style={{ fontSize: '11px', color: '#7b8498' }}>{fmtLarge(r.market_cap)}</div>
                 </a>
               ))}
             </div>
@@ -854,3 +599,4 @@ export default function TickerPage() {
     </div>
   )
 }
+
