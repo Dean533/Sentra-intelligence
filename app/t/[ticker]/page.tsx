@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { MarketRange } from '@/lib/marketData'
+import MispricingWidget from '@/app/components/MispricingWidget'
 
 const MarketPriceChart = dynamic(() => import('@/app/components/MarketPriceChart'), {
   ssr: false,
@@ -544,6 +545,9 @@ export default function TickerPage() {
                 </div>
               )}
             </div>
+
+            {/* mispricing widget */}
+            <MispricingWidget ticker={ticker} />
 
             {/* SEC filings */}
             <div style={card}>
