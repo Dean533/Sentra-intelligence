@@ -78,17 +78,52 @@ async function get52WeekRange(ticker: string): Promise<RangeData | null> {
   }
 }
 
+// ─── Narrative Score (0–100) ──────────────────────────────────────────────────
+// Joins sentiment_scores → events to find scores for this ticker within ±48h
+// of transaction_date (using events.published_at as the date anchor).
+// sentiment_scores.score ranges from -0.8 to +0.8.
+// Normalized to 0–100 via: (avg + 1) / 2 * 100
+
+async function getNarrativeScore(ticker: string, transactionDate: string): Promise<number | null> {
+  const txMs = new Date(transactionDate).getTime()
+  const from = new Date(txMs - 48 * 60 * 60 * 1000).toISOString()
+  const to   = new Date(txMs + 48 * 60 * 60 * 1000).toISOString()
+
+  // Step 1: find news event IDs for this ticker in the ±48h window
+  const { data: events } = await supabase
+    .from('events')
+    .select('id')
+    .eq('ticker', ticker)
+    .eq('event_type', 'news')
+    .gte('published_at', from)
+    .lte('published_at', to)
+
+  const eventIds = (events ?? []).map((e: { id: string }) => e.id)
+  if (eventIds.length === 0) return null
+
+  // Step 2: fetch sentiment scores linked to those events
+  const { data: scores } = await supabase
+    .from('sentiment_scores')
+    .select('score')
+    .in('event_id', eventIds)
+
+  if (!scores || scores.length === 0) return null
+
+  const avg = scores.reduce((s: number, e: { score: number }) => s + e.score, 0) / scores.length
+  return clamp(Math.round((avg + 1) / 2 * 100), 0, 100)
+}
+
 // ─── route handler ────────────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
   const deny = authorizeCron(req)
   if (deny) return deny
 
+  // Re-score all rows that have price data (no gap_score filter — overwrites existing scores)
   const { data: rows, error } = await supabase
     .from('insider_transactions')
-    .select('id, ticker, officer_title, role, purchase_pct_market_cap, price_on_day, adjusted_return_5d')
+    .select('id, ticker, officer_title, role, purchase_pct_market_cap, price_on_day, adjusted_return_5d, transaction_date')
     .not('price_on_day', 'is', null)
-    .is('gap_score', null)
     .order('transaction_date', { ascending: false })
     .limit(50)
 
@@ -117,14 +152,31 @@ export async function GET(req: Request) {
 
       const fundamentalScore = sizePoints + rolePoints + rangePoints
 
-      // Gap score: how much the market underreacted to a strong signal
-      const gapScore = row.adjusted_return_5d != null
-        ? clamp(Math.round(fundamentalScore - row.adjusted_return_5d * 2), 0, 100)
-        : null
+      // 4. Narrative score from sentiment_scores (±48h window)
+      const narrativeScore = await getNarrativeScore(row.ticker, row.transaction_date)
+
+      // 5. Gap score
+      // With narrative: weighted blend of fundamental, narrative, and return penalty
+      // Without narrative: fall back to original formula
+      let gapScore: number | null
+      if (narrativeScore != null && row.adjusted_return_5d != null) {
+        // adjusted_return_penalty: 0–100, high when market fell after buy (more mispriced)
+        // 0% return → 50, −10% → 100, +10% → 0
+        const adjustedReturnPenalty = clamp(Math.round(50 - row.adjusted_return_5d * 5), 0, 100)
+        gapScore = clamp(Math.round(
+          fundamentalScore * 0.6 +
+          narrativeScore   * 0.2 +
+          adjustedReturnPenalty * 0.2
+        ), 0, 100)
+      } else {
+        gapScore = row.adjusted_return_5d != null
+          ? clamp(Math.round(fundamentalScore - row.adjusted_return_5d * 2), 0, 100)
+          : null
+      }
 
       const { error: updateErr } = await supabase
         .from('insider_transactions')
-        .update({ fundamental_score: fundamentalScore, gap_score: gapScore })
+        .update({ fundamental_score: fundamentalScore, narrative_score: narrativeScore, gap_score: gapScore })
         .eq('id', row.id)
 
       if (updateErr) { failed++; continue }
