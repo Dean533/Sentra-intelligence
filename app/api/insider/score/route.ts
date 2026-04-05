@@ -87,8 +87,8 @@ export async function GET(req: Request) {
   const { data: rows, error } = await supabase
     .from('insider_transactions')
     .select('id, ticker, officer_title, role, purchase_pct_market_cap, price_on_day, adjusted_return_5d')
-    .is('fundamental_score', null)
     .not('price_on_day', 'is', null)
+    .is('gap_score', null)
     .order('transaction_date', { ascending: false })
     .limit(50)
 

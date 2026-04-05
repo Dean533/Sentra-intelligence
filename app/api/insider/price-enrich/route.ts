@@ -64,11 +64,16 @@ export async function GET(req: Request) {
   }) as any[]
   console.log('AAPL test rows:', testHistory.length)
 
-  // 1. Fetch unenriched insider transactions
+  // 1. Fetch unenriched insider transactions (only rows ≥7 days old so all 5-day windows are closed)
+  const cutoff = new Date()
+  cutoff.setUTCDate(cutoff.getUTCDate() - 7)
+  const cutoffStr = cutoff.toISOString().split('T')[0]
+
   const { data: rows, error } = await supabase
     .from('insider_transactions')
     .select('id, ticker, transaction_date, total_value')
     .not('transaction_date', 'is', null)
+    .lte('transaction_date', cutoffStr)
     .is('price_on_day', null)
     .order('transaction_date', { ascending: false })
     .limit(50)

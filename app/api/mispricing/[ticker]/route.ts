@@ -15,7 +15,7 @@ export async function GET(
   const { data, error } = await supabase
     .from('insider_transactions')
     .select(
-      'ticker, insider_name, officer_title, transaction_date, total_value, shares, price_per_share, price_on_day, price_5d, actual_return_5d, adjusted_return_5d, fundamental_score, gap_score'
+      'id, ticker, insider_name, officer_title, transaction_date, total_value, shares, price_per_share, price_on_day, price_5d, actual_return_5d, adjusted_return_5d, fundamental_score, gap_score'
     )
     .eq('ticker', ticker.toUpperCase())
     .not('gap_score', 'is', null)

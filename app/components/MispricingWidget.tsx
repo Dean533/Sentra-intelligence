@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from 'react'
 
 type MispricingRow = {
+  id: string
   ticker: string
   insider_name: string
   officer_title: string | null
@@ -307,7 +308,7 @@ export default function MispricingWidget({ ticker }: { ticker: string }) {
 
       <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'flex-end' }}>
         <a
-          href="/events"
+          href={`/events/${row.id}`}
           style={{ fontSize: '13px', color: '#7b8498', textDecoration: 'none', transition: 'color 0.15s' }}
           onMouseEnter={(e) => { e.currentTarget.style.color = '#9ecbff' }}
           onMouseLeave={(e) => { e.currentTarget.style.color = '#7b8498' }}

@@ -31,6 +31,14 @@
     {
       "path": "/api/events/enrich",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/insider/price-enrich",
+      "schedule": "10 11 * * *"
+    },
+    {
+      "path": "/api/insider/score",
+      "schedule": "20 11 * * *"
     }
   ]
 }
