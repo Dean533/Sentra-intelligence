@@ -53,12 +53,14 @@ function allBlocks(xml: string, tag: string): string[] {
 
 type ParsedTx = {
   insiderName: string
+  insiderCik: string | null
   isDirector: boolean
   isOfficer: boolean
   officerTitle: string | null
   role: string
   transactionDate: string
   transactionCode: string
+  transactionDirection: string
   shares: number
   pricePerShare: number
   totalValue: number
@@ -67,6 +69,7 @@ type ParsedTx = {
 
 function parseForm4(xml: string): ParsedTx[] {
   const insiderName  = directVal(xml, 'rptOwnerName') ?? 'Unknown'
+  const insiderCik   = directVal(xml, 'rptOwnerCik') ?? null
   const isDirector   = directVal(xml, 'isDirector') === '1'
   const isOfficer    = directVal(xml, 'isOfficer') === '1'
   const officerTitle = directVal(xml, 'officerTitle')
@@ -82,7 +85,7 @@ function parseForm4(xml: string): ParsedTx[] {
 
   for (const block of txBlocks) {
     const code = directVal(block, 'transactionCode')
-    if (code !== 'P') continue
+    if (code !== 'P' && code !== 'S') continue
 
     const dateStr        = nestedVal(block, 'transactionDate')
     const sharesStr      = nestedVal(block, 'transactionShares')
@@ -97,12 +100,14 @@ function parseForm4(xml: string): ParsedTx[] {
 
     results.push({
       insiderName,
+      insiderCik,
       isDirector,
       isOfficer,
       officerTitle,
       role,
       transactionDate: dateStr,
       transactionCode: code,
+      transactionDirection: code === 'P' ? 'buy' : 'sell',
       shares,
       pricePerShare: price,
       totalValue: Math.round(shares * price * 100) / 100,
@@ -165,7 +170,7 @@ async function processFiling(
         ? 'no nonDerivativeTx blocks'
         : allTxBlocks.map((block) => {
             const code = directVal(block, 'transactionCode')
-            if (code !== 'P') return `code=${code}`
+            if (code !== 'P' && code !== 'S') return `code=${code}`
             const shares = parseFloat(nestedVal(block, 'transactionShares') ?? '0')
             const price  = parseFloat(nestedVal(block, 'transactionPricePerShare') ?? '0')
             if (shares <= 0 || price <= 0) return `missing shares/price`
@@ -181,20 +186,22 @@ async function processFiling(
   for (const tx of transactions) {
     const payload = {
       ticker,
-      insider_name:       tx.insiderName,
-      role:               tx.role,
-      is_director:        tx.isDirector,
-      is_officer:         tx.isOfficer,
-      officer_title:      tx.officerTitle,
-      transaction_date:   tx.transactionDate,
-      transaction_code:   tx.transactionCode,
-      shares:             tx.shares,
-      price_per_share:    tx.pricePerShare,
-      total_value:        tx.totalValue,
-      shares_owned_after: tx.sharesOwnedAfter,
-      accession_number:   adsh,
-      filed_date:         filedDate,
-      source_url:         sourceUrl,
+      insider_name:          tx.insiderName,
+      insider_cik:           tx.insiderCik,
+      role:                  tx.role,
+      is_director:           tx.isDirector,
+      is_officer:            tx.isOfficer,
+      officer_title:         tx.officerTitle,
+      transaction_date:      tx.transactionDate,
+      transaction_code:      tx.transactionCode,
+      transaction_direction: tx.transactionDirection,
+      shares:                tx.shares,
+      price_per_share:       tx.pricePerShare,
+      total_value:           tx.totalValue,
+      shares_owned_after:    tx.sharesOwnedAfter,
+      accession_number:      adsh,
+      filed_date:            filedDate,
+      source_url:            sourceUrl,
     }
 
     const { error: insertErr } = await supabase
@@ -203,22 +210,25 @@ async function processFiling(
 
     if (insertErr) continue
 
+    const verb = tx.transactionDirection === 'sell' ? 'sold' : 'purchased'
     await supabase.from('events').upsert({
       ticker,
       event_type:   'insider',
-      title:        `${tx.insiderName} purchased ${tx.shares.toLocaleString()} shares of ${ticker}`,
-      summary:      `${tx.role} · ${tx.shares.toLocaleString()} shares @ $${tx.pricePerShare.toFixed(2)} · Total $${(tx.totalValue / 1000).toFixed(0)}K`,
+      title:        `${tx.insiderName} ${verb} ${tx.shares.toLocaleString()} shares of ${ticker}`,
+      summary:      `${tx.role} · ${verb} ${tx.shares.toLocaleString()} shares @ $${tx.pricePerShare.toFixed(2)} · Total $${(tx.totalValue / 1000).toFixed(0)}K`,
       source_url:   sourceUrl,
       published_at: tx.transactionDate,
       event_date:   tx.transactionDate,
       raw_text:     JSON.stringify({
-        form:            '4',
-        insiderName:     tx.insiderName,
-        role:            tx.role,
-        transactionCode: tx.transactionCode,
-        shares:          tx.shares,
-        price:           tx.pricePerShare,
-        totalValue:      tx.totalValue,
+        form:                 '4',
+        insiderName:          tx.insiderName,
+        insiderCik:           tx.insiderCik,
+        role:                 tx.role,
+        transactionCode:      tx.transactionCode,
+        transactionDirection: tx.transactionDirection,
+        shares:               tx.shares,
+        price:                tx.pricePerShare,
+        totalValue:           tx.totalValue,
         adsh,
       }),
     }, { onConflict: 'ticker,source_url', ignoreDuplicates: true })
