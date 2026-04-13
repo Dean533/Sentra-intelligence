@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { MarketRange } from '@/lib/marketData'
 import MispricingWidget from '@/app/components/MispricingWidget'
+import InsiderIntelligenceCard from '@/app/components/InsiderIntelligenceCard'
 
 const MarketPriceChart = dynamic(() => import('@/app/components/MarketPriceChart'), {
   ssr: false,
@@ -354,6 +355,11 @@ export default function TickerPage() {
         {/* ── 2. MISPRICING WIDGET — full width ───────────────────────────────── */}
         <div style={{ padding: '32px 0', borderBottom: '1px solid #1e2530' }}>
           <MispricingWidget ticker={ticker} />
+        </div>
+
+        {/* ── 2b. INSIDER INTELLIGENCE CARD — full width ──────────────────────── */}
+        <div style={{ padding: '32px 0', borderBottom: '1px solid #1e2530' }}>
+          <InsiderIntelligenceCard ticker={ticker} />
         </div>
 
         {/* ── 3. COMPANY INFO ROW ─────────────────────────────────────────────── */}

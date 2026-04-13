@@ -15,11 +15,11 @@ export async function GET(
   const { data, error } = await supabase
     .from('insider_transactions')
     .select(
-      'id, ticker, insider_name, officer_title, transaction_date, total_value, shares, price_per_share, price_on_day, price_5d, actual_return_5d, adjusted_return_5d, fundamental_score, gap_score'
+      'id, ticker, insider_name, officer_title, transaction_date, total_value, shares, price_per_share, price_on_day, price_5d, actual_return_5d, adjusted_return_5d, fundamental_score, expected_move'
     )
     .eq('ticker', ticker.toUpperCase())
-    .not('gap_score', 'is', null)
-    .order('gap_score', { ascending: false })
+    .not('expected_move', 'is', null)
+    .order('expected_move', { ascending: false })
     .order('transaction_date', { ascending: false })
     .limit(1)
     .maybeSingle()

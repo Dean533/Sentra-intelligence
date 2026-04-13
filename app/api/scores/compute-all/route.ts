@@ -47,6 +47,7 @@ export async function GET(req: Request) {
         upsertRows.push({
           ticker:         symbol,
           score:          scoreResult.score,
+          cmp_score:      scoreResult.cmpPts,
           analyst_gap:    valuationResult.analystGap,
           analyst_target: valuationResult.analystTarget,
           current_price:  valuationResult.currentPrice,

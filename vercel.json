@@ -43,6 +43,10 @@
     {
       "path": "/api/insider/score",
       "schedule": "20 11 * * *"
+    },
+    {
+      "path": "/api/insider/signals-monthly",
+      "schedule": "0 12 2 * *"
     }
   ]
 }

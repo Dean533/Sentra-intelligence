@@ -9,6 +9,7 @@ export interface SentraScoreBreakdown {
   news: number
   sec: number
   mispricing: number
+  cmp: number
   reasons: string[]
 }
 
@@ -17,7 +18,11 @@ export interface SentraScoreResult {
   breakdown: SentraScoreBreakdown
 }
 
-// ── component 1: news sentiment (0–40) ────────────────────────────────────────
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n))
+}
+
+// ── component 1: news sentiment (0–35) ────────────────────────────────────────
 
 async function scoreNews(
   ticker: string,
@@ -32,7 +37,7 @@ async function scoreNews(
     .limit(10)
 
   if (!events || events.length === 0) {
-    return { score: 20, weightedSentiment: 0, reason: 'No recent news — neutral baseline' }
+    return { score: 17, weightedSentiment: 0, reason: 'No recent news — neutral baseline' }
   }
 
   const now = Date.now()
@@ -50,7 +55,7 @@ async function scoreNews(
   }
 
   const weighted = totalWeight > 0 ? weightedSum / totalWeight : 0
-  const score = Math.round(((weighted + 1) / 2) * 40)
+  const score = Math.round(((weighted + 1) / 2) * 35)
 
   const label =
     weighted > 0.2 ? 'bullish' :
@@ -60,7 +65,7 @@ async function scoreNews(
   return { score, weightedSentiment: weighted, reason }
 }
 
-// ── component 2: SEC filing recency (0–35) ────────────────────────────────────
+// ── component 2: SEC filing recency (0–25) ────────────────────────────────────
 
 async function scoreSec(
   ticker: string,
@@ -75,16 +80,16 @@ async function scoreSec(
     .limit(1)
 
   if (!filings || filings.length === 0) {
-    return { score: 5, reason: 'No SEC filings found' }
+    return { score: 3, reason: 'No SEC filings found' }
   }
 
   const filing = filings[0]
   const ageDays = (Date.now() - new Date(filing.published_at).getTime()) / 86_400_000
 
   let base =
-    ageDays <= 7  ? 35 :
-    ageDays <= 14 ? 25 :
-    ageDays <= 30 ? 15 : 5
+    ageDays <= 7  ? 25 :
+    ageDays <= 14 ? 18 :
+    ageDays <= 30 ? 10 : 3
 
   // Parse item codes from raw_text
   let items: string[] = []
@@ -94,11 +99,11 @@ async function scoreSec(
   } catch { /* ignore */ }
 
   const boosts: string[] = []
-  if (items.includes('2.02')) { base += 5; boosts.push('earnings (2.02) +5') }
-  if (items.includes('1.01')) { base += 5; boosts.push('M&A (1.01) +5') }
-  if (items.includes('1.02')) { base -= 5; boosts.push('legal (1.02) -5') }
+  if (items.includes('2.02')) { base += 4; boosts.push('earnings (2.02) +4') }
+  if (items.includes('1.01')) { base += 4; boosts.push('M&A (1.01) +4') }
+  if (items.includes('1.02')) { base -= 4; boosts.push('legal (1.02) -4') }
 
-  const score = Math.min(35, Math.max(0, base))
+  const score = Math.min(25, Math.max(0, base))
   const daysLabel = ageDays <= 1 ? 'today' : `${Math.round(ageDays)}d ago`
   const boostText = boosts.length > 0 ? `; ${boosts.join(', ')}` : ''
   const reason = `8-K filed ${daysLabel}${boostText}`
@@ -106,7 +111,7 @@ async function scoreSec(
   return { score, reason }
 }
 
-// ── component 3: mispricing signal (0–25) ─────────────────────────────────────
+// ── component 3: mispricing signal (0–20) ─────────────────────────────────────
 
 async function scoreMispricing(
   ticker: string,
@@ -149,31 +154,68 @@ async function scoreMispricing(
   const isBearish = weightedSentiment < -0.2
 
   if (priceChangePct === null) {
-    return { score: 12, reason: 'Price data unavailable — neutral mispricing score' }
+    return { score: 10, reason: 'Price data unavailable — neutral mispricing score' }
   }
 
   const pctLabel = `${priceChangePct >= 0 ? '+' : ''}${priceChangePct.toFixed(1)}%`
 
   if (isBearish && priceChangePct > -2) {
     return {
-      score: 25,
+      score: 20,
       reason: `Bearish sentiment but price only ${pctLabel} — potential mispricing opportunity`,
     }
   }
   if (isBullish && priceChangePct < 2) {
     return {
-      score: 25,
+      score: 20,
       reason: `Bullish sentiment but price only ${pctLabel} — potential mispricing opportunity`,
     }
   }
   if (isBullish && priceChangePct >= 2) {
-    return { score: 5, reason: `Bullish signal already priced in (${pctLabel} this week)` }
+    return { score: 4, reason: `Bullish signal already priced in (${pctLabel} this week)` }
   }
   if (isBearish && priceChangePct <= -2) {
-    return { score: 5, reason: `Bearish signal already priced in (${pctLabel} this week)` }
+    return { score: 4, reason: `Bearish signal already priced in (${pctLabel} this week)` }
   }
 
-  return { score: 12, reason: `No strong directional signal (price ${pctLabel} this week)` }
+  return { score: 10, reason: `No strong directional signal (price ${pctLabel} this week)` }
+}
+
+// ── component 4: CMP insider signal (0–20) ───────────────────────────────────
+// Uses Cohen, Malloy & Pomorski (2012) opportunistic insider signal.
+// Signal window is 1–6 months per the paper's Figure 3. Stale signals (> 6 months) → neutral.
+// expected_move_pct range: ~−0.34 (pure sell signal) to ~+0.72 (3 opportunistic buys).
+// Maps to 0-20: 0 → 10 neutral; +0.72 max → 17; −0.34 min → ~7.
+
+async function scoreCmpInsider(
+  ticker: string,
+  supabase: SupabaseClient<any, any, any>
+): Promise<{ score: number; cmpScore: number; reason: string }> {
+  const { data } = await supabase
+    .from('insider_signals_monthly')
+    .select('expected_move_pct, signal_direction, signal_month, opportunistic_buy_count, opportunistic_sell_count')
+    .eq('ticker', ticker)
+    .order('signal_month', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!data) {
+    return { score: 10, cmpScore: 10, reason: 'No CMP insider signal — neutral baseline' }
+  }
+
+  const monthsAgo = (Date.now() - new Date((data as any).signal_month).getTime()) / (1000 * 60 * 60 * 24 * 30)
+  if (monthsAgo > 6) {
+    return { score: 10, cmpScore: 10, reason: 'CMP signal stale (> 6 months) — neutral' }
+  }
+
+  const expectedMovePct: number = (data as any).expected_move_pct ?? 0
+  const score = clamp(Math.round(10 + expectedMovePct * 10), 0, 20)
+  const direction: string = (data as any).signal_direction ?? 'neutral'
+  const buys: number  = (data as any).opportunistic_buy_count ?? 0
+  const sells: number = (data as any).opportunistic_sell_count ?? 0
+  const reason = `CMP signal ${direction}: ${buys} opportunistic buy${buys !== 1 ? 's' : ''}, ${sells} sell${sells !== 1 ? 's' : ''}`
+
+  return { score, cmpScore: score, reason }
 }
 
 // ── valuation ─────────────────────────────────────────────────────────────────
@@ -231,26 +273,30 @@ export async function getValuation(ticker: string): Promise<ValuationResult> {
 export async function calculateSentraScore(
   ticker: string,
   supabase: SupabaseClient<any, any, any>
-): Promise<SentraScoreResult> {
-  const [newsResult, secResult] = await Promise.all([
+): Promise<SentraScoreResult & { cmpPts: number }> {
+  const [newsResult, secResult, cmpResult] = await Promise.all([
     scoreNews(ticker, supabase),
     scoreSec(ticker, supabase),
+    scoreCmpInsider(ticker, supabase),
   ])
 
   const mispricingResult = await scoreMispricing(ticker, newsResult.weightedSentiment, supabase)
 
-  const score = Math.round(newsResult.score + secResult.score + mispricingResult.score)
+  const score = Math.round(newsResult.score + secResult.score + mispricingResult.score + cmpResult.score)
 
   return {
     score,
+    cmpPts: cmpResult.score,
     breakdown: {
       news:       newsResult.score,
       sec:        secResult.score,
       mispricing: mispricingResult.score,
+      cmp:        cmpResult.score,
       reasons: [
         newsResult.reason,
         secResult.reason,
         mispricingResult.reason,
+        cmpResult.reason,
       ],
     },
   }
