@@ -199,6 +199,18 @@ export default function InsiderSection({
           No recent insider transactions for {ticker}.
         </p>
       )}
+
+      {/* Full analysis link */}
+      <div style={{ marginTop: '20px' }}>
+        <a
+          href={`/insider/${ticker}`}
+          style={{ fontSize: '12px', color: '#7b8498', textDecoration: 'none', letterSpacing: '0.5px' }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = '#c9d1d9')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}
+        >
+          See full analysis →
+        </a>
+      </div>
     </div>
   )
 }
