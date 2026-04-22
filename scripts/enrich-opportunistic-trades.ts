@@ -183,7 +183,7 @@ async function main() {
     process.exit(1)
   }
 
-  const trades: Trade[] = (txRows ?? []) as Trade[]
+  const trades: Trade[] = (txRows ?? []) as unknown as Trade[]
 
   console.log(`  ${trades.length} buy trades for opportunistic insiders`)
   console.log()
