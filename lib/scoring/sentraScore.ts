@@ -184,8 +184,8 @@ async function scoreMispricing(
 // ── component 4: CMP insider signal (0–20) ───────────────────────────────────
 // Uses Cohen, Malloy & Pomorski (2012) opportunistic insider signal.
 // Signal window is 1–6 months per the paper's Figure 3. Stale signals (> 6 months) → neutral.
-// expected_move_pct range: ~−0.34 (pure sell signal) to ~+0.72 (3 opportunistic buys).
-// Maps to 0-20: 0 → 10 neutral; +0.72 max → 17; −0.34 min → ~7.
+// expected_move_pct observed range: ~−0.43 to ~+0.46 (log-scale formula output, not a %).
+// Multiplier of 22 fills the 0-20 range: +0.46 → ~20, −0.43 → ~1, 0 → 10 neutral.
 
 async function scoreCmpInsider(
   ticker: string,
@@ -209,7 +209,7 @@ async function scoreCmpInsider(
   }
 
   const expectedMovePct: number = (data as any).expected_move_pct ?? 0
-  const score = clamp(Math.round(10 + expectedMovePct * 10), 0, 20)
+  const score = clamp(Math.round(10 + expectedMovePct * 22), 0, 20)
   const direction: string = (data as any).signal_direction ?? 'neutral'
   const buys: number  = (data as any).opportunistic_buy_count ?? 0
   const sells: number = (data as any).opportunistic_sell_count ?? 0

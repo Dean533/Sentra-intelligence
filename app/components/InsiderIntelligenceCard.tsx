@@ -62,7 +62,7 @@ export default function InsiderIntelligenceCard({ ticker }: { ticker: string }) 
 
   const dc = directionColor(signal.signal_direction)
   const em = signal.expected_move_pct
-  const emLabel = em >= 0 ? `+${(em * 100).toFixed(1)}%` : `${(em * 100).toFixed(1)}%`
+  const emLabel = em >= 0 ? `+${em.toFixed(2)}%` : `${em.toFixed(2)}%`
 
   return (
     <div style={card}>

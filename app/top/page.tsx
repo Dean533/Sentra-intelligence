@@ -87,7 +87,7 @@ function fmtMonth(s: string) {
 function CmpCard({ row, rank }: { row: CmpSignalRow; rank: number }) {
   const dc = directionColor(row.signal_direction)
   const em = row.expected_move_pct
-  const emLabel = em >= 0 ? `+${(em * 100).toFixed(1)}%` : `${(em * 100).toFixed(1)}%`
+  const emLabel = em >= 0 ? `+${em.toFixed(2)}%` : `${em.toFixed(2)}%`
   const [hovered, setHovered] = useState(false)
 
   return (
