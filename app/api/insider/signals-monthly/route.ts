@@ -102,6 +102,7 @@ export async function GET(req: Request) {
     .gte('transaction_date', rangeFrom)
     .lte('transaction_date', rangeTo)
     .not('transaction_direction', 'is', null)
+    .eq('is_plan_sale', false)
 
   if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
 

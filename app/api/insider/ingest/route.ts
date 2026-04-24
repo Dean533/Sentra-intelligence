@@ -65,6 +65,34 @@ type ParsedTx = {
   pricePerShare: number
   totalValue: number
   sharesOwnedAfter: number | null
+  isPlanSale: boolean
+}
+
+// Returns true if the transaction block was executed under a pre-arranged 10b5-1 plan.
+// Primary signal: <planName> or <transactionPlanName> tags contain any text value.
+// Secondary signal (sells only): a referenced footnote contains the string "10b5-1".
+function detectPlanSale(block: string, xml: string, code: string): boolean {
+  // <planName> can be direct text or wrapped in <value> — check both
+  const planNameDirect = directVal(block, 'planName')
+  const planNameNested = nestedVal(block, 'transactionPlanName')
+  if ((planNameDirect && planNameDirect.trim().length > 0) ||
+      (planNameNested && planNameNested.trim().length > 0)) {
+    return true
+  }
+
+  // For sell transactions, resolve footnote references and check for "10b5-1" text
+  if (code === 'S') {
+    const footnoteIdRe = /footnoteId[^>]*\sid="([^"]+)"/gi
+    let match: RegExpExecArray | null
+    while ((match = footnoteIdRe.exec(block)) !== null) {
+      const fid = match[1]
+      const footnoteRe = new RegExp(`<footnote[^>]*\\sid="${fid}"[^>]*>([\\s\\S]*?)<\\/footnote>`, 'i')
+      const fn = xml.match(footnoteRe)
+      if (fn && fn[1].toLowerCase().includes('10b5-1')) return true
+    }
+  }
+
+  return false
 }
 
 function parseForm4(xml: string): ParsedTx[] {
@@ -98,6 +126,8 @@ function parseForm4(xml: string): ParsedTx[] {
     if (!dateStr || shares <= 0 || price <= 0) continue
     if (shares * price < 10_000) continue
 
+    const isPlanSale = detectPlanSale(block, xml, code)
+
     results.push({
       insiderName,
       insiderCik,
@@ -112,6 +142,7 @@ function parseForm4(xml: string): ParsedTx[] {
       pricePerShare: price,
       totalValue: Math.round(shares * price * 100) / 100,
       sharesOwnedAfter: sharesAfterStr ? parseFloat(sharesAfterStr) : null,
+      isPlanSale,
     })
   }
 
@@ -184,6 +215,10 @@ async function processFiling(
   let inserted = 0
 
   for (const tx of transactions) {
+    if (tx.isPlanSale) {
+      console.log(`[skip] plan sale detected — ${adsh} — ${tx.insiderName} ${tx.transactionDirection} ${ticker}`)
+    }
+
     const payload = {
       ticker,
       insider_name:          tx.insiderName,
@@ -199,6 +234,7 @@ async function processFiling(
       price_per_share:       tx.pricePerShare,
       total_value:           tx.totalValue,
       shares_owned_after:    tx.sharesOwnedAfter,
+      is_plan_sale:          tx.isPlanSale,
       accession_number:      adsh,
       filed_date:            filedDate,
       source_url:            sourceUrl,
@@ -209,6 +245,9 @@ async function processFiling(
       .insert([payload])
 
     if (insertErr) continue
+
+    // Plan sales are stored for auditing but do not generate signal events
+    if (tx.isPlanSale) { inserted++; continue }
 
     const verb = tx.transactionDirection === 'sell' ? 'sold' : 'purchased'
     await supabase.from('events').upsert({
