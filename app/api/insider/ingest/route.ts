@@ -126,7 +126,7 @@ function parseForm4(xml: string): ParsedTx[] {
     const price  = priceStr  ? parseFloat(priceStr)  : 0
 
     if (!dateStr || shares <= 0 || price <= 0) continue
-    if (shares * price < 10_000) continue
+    if (shares * price < 100_000) continue
 
     const isPlanSale = detectPlanSale(block, xml, code)
 
@@ -209,7 +209,7 @@ async function processFiling(
             const shares = parseFloat(nestedVal(block, 'transactionShares') ?? '0')
             const price  = parseFloat(nestedVal(block, 'transactionPricePerShare') ?? '0')
             if (shares <= 0 || price <= 0) return `missing shares/price`
-            return `under $10k ($${Math.round(shares * price).toLocaleString()})`
+            return `under $100k ($${Math.round(shares * price).toLocaleString()})`
           }).join(' | ')
       console.log(`[skip] ${ticker} ${adsh} — codes: [${codes.join(', ')}] — ${reasons}`)
     }

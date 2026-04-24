@@ -121,7 +121,7 @@ function parseForm4(xml: string): ParsedTx[] {
     const price  = priceStr  ? parseFloat(priceStr)  : 0
 
     if (!dateStr || shares <= 0 || price <= 0) continue
-    if (shares * price < 10_000) continue
+    if (shares * price < 100_000) continue
 
     results.push({
       insiderName,
