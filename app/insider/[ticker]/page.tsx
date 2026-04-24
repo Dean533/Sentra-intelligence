@@ -58,14 +58,21 @@ function fmtMonth(s: string): string {
   })
 }
 
+// expected_move_pct is a log-scale CMP formula score (range ~-0.43 to +0.46), not a real %.
+function signalStrengthLabel(v: number): string {
+  if (v > 0.3)   return 'Strong bullish signal'
+  if (v > 0.05)  return 'Bullish signal'
+  if (v < -0.2)  return 'Strong bearish signal'
+  if (v < -0.05) return 'Bearish signal'
+  return 'Neutral'
+}
+
 // ─── Verdict prose ────────────────────────────────────────────────────────────
 
 function buildVerdictProse(signal: Signal, ticker: string, trades: Trade[]): string {
   const month = fmtMonth(signal.signal_month)
   const buys  = signal.opportunistic_buy_count
   const sells = signal.opportunistic_sell_count
-  const em    = signal.expected_move_pct
-  const emStr = (em >= 0 ? '+' : '') + em.toFixed(2) + '%'
 
   // Find the largest opportunistic trade to name-drop
   const oppTrades = trades.filter((t) => t.is_opportunistic)
@@ -83,7 +90,8 @@ function buildVerdictProse(signal: Signal, ticker: string, trades: Trade[]): str
     sentence1 = `${ticker} had ${parts.join(' and ')} in ${month} from insiders classified as opportunistic.`
   }
 
-  const sentence2 = `Sentra estimates a ${emStr} expected price move over the next 1–6 months based on the strength and timing of this signal.`
+  const strengthLabel = signalStrengthLabel(signal.expected_move_pct).toLowerCase()
+  const sentence2 = `Sentra's analysis of timing and trade size relative to historical patterns shows a ${strengthLabel} over the next 1–6 months.`
 
   const sentence3 = signal.routine_trades_filtered > 0
     ? `${signal.routine_trades_filtered} routine trade${signal.routine_trades_filtered !== 1 ? 's were' : ' was'} excluded from this signal — insiders who trade on a predictable calendar are not counted.`
@@ -173,10 +181,6 @@ export default function InsiderAnalysisPage() {
     signal?.signal_direction === 'bullish' ? '#3fb950' :
     signal?.signal_direction === 'bearish' ? '#f85149' : '#7b8498'
 
-  const emFormatted = signal
-    ? (signal.expected_move_pct >= 0 ? '+' : '') + signal.expected_move_pct.toFixed(2) + '%'
-    : null
-
   const verdictProse = signal && trades.length > 0
     ? buildVerdictProse(signal, ticker, trades)
     : signal
@@ -222,17 +226,24 @@ export default function InsiderAnalysisPage() {
         <div style={sep}>
           {signal ? (
             <>
-              {/* direction + expected move */}
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '44px', fontWeight: 900, color: dirColor, letterSpacing: '-0.5px', textTransform: 'uppercase', lineHeight: 1 }}>
-                  {signal.signal_direction}
-                </span>
-                <span style={{ fontSize: '36px', fontWeight: 700, color: dirColor }}>
-                  {emFormatted}
-                </span>
-                <span style={{ fontSize: '13px', color: '#7b8498', alignSelf: 'center' }}>
-                  1–6 month signal window · {fmtMonth(signal.signal_month)}
-                </span>
+              {/* direction + strength label */}
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '16px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '44px', fontWeight: 900, color: dirColor, letterSpacing: '-0.5px', textTransform: 'uppercase', lineHeight: 1 }}>
+                    {signal.signal_direction}
+                  </span>
+                  <span style={{ fontSize: '22px', fontWeight: 600, color: dirColor, alignSelf: 'center' }}>
+                    {signalStrengthLabel(signal.expected_move_pct)}
+                  </span>
+                </div>
+                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '12px', color: '#7b8498' }}>
+                    1–6 month signal window · {fmtMonth(signal.signal_month)}
+                  </span>
+                </div>
+                <p style={{ fontSize: '12px', color: '#4a5568', margin: '6px 0 0', maxWidth: '560px' }}>
+                  Based on the timing and size of recent insider trades, adjusted for historical trading patterns
+                </p>
               </div>
 
               {/* prose explanation */}

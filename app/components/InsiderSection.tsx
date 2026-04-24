@@ -47,6 +47,15 @@ function fmtMonth(s: string): string {
   return new Date(s).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
+// expected_move_pct is a log-scale CMP formula score (range ~-0.43 to +0.46), not a real %.
+function signalStrengthLabel(v: number): string {
+  if (v > 0.3)  return 'Strong bullish signal'
+  if (v > 0.05) return 'Bullish signal'
+  if (v < -0.2) return 'Strong bearish signal'
+  if (v < -0.05) return 'Bearish signal'
+  return 'Neutral'
+}
+
 // ─── Trade row ────────────────────────────────────────────────────────────────
 
 function TradeRow({ trade, marketCap }: { trade: Trade; marketCap: number | null }) {
@@ -153,10 +162,6 @@ export default function InsiderSection({
     signal?.signal_direction === 'bullish' ? '#3fb950' :
     signal?.signal_direction === 'bearish' ? '#f85149' : '#7b8498'
 
-  const emFormatted = signal
-    ? (signal.expected_move_pct >= 0 ? '+' : '') + signal.expected_move_pct.toFixed(2) + '%'
-    : null
-
   return (
     <div>
       {/* Top row: section label + signal direction */}
@@ -168,12 +173,12 @@ export default function InsiderSection({
           Recent Insider Trading
         </p>
         {signal && (
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
             <span style={{ fontSize: '18px', fontWeight: 800, color: dirColor, letterSpacing: '0.5px', textTransform: 'uppercase' as const }}>
               {signal.signal_direction}
             </span>
-            <span style={{ fontSize: '18px', fontWeight: 700, color: dirColor }}>
-              {emFormatted}
+            <span style={{ fontSize: '13px', color: dirColor }}>
+              {signalStrengthLabel(signal.expected_move_pct)}
             </span>
             {signal.signal_month && (
               <span style={{ fontSize: '11px', color: '#7b8498' }}>

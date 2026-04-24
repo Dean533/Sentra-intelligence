@@ -6,6 +6,16 @@ const supabase = createClient(
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// expected_move_pct is a log-scale CMP formula score (range ~-0.43 to +0.46), NOT a real %.
+// Do not display the raw value as a percentage — use signal_strength_label instead.
+function signalStrengthLabel(v: number): string {
+  if (v > 0.3)   return 'Strong bullish signal'
+  if (v > 0.05)  return 'Bullish signal'
+  if (v < -0.2)  return 'Strong bearish signal'
+  if (v < -0.05) return 'Bearish signal'
+  return 'Neutral'
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ ticker: string }> }
@@ -32,10 +42,13 @@ export async function GET(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data)  return NextResponse.json({ data: null })
 
+  const expectedMovePct: number = (data as any).expected_move_pct ?? 0
+
   return NextResponse.json({
     data: {
       signal_direction:           (data as any).signal_direction,
-      expected_move_pct:          (data as any).expected_move_pct,
+      expected_move_pct:          expectedMovePct,  // log-scale score, NOT a %; use signal_strength_label for display
+      signal_strength_label:      signalStrengthLabel(expectedMovePct),
       opportunistic_buy_count:    (data as any).opportunistic_buy_count,
       opportunistic_sell_count:   (data as any).opportunistic_sell_count,
       local_opportunistic_count:  (data as any).local_opportunistic_count,
