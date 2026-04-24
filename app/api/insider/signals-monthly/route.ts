@@ -83,15 +83,37 @@ export async function GET(req: Request) {
   if (tickerErr) return NextResponse.json({ error: tickerErr.message }, { status: 500 })
   const tickers = (tickerRows ?? []).map((r: any) => r.symbol as string)
 
-  // Bulk-fetch classifications for this year (all insiders we've classified)
+  // Bulk-fetch classifications for current year AND prior year in one query.
+  // Prior year acts as fallback when the annual classify job hasn't run yet (Jan/Feb gap).
   const { data: classifications } = await supabase
     .from('insider_classifications')
-    .select('insider_cik, classification')
-    .eq('classified_year', classifiedYear)
+    .select('insider_cik, classification, classified_year')
+    .in('classified_year', [classifiedYear, classifiedYear - 1])
 
+  // Build classMap preferring current year; fall back to prior year per insider_cik.
   const classMap: Record<string, string> = {}
+  const priorYearMap: Record<string, string> = {}
   for (const c of classifications ?? []) {
-    classMap[(c as any).insider_cik] = (c as any).classification
+    const cik  = (c as any).insider_cik as string
+    const year = (c as any).classified_year as number
+    const cls  = (c as any).classification as string
+    if (year === classifiedYear) {
+      classMap[cik] = cls
+    } else {
+      priorYearMap[cik] = cls
+    }
+  }
+
+  let fallbackCount = 0
+  for (const [cik, cls] of Object.entries(priorYearMap)) {
+    if (!classMap[cik]) {
+      classMap[cik] = cls
+      fallbackCount++
+    }
+  }
+
+  if (fallbackCount > 0) {
+    console.log(`[classify] ${fallbackCount} insider(s) using prior-year (${classifiedYear - 1}) classification as fallback`)
   }
 
   // Fetch last month's transactions for all tracked tickers in one query
