@@ -77,6 +77,7 @@ function allBlocks(xml: string, tag: string): string[] {
 type ParsedTx = {
   insiderName:          string
   insiderCik:           string | null
+  insiderState:         string | null
   isDirector:           boolean
   isOfficer:            boolean
   officerTitle:         string | null
@@ -93,6 +94,7 @@ type ParsedTx = {
 function parseForm4(xml: string): ParsedTx[] {
   const insiderName  = directVal(xml, 'rptOwnerName') ?? 'Unknown'
   const insiderCik   = directVal(xml, 'rptOwnerCik') ?? null
+  const insiderState = directVal(xml, 'rptOwnerState') ?? null
   const isDirector   = directVal(xml, 'isDirector') === '1'
   const isOfficer    = directVal(xml, 'isOfficer') === '1'
   const officerTitle = directVal(xml, 'officerTitle')
@@ -124,6 +126,7 @@ function parseForm4(xml: string): ParsedTx[] {
     results.push({
       insiderName,
       insiderCik,
+      insiderState,
       isDirector,
       isOfficer,
       officerTitle,
@@ -169,7 +172,8 @@ async function processFiling(
   cikInt:     number,
   adsh:       string,
   primaryDoc: string | null,
-  filedDate:  string
+  filedDate:  string,
+  hqState:    string | null = null
 ): Promise<{ inserted: number; skipped: number }> {
   const adshClean = adsh.replace(/-/g, '')
   const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${adsh}-index.htm`
@@ -210,6 +214,7 @@ async function processFiling(
       price_per_share:       tx.pricePerShare,
       total_value:           tx.totalValue,
       shares_owned_after:    tx.sharesOwnedAfter,
+      is_local:              tx.insiderState !== null && hqState !== null && tx.insiderState === hqState,
       accession_number:      adsh,
       filed_date:            filedDate,
       source_url:            sourceUrl,
@@ -283,10 +288,10 @@ async function main() {
   console.log(`Backfill: ${START_DATE} → ${TODAY}`)
   console.log()
 
-  // 1. All tickers from Supabase
+  // 1. All tickers from Supabase (including hq_state for is_local computation)
   const { data: tickerRows, error: tickerErr } = await supabase
     .from('tickers')
-    .select('symbol')
+    .select('symbol, hq_state')
     .order('market_cap', { ascending: false })
 
   if (tickerErr) {
@@ -294,7 +299,11 @@ async function main() {
     process.exit(1)
   }
 
-  const symbols = (tickerRows ?? []).map((r: any) => r.symbol as string)
+  const symbols           = (tickerRows ?? []).map((r: any) => r.symbol as string)
+  const tickerToHqState: Record<string, string | null> = {}
+  for (const r of tickerRows ?? []) {
+    tickerToHqState[(r as any).symbol] = (r as any).hq_state ?? null
+  }
   console.log(`${symbols.length} tickers loaded from Supabase`)
 
   // 2. Ticker → CIK map from SEC
@@ -352,7 +361,8 @@ async function main() {
           filing.cik,
           filing.adsh,
           filing.primaryDoc,
-          filing.filedDate
+          filing.filedDate,
+          tickerToHqState[ticker] ?? null
         )
         tickerInserted += inserted
         tickerSkipped  += skipped

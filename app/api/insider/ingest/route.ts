@@ -54,6 +54,7 @@ function allBlocks(xml: string, tag: string): string[] {
 type ParsedTx = {
   insiderName: string
   insiderCik: string | null
+  insiderState: string | null
   isDirector: boolean
   isOfficer: boolean
   officerTitle: string | null
@@ -98,6 +99,7 @@ function detectPlanSale(block: string, xml: string, code: string): boolean {
 function parseForm4(xml: string): ParsedTx[] {
   const insiderName  = directVal(xml, 'rptOwnerName') ?? 'Unknown'
   const insiderCik   = directVal(xml, 'rptOwnerCik') ?? null
+  const insiderState = directVal(xml, 'rptOwnerState') ?? null
   const isDirector   = directVal(xml, 'isDirector') === '1'
   const isOfficer    = directVal(xml, 'isOfficer') === '1'
   const officerTitle = directVal(xml, 'officerTitle')
@@ -131,6 +133,7 @@ function parseForm4(xml: string): ParsedTx[] {
     results.push({
       insiderName,
       insiderCik,
+      insiderState,
       isDirector,
       isOfficer,
       officerTitle,
@@ -169,7 +172,8 @@ async function processFiling(
   cikInt: number,
   adsh: string,
   primaryDoc: string | null,
-  filedDate: string
+  filedDate: string,
+  hqState: string | null = null
 ): Promise<{ inserted: number; skipped: number }> {
   const adshClean = adsh.replace(/-/g, '')
   const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${adsh}-index.htm`
@@ -255,6 +259,7 @@ async function processFiling(
       total_value:           tx.totalValue,
       shares_owned_after:    tx.sharesOwnedAfter,
       is_plan_sale:          tx.isPlanSale,
+      is_local:              tx.insiderState !== null && hqState !== null && tx.insiderState === hqState,
       accession_number:      adsh,
       filed_date:            filedDate,
       source_url:            sourceUrl,
@@ -361,7 +366,8 @@ async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, stri
 async function ingestTickerInsiders(
   ticker: string,
   cikStr: string,
-  cutoffDate: string
+  cutoffDate: string,
+  hqState: string | null = null
 ): Promise<{ inserted: number; skipped: number }> {
   const subRes = await fetch(
     `https://data.sec.gov/submissions/CIK${padCik(cikStr)}.json`,
@@ -389,7 +395,7 @@ async function ingestTickerInsiders(
 
     await sleep(150)
 
-    const result = await processFiling(ticker, parseInt(cikStr, 10), adsh, null, dates[i])
+    const result = await processFiling(ticker, parseInt(cikStr, 10), adsh, null, dates[i], hqState)
     inserted += result.inserted
     skipped  += result.skipped
   }
@@ -408,12 +414,16 @@ export async function GET(req: Request) {
 
   const { data: tickerRows, error } = await supabase
     .from('tickers')
-    .select('symbol')
+    .select('symbol, hq_state')
     .order('market_cap', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const symbolSet = new Set((tickerRows ?? []).map((r: any) => r.symbol as string))
+  const symbolSet      = new Set((tickerRows ?? []).map((r: any) => r.symbol as string))
+  const tickerToHqState: Record<string, string | null> = {}
+  for (const r of tickerRows ?? []) {
+    tickerToHqState[(r as any).symbol] = (r as any).hq_state ?? null
+  }
 
   const cikRes = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS })
   if (!cikRes.ok) return NextResponse.json({ error: 'Failed to fetch CIK map' }, { status: 502 })
@@ -436,7 +446,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: `Ticker ${singleTicker} not found in CIK map` }, { status: 404 })
     }
     const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    const { inserted, skipped } = await ingestTickerInsiders(singleTicker, cikStr, cutoffDate)
+    const hqState    = tickerToHqState[singleTicker] ?? null
+    const { inserted, skipped } = await ingestTickerInsiders(singleTicker, cikStr, cutoffDate, hqState)
     return NextResponse.json({ ticker: singleTicker, inserted, skipped })
   }
 
@@ -462,10 +473,11 @@ export async function GET(req: Request) {
   let failed        = 0
 
   for (const entry of slice) {
-    const ticker = cikToTicker[entry.cik]
+    const ticker  = cikToTicker[entry.cik]
+    const hqState = tickerToHqState[ticker] ?? null
     try {
       await sleep(150)
-      const { inserted, skipped } = await processFiling(ticker, entry.cik, entry.adsh, entry.primaryDoc, entry.filedDate)
+      const { inserted, skipped } = await processFiling(ticker, entry.cik, entry.adsh, entry.primaryDoc, entry.filedDate, hqState)
       totalInserted += inserted
       totalSkipped  += skipped
     } catch {

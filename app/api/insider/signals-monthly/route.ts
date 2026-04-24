@@ -119,7 +119,7 @@ export async function GET(req: Request) {
   // Fetch last month's transactions for all tracked tickers in one query
   const { data: allTx, error: txErr } = await supabase
     .from('insider_transactions')
-    .select('ticker, insider_cik, insider_name, transaction_direction, total_value')
+    .select('ticker, insider_cik, insider_name, transaction_direction, total_value, is_local')
     .in('ticker', tickers)
     .gte('transaction_date', rangeFrom)
     .lte('transaction_date', rangeTo)
@@ -145,14 +145,16 @@ export async function GET(req: Request) {
 
     let opportunisticBuys  = 0
     let opportunisticSells = 0
+    let localOpportunistic = 0
     let buyValue           = 0
     let sellValue          = 0
     let routineFiltered    = 0
 
     for (const tx of txList) {
-      const cik           = (tx as any).insider_cik as string | null
-      const direction     = (tx as any).transaction_direction as string
-      const value         = (tx as any).total_value as number | null
+      const cik            = (tx as any).insider_cik as string | null
+      const direction      = (tx as any).transaction_direction as string
+      const value          = (tx as any).total_value as number | null
+      const isLocal        = (tx as any).is_local as boolean | null
       const classification = cik ? (classMap[cik] ?? 'UNCLASSIFIABLE') : 'UNCLASSIFIABLE'
 
       if (classification !== 'OPPORTUNISTIC') {
@@ -167,14 +169,16 @@ export async function GET(req: Request) {
         opportunisticSells++
         sellValue += value ?? 0
       }
+
+      if (isLocal) localOpportunistic++
     }
 
     if (opportunisticBuys === 0 && opportunisticSells === 0) continue
 
-    const maxCount   = Math.max(opportunisticBuys, opportunisticSells)
-    const strength   = clusterStrength(maxCount)
-    const expectedMove = computeExpectedMove(opportunisticBuys, opportunisticSells, 0)
-    const direction  = signalDirection(expectedMove)
+    const maxCount     = Math.max(opportunisticBuys, opportunisticSells)
+    const strength     = clusterStrength(maxCount)
+    const expectedMove = computeExpectedMove(opportunisticBuys, opportunisticSells, localOpportunistic)
+    const direction    = signalDirection(expectedMove)
 
     upserts.push({
       ticker,
@@ -183,7 +187,7 @@ export async function GET(req: Request) {
       opportunistic_sell_count:   opportunisticSells,
       opportunistic_buy_value:    buyValue > 0 ? Math.round(buyValue) : null,
       opportunistic_sell_value:   sellValue > 0 ? Math.round(sellValue) : null,
-      local_opportunistic_count:  0,
+      local_opportunistic_count:  localOpportunistic,
       cluster_strength:           strength,
       expected_move_pct:          expectedMove,
       signal_direction:           direction,
