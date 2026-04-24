@@ -219,6 +219,26 @@ async function processFiling(
       console.log(`[skip] plan sale detected — ${adsh} — ${tx.insiderName} ${tx.transactionDirection} ${ticker}`)
     }
 
+    // Deduplication: amended filings (Form 4/A) get new accession numbers but describe
+    // the same underlying trade. Skip if an identical row already exists.
+    if (tx.insiderCik) {
+      const { data: existing } = await supabase
+        .from('insider_transactions')
+        .select('id')
+        .eq('ticker',                ticker)
+        .eq('insider_cik',           tx.insiderCik)
+        .eq('transaction_date',      tx.transactionDate)
+        .eq('shares',                tx.shares)
+        .eq('transaction_direction', tx.transactionDirection)
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) {
+        console.log(`[skip] duplicate trade detected — ${adsh} — ${ticker}`)
+        continue
+      }
+    }
+
     const payload = {
       ticker,
       insider_name:          tx.insiderName,
