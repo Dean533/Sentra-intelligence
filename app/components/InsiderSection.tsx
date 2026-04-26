@@ -27,6 +27,31 @@ type Trade = {
   is_opportunistic: boolean
 }
 
+type ConvictionData = {
+  score: number
+  classification: 'HIGH_CONVICTION' | 'TAKE_TRADE' | 'MONITOR' | 'DO_NOT_TRADE'
+  role: string
+  factors: string[]
+  holdDays: number
+  positionMultiplier: number
+  exitRules: {
+    stopLoss: number
+    takeProfit: number
+    holdDays: number
+    stopLossPrice: number | null
+    takeProfitPrice: number | null
+  }
+  trade: {
+    insider_name: string
+    officer_title: string | null
+    transaction_date: string
+    total_value: number | null
+    price_per_share: number | null
+    shares: number | null
+    is_opportunistic: boolean
+  }
+}
+
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
 function fmtValue(n: number | null): string {
@@ -49,19 +74,125 @@ function fmtMonth(s: string): string {
 
 // expected_move_pct is a log-scale CMP formula score (range ~-0.43 to +0.46), not a real %.
 function signalStrengthLabel(v: number): string {
-  if (v > 0.3)  return 'Strong bullish signal'
-  if (v > 0.05) return 'Bullish signal'
-  if (v < -0.2) return 'Strong bearish signal'
+  if (v > 0.3)   return 'Strong bullish signal'
+  if (v > 0.05)  return 'Bullish signal'
+  if (v < -0.2)  return 'Strong bearish signal'
   if (v < -0.05) return 'Bearish signal'
   return 'Neutral'
+}
+
+// ─── Conviction score helpers ─────────────────────────────────────────────────
+
+function classificationLabel(c: ConvictionData['classification']): string {
+  if (c === 'HIGH_CONVICTION') return 'HIGH CONVICTION'
+  if (c === 'TAKE_TRADE')      return 'TAKE TRADE'
+  if (c === 'MONITOR')         return 'MONITOR ONLY'
+  return 'DO NOT TRADE'
+}
+
+function classificationColor(c: ConvictionData['classification']): string {
+  if (c === 'HIGH_CONVICTION') return '#3fb950'
+  if (c === 'TAKE_TRADE')      return '#58a6ff'
+  if (c === 'MONITOR')         return '#d4a037'
+  return '#f85149'
+}
+
+function scoreBarColor(score: number): string {
+  if (score >= 85) return '#3fb950'
+  if (score >= 70) return '#58a6ff'
+  if (score >= 50) return '#d4a037'
+  return '#f85149'
+}
+
+// ─── Conviction score panel ───────────────────────────────────────────────────
+
+function ConvictionPanel({ conviction }: { conviction: ConvictionData }) {
+  const { score, classification, factors, holdDays, positionMultiplier, exitRules } = conviction
+  const clsColor = classificationColor(classification)
+  const barColor  = scoreBarColor(score)
+
+  return (
+    <div style={{
+      background: '#0d1117',
+      border: '1px solid #1f2937',
+      borderRadius: '6px',
+      padding: '16px',
+      marginBottom: '20px',
+    }}>
+      {/* Score row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+        <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498', textTransform: 'uppercase' }}>
+          Conviction Score
+        </span>
+        <span style={{ fontSize: '22px', fontWeight: 800, color: barColor, letterSpacing: '-0.5px' }}>
+          {score}<span style={{ fontSize: '14px', fontWeight: 400, color: '#4a5568', marginLeft: '2px' }}>/100</span>
+        </span>
+      </div>
+
+      {/* Score bar */}
+      <div style={{ height: '3px', background: '#1f2937', borderRadius: '2px', marginBottom: '12px' }}>
+        <div style={{ height: '100%', width: `${score}%`, background: barColor, borderRadius: '2px', transition: 'width 0.4s ease' }} />
+      </div>
+
+      {/* Classification + hold + multiplier */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+        <span style={{ fontSize: '13px', fontWeight: 700, color: clsColor, letterSpacing: '0.5px' }}>
+          {classificationLabel(classification)}
+        </span>
+        <span style={{ color: '#3a4a60' }}>·</span>
+        <span style={{ fontSize: '12px', color: '#c9d1d9' }}>
+          Hold <strong style={{ color: '#e6edf3' }}>{holdDays}d</strong>
+        </span>
+        {positionMultiplier > 1 && (
+          <>
+            <span style={{ color: '#3a4a60' }}>·</span>
+            <span style={{ fontSize: '12px', color: '#c9d1d9' }}>
+              Position <strong style={{ color: '#e6edf3' }}>{positionMultiplier}×</strong>
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* Exit rules */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '12px', fontSize: '12px', color: '#7b8498' }}>
+        <span>
+          Stop loss{' '}
+          <strong style={{ color: '#f85149' }}>
+            {exitRules.stopLossPrice != null ? `$${exitRules.stopLossPrice.toFixed(2)}` : '−10%'}
+          </strong>
+        </span>
+        <span style={{ color: '#3a4a60' }}>·</span>
+        <span>
+          Take profit{' '}
+          <strong style={{ color: '#3fb950' }}>
+            {exitRules.takeProfitPrice != null ? `$${exitRules.takeProfitPrice.toFixed(2)}` : '+25%'}
+          </strong>
+        </span>
+      </div>
+
+      {/* Factors */}
+      {factors.length > 0 && (
+        <div style={{ borderTop: '1px solid #1f2937', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {factors.map((f, i) => (
+            <div key={i} style={{ fontSize: '11px', color: f.includes('-') ? '#f85149' : '#7b8498', display: 'flex', gap: '6px' }}>
+              <span style={{ color: f.includes('-') ? '#f85149' : '#4a5568', flexShrink: 0 }}>
+                {f.includes('-') ? '✕' : '✓'}
+              </span>
+              <span>{f}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Trade row ────────────────────────────────────────────────────────────────
 
 function TradeRow({ trade, marketCap }: { trade: Trade; marketCap: number | null }) {
-  const isBuy      = trade.transaction_direction === 'buy' || trade.transaction_code === 'P'
-  const dirColor   = isBuy ? '#3fb950' : '#f85149'
-  const dirLabel   = isBuy ? 'BUY' : 'SELL'
+  const isBuy       = trade.transaction_direction === 'buy' || trade.transaction_code === 'P'
+  const dirColor    = isBuy ? '#3fb950' : '#f85149'
+  const dirLabel    = isBuy ? 'BUY' : 'SELL'
   const accentColor = trade.is_opportunistic ? (isBuy ? '#3fb950' : '#f85149') : 'transparent'
 
   const pctOfMktCap =
@@ -131,28 +262,34 @@ export default function InsiderSection({
   ticker: string
   marketCap: number | null
 }) {
-  const [signal,        setSignal]        = useState<CmpSignal | null>(null)
-  const [trades,        setTrades]        = useState<Trade[]>([])
-  const [loadingSignal, setLoadingSignal] = useState(true)
-  const [loadingTrades, setLoadingTrades] = useState(true)
+  const [signal,     setSignal]     = useState<CmpSignal | null>(null)
+  const [trades,     setTrades]     = useState<Trade[]>([])
+  const [conviction, setConviction] = useState<ConvictionData | null>(null)
+
+  const [loadingSignal,     setLoadingSignal]     = useState(true)
+  const [loadingTrades,     setLoadingTrades]     = useState(true)
+  const [loadingConviction, setLoadingConviction] = useState(true)
 
   useEffect(() => {
     if (!ticker) return
     setLoadingSignal(true)
     setLoadingTrades(true)
+    setLoadingConviction(true)
 
     fetch(`/api/insider/cmp-signal/${ticker}`)
-      .then((r) => r.json())
-      .then((d) => setSignal(d.data ?? null))
+      .then(r => r.json())
+      .then(d => setSignal(d.data ?? null))
       .finally(() => setLoadingSignal(false))
 
     fetch(`/api/insider/fetch?ticker=${ticker}&limit=5`)
-      .then((r) => r.json())
-      .then((d) => {
-        console.log(`[InsiderSection] fetch response for ${ticker}:`, d)
-        setTrades(d.rows ?? [])
-      })
+      .then(r => r.json())
+      .then(d => setTrades(d.rows ?? []))
       .finally(() => setLoadingTrades(false))
+
+    fetch(`/api/insider/conviction/${ticker}`)
+      .then(r => r.json())
+      .then(d => setConviction(d.data ?? null))
+      .finally(() => setLoadingConviction(false))
   }, [ticker])
 
   if (loadingSignal || loadingTrades) return null
@@ -165,7 +302,7 @@ export default function InsiderSection({
   return (
     <div>
       {/* Top row: section label + signal direction */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '20px' }}>
         <p style={{
           fontSize: '11px', letterSpacing: '2px', color: '#7b8498',
           textTransform: 'uppercase', margin: 0,
@@ -189,6 +326,11 @@ export default function InsiderSection({
         )}
       </div>
 
+      {/* Conviction score panel (shown when loaded) */}
+      {!loadingConviction && conviction && (
+        <ConvictionPanel conviction={conviction} />
+      )}
+
       {/* Trade list */}
       {trades.length > 0 ? (
         <div>
@@ -210,8 +352,8 @@ export default function InsiderSection({
         <a
           href={`/insider/${ticker}`}
           style={{ fontSize: '12px', color: '#7b8498', textDecoration: 'none', letterSpacing: '0.5px' }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = '#c9d1d9')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}
+          onMouseEnter={e => (e.currentTarget.style.color = '#c9d1d9')}
+          onMouseLeave={e => (e.currentTarget.style.color = '#7b8498')}
         >
           See full analysis →
         </a>
