@@ -34,11 +34,12 @@ const supabase = createClient(
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const START_DATE      = '2023-01-01'
+const START_DATE      = '2021-01-01'
 const TODAY           = new Date().toISOString().split('T')[0]
 const PAGE_SIZE       = 50
-const TICKER_DELAY_MS = 500   // between tickers
-const FILING_DELAY_MS = 200   // between XML fetches within a ticker
+const TICKER_DELAY_MS = 200   // between tickers
+const FILING_DELAY_MS = 100   // between XML fetches within a ticker
+const PROGRESS_PATH   = path.join(process.cwd(), 'output', 'backfill-progress.json')
 
 const SEC_HEADERS = {
   'User-Agent': 'Sentra contact@sentra.com',
@@ -89,6 +90,29 @@ type ParsedTx = {
   pricePerShare:        number
   totalValue:           number
   sharesOwnedAfter:     number | null
+  isPlanSale:           boolean
+}
+
+function detectPlanSale(block: string, xml: string, code: string): boolean {
+  const planNameDirect = directVal(block, 'planName')
+  const planNameNested = nestedVal(block, 'transactionPlanName')
+  if ((planNameDirect && planNameDirect.trim().length > 0) ||
+      (planNameNested && planNameNested.trim().length > 0)) {
+    return true
+  }
+
+  if (code === 'S') {
+    const footnoteIdRe = /footnoteId[^>]*\sid="([^"]+)"/gi
+    let match: RegExpExecArray | null
+    while ((match = footnoteIdRe.exec(block)) !== null) {
+      const fid = match[1]
+      const footnoteRe = new RegExp(`<footnote[^>]*\\sid="${fid}"[^>]*>([\\s\\S]*?)<\\/footnote>`, 'i')
+      const fn = xml.match(footnoteRe)
+      if (fn && fn[1].toLowerCase().includes('10b5-1')) return true
+    }
+  }
+
+  return false
 }
 
 function parseForm4(xml: string): ParsedTx[] {
@@ -123,6 +147,8 @@ function parseForm4(xml: string): ParsedTx[] {
     if (!dateStr || shares <= 0 || price <= 0) continue
     if (shares * price < 100_000) continue
 
+    const isPlanSale = detectPlanSale(block, xml, code)
+
     results.push({
       insiderName,
       insiderCik,
@@ -138,6 +164,7 @@ function parseForm4(xml: string): ParsedTx[] {
       pricePerShare:        price,
       totalValue:           Math.round(shares * price * 100) / 100,
       sharesOwnedAfter:     sharesAfterStr ? parseFloat(sharesAfterStr) : null,
+      isPlanSale,
     })
   }
 
@@ -214,6 +241,7 @@ async function processFiling(
       price_per_share:       tx.pricePerShare,
       total_value:           tx.totalValue,
       shares_owned_after:    tx.sharesOwnedAfter,
+      is_plan_sale:          tx.isPlanSale,
       is_local:              tx.insiderState !== null && hqState !== null && tx.insiderState === hqState,
       accession_number:      adsh,
       filed_date:            filedDate,
@@ -286,6 +314,18 @@ async function fetchFilingsForTicker(
 
 async function main() {
   console.log(`Backfill: ${START_DATE} → ${TODAY}`)
+
+  // Load resume state — tickers already completed in a previous run
+  console.log(`Progress file path: ${PROGRESS_PATH}`)
+  let completed: Set<string>
+  if (fs.existsSync(PROGRESS_PATH)) {
+    const saved = JSON.parse(fs.readFileSync(PROGRESS_PATH, 'utf-8')) as string[]
+    completed = new Set(saved)
+    console.log(`Resuming — ${completed.size} ticker(s) already done: ${[...completed].slice(0, 5).join(', ')}${completed.size > 5 ? '…' : ''}`)
+  } else {
+    completed = new Set()
+    console.log('No progress file found — starting from scratch')
+  }
   console.log()
 
   // 1. All tickers from Supabase (including hq_state for is_local computation)
@@ -329,6 +369,11 @@ async function main() {
   for (let i = 0; i < symbols.length; i++) {
     const ticker     = symbols[i]
     const companyCik = tickerToCik[ticker]
+
+    if (completed.has(ticker)) {
+      console.log(`[${i + 1}/${symbols.length}] ${ticker.padEnd(6)} — already done, skipping`)
+      continue
+    }
 
     if (!companyCik) {
       console.log(`[${i + 1}/${symbols.length}] ${ticker.padEnd(6)} — no CIK in SEC map, skipping`)
@@ -379,6 +424,12 @@ async function main() {
       `${filings.length} filing${filings.length !== 1 ? 's' : ''}, ` +
       `${tickerInserted} inserted, ${tickerSkipped} skipped`
     )
+
+    // Mark ticker complete and persist progress so a restart can resume here
+    completed.add(ticker)
+    fs.mkdirSync(path.dirname(PROGRESS_PATH), { recursive: true })
+    fs.writeFileSync(PROGRESS_PATH, JSON.stringify([...completed], null, 2), 'utf-8')
+    console.log(`  [progress] saved ${completed.size} completed tickers → ${PROGRESS_PATH}`)
 
     await sleep(TICKER_DELAY_MS)
   }

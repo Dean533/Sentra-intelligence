@@ -1,0 +1,165 @@
+dim_id,dimension,filter_label,n,hit_90d,alpha_90d_med,hit_150d,alpha_150d_med,confidence,note
+1,Dollar Size Optimization,$100K–250K,123,54%,+2.8%,47%,-0.5%,HIGH,
+1,Dollar Size Optimization,$250K–500K,79,54%,+0.9%,60%,+6.3%,HIGH,
+1,Dollar Size Optimization,$500K–1M,48,62%,+3.8%,78%,+8.8%,HIGH,
+1,Dollar Size Optimization,$1M–5M,68,72%,+6.4%,79%,+12.5%,HIGH,
+1,Dollar Size Optimization,$5M–25M,17,75%,+10.2%,69%,+13.1%,MEDIUM,
+1,Dollar Size Optimization,$25M+,5,33%,-4.5%,67%,+7.0%,INSUF,
+1x,Dollar Size Optimization,Best lower bound: >= $3000K,39,81%,+11.3%,78%,+14.4%,HIGH,Optimal lower bound by 90d median alpha (n>=39)
+1y,Dollar Size Optimization,Best range: $3000K–$5000K,17,94%,+13.0%,88%,+15.5%,MEDIUM,Grid search optimum
+2,Role Ranking,CEO,80,67%,+7.1%,66%,+8.3%,HIGH,
+2,Role Ranking,CFO,6,67%,+2.6%,83%,+8.4%,LOW,
+2,Role Ranking,President,7,33%,-4.1%,33%,-2.2%,LOW,
+2,Role Ranking,Director,148,54%,+2.1%,47%,-0.8%,HIGH,
+2,Role Ranking,10% Owner,52,85%,+5.2%,100%,+13.5%,HIGH,
+2,Role Ranking,Co-Founder/Partner,8,0%,-7.3%,100%,+7.8%,LOW,
+2,Role Ranking,Insider (other),27,44%,-5.9%,46%,-8.5%,HIGH,
+2,Role Ranking,Other/EVP,12,58%,+3.4%,67%,+4.1%,MEDIUM,
+3,Sector Ranking,Communication Services,29,81%,+11.3%,88%,+12.7%,HIGH,INCLUDE
+3,Sector Ranking,Financial Services,86,65%,+4.3%,90%,+11.5%,HIGH,INCLUDE
+3,Sector Ranking,Consumer Cyclical,28,61%,+5.5%,69%,+5.6%,HIGH,INCLUDE
+3,Sector Ranking,Healthcare,37,54%,+2.6%,58%,+3.0%,HIGH,INCLUDE
+3,Sector Ranking,Real Estate,8,71%,+6.3%,50%,+1.7%,LOW,NEUTRAL
+3,Sector Ranking,Industrials,52,61%,+2.8%,51%,+0.8%,HIGH,NEUTRAL
+3,Sector Ranking,Technology,61,59%,+3.8%,42%,-2.6%,HIGH,EXCLUDE
+3,Sector Ranking,Utilities,25,32%,-4.9%,24%,-6.0%,HIGH,EXCLUDE
+3,Sector Ranking,Energy,4,25%,-3.0%,25%,-10.4%,INSUF,EXCLUDE
+3,Sector Ranking,Consumer Defensive,8,38%,-10.4%,25%,-13.4%,LOW,EXCLUDE
+4,Cluster Effect (count),1 insider same month,174,54%,+1.8%,52%,+1.1%,HIGH,
+4,Cluster Effect (count),2 insiders same month,46,54%,+2.1%,61%,+4.9%,HIGH,
+4,Cluster Effect (count),3 insiders same month,18,40%,-7.3%,73%,+7.2%,MEDIUM,
+4,Cluster Effect (count),4+ insiders same month,102,75%,+5.5%,76%,+10.2%,HIGH,
+5,Local Insider Effect,N/A,0,N/A,N/A,N/A,N/A,INSUF,is_local not available in current dataset — requires address enrichment
+6,Plan Sale Exclusion,transaction_code = P,340,60%,+3.3%,62%,+6.3%,HIGH,Dataset pre-filtered for opportunistic buys; all codes are open-market purchases
+7,Insider Track Record,Hit>=65% & alpha>=5% (high),77,81%,+7.8%,63%,+8.2%,HIGH,Position size multiplier candidate
+7,Insider Track Record,Below threshold (low),164,57%,+2.1%,62%,+6.3%,HIGH,
+7t,Insider Track Record (top),AUSTIN ROXANNE S,5,100%,+23.7%,100%,+43.0%,LOW,
+7t,Insider Track Record (top),Emanuel Ariel,25,84%,+11.5%,88%,+12.7%,HIGH,
+7t,Insider Track Record (top),You Harry L.,6,67%,+7.9%,20%,-13.3%,LOW,
+7t,Insider Track Record (top),HANDLER DAVID A,8,75%,+7.8%,75%,+9.0%,LOW,
+7t,Insider Track Record (top),MYERS FRANKLIN,27,59%,+7.5%,56%,+1.2%,HIGH,
+7t,Insider Track Record (top),SWAN ROBERT HOLMES,14,71%,+6.6%,54%,+3.0%,MEDIUM,
+7t,Insider Track Record (top),Samuels Theodore R. II,7,71%,+6.3%,57%,+2.4%,LOW,
+7t,Insider Track Record (top),Arora Nikesh,6,83%,+5.9%,0%,-10.7%,LOW,
+8,Company Track Record,Hit>=65% & alpha>=5% (high),63,79%,+8.1%,68%,+8.3%,HIGH,Position size multiplier candidate
+8,Company Track Record,Below threshold,188,54%,+0.9%,63%,+6.3%,HIGH,
+9,Conviction Proxy (size vs median),0.5x or less (below avg),51,62%,+2.5%,76%,+9.2%,HIGH,
+9,Conviction Proxy (size vs median),0.5x–1x  (near median),145,57%,+3.2%,55%,+3.4%,HIGH,
+9,Conviction Proxy (size vs median),1x–2x    (above median),95,58%,+3.9%,58%,+2.8%,HIGH,
+9,Conviction Proxy (size vs median),2x–5x    (large vs usual),38,71%,+8.4%,82%,+13.4%,HIGH,
+9,Conviction Proxy (size vs median),>5x      (exceptional),11,64%,+4.3%,60%,+9.9%,MEDIUM,
+10,Cluster Dollar Total,< $500K cluster total,139,50%,-0.1%,47%,-0.7%,HIGH,
+10,Cluster Dollar Total,$500K–1M cluster total,42,54%,+2.4%,54%,+0.4%,HIGH,
+10,Cluster Dollar Total,$1M–5M  cluster total,87,63%,+2.8%,76%,+10.3%,HIGH,
+10,Cluster Dollar Total,$5M–25M cluster total,38,87%,+6.7%,82%,+10.5%,HIGH,
+10,Cluster Dollar Total,$25M+   cluster total,34,71%,+11.5%,74%,+12.7%,HIGH,
+11,Hold Period by Role,CEO @ 30d,80,45%,-1.0%,66%,+8.3%,HIGH,
+11,Hold Period by Role,CEO @ 60d,77,61%,+3.9%,66%,+8.3%,HIGH,
+11,Hold Period by Role,CEO @ 90d,76,67%,+7.1%,66%,+8.3%,HIGH,
+11,Hold Period by Role,CEO @ 120d,76,68%,+4.9%,66%,+8.3%,HIGH,
+11,Hold Period by Role,CEO @ 150d,76,66%,+8.3%,66%,+8.3%,HIGH,<< PEAK for CEO
+11,Hold Period by Role,CEO @ 180d,73,59%,+3.0%,66%,+8.3%,HIGH,
+11,Hold Period by Role,Director @ 30d,148,52%,+0.3%,47%,-0.8%,HIGH,
+11,Hold Period by Role,Director @ 60d,148,52%,+0.8%,47%,-0.8%,HIGH,
+11,Hold Period by Role,Director @ 90d,148,54%,+2.1%,47%,-0.8%,HIGH,<< PEAK for Director
+11,Hold Period by Role,Director @ 120d,147,47%,-0.8%,47%,-0.8%,HIGH,
+11,Hold Period by Role,Director @ 150d,143,47%,-0.8%,47%,-0.8%,HIGH,
+11,Hold Period by Role,Director @ 180d,143,52%,+1.6%,47%,-0.8%,HIGH,
+11,Hold Period by Role,10% Owner @ 30d,52,79%,+5.4%,100%,+13.5%,HIGH,
+11,Hold Period by Role,10% Owner @ 60d,52,77%,+3.6%,100%,+13.5%,HIGH,
+11,Hold Period by Role,10% Owner @ 90d,52,85%,+5.2%,100%,+13.5%,HIGH,
+11,Hold Period by Role,10% Owner @ 120d,52,92%,+9.5%,100%,+13.5%,HIGH,
+11,Hold Period by Role,10% Owner @ 150d,52,100%,+13.5%,100%,+13.5%,HIGH,
+11,Hold Period by Role,10% Owner @ 180d,52,100%,+16.0%,100%,+13.5%,HIGH,<< PEAK for 10% Owner
+11,Hold Period by Role,Other/EVP @ 30d,12,75%,+2.3%,67%,+4.1%,MEDIUM,
+11,Hold Period by Role,Other/EVP @ 60d,12,50%,+1.1%,67%,+4.1%,MEDIUM,
+11,Hold Period by Role,Other/EVP @ 90d,12,58%,+3.4%,67%,+4.1%,MEDIUM,
+11,Hold Period by Role,Other/EVP @ 120d,12,50%,+3.3%,67%,+4.1%,MEDIUM,
+11,Hold Period by Role,Other/EVP @ 150d,12,67%,+4.1%,67%,+4.1%,MEDIUM,
+11,Hold Period by Role,Other/EVP @ 180d,12,67%,+7.2%,67%,+4.1%,MEDIUM,<< PEAK for Other/EVP
+11,Hold Period by Role,CFO @ 30d,6,67%,+2.8%,83%,+8.4%,LOW,
+11,Hold Period by Role,CFO @ 60d,6,67%,+8.6%,83%,+8.4%,LOW,
+11,Hold Period by Role,CFO @ 90d,6,67%,+2.6%,83%,+8.4%,LOW,
+11,Hold Period by Role,CFO @ 120d,6,100%,+5.7%,83%,+8.4%,LOW,
+11,Hold Period by Role,CFO @ 150d,6,83%,+8.4%,83%,+8.4%,LOW,
+11,Hold Period by Role,CFO @ 180d,5,80%,+13.4%,83%,+8.4%,LOW,<< PEAK for CFO
+12,Hold Period by Sector,Communication Services @ 30d,29,38%,-2.0%,88%,+12.7%,HIGH,
+12,Hold Period by Sector,Communication Services @ 60d,26,81%,+5.1%,88%,+12.7%,HIGH,
+12,Hold Period by Sector,Communication Services @ 90d,26,81%,+11.3%,88%,+12.7%,HIGH,
+12,Hold Period by Sector,Communication Services @ 120d,26,77%,+5.5%,88%,+12.7%,HIGH,
+12,Hold Period by Sector,Communication Services @ 150d,26,88%,+12.7%,88%,+12.7%,HIGH,<< PEAK for Communication Services
+12,Hold Period by Sector,Communication Services @ 180d,26,73%,+5.1%,88%,+12.7%,HIGH,
+12,Hold Period by Sector,Financial Services @ 30d,86,55%,+0.7%,90%,+11.5%,HIGH,
+12,Hold Period by Sector,Financial Services @ 60d,86,57%,+2.0%,90%,+11.5%,HIGH,
+12,Hold Period by Sector,Financial Services @ 90d,86,65%,+4.3%,90%,+11.5%,HIGH,
+12,Hold Period by Sector,Financial Services @ 120d,86,84%,+9.0%,90%,+11.5%,HIGH,
+12,Hold Period by Sector,Financial Services @ 150d,86,90%,+11.5%,90%,+11.5%,HIGH,
+12,Hold Period by Sector,Financial Services @ 180d,86,87%,+13.7%,90%,+11.5%,HIGH,<< PEAK for Financial Services
+12,Hold Period by Sector,Technology @ 30d,61,51%,+0.3%,42%,-2.6%,HIGH,
+12,Hold Period by Sector,Technology @ 60d,61,48%,-0.1%,42%,-2.6%,HIGH,
+12,Hold Period by Sector,Technology @ 90d,61,59%,+3.8%,42%,-2.6%,HIGH,<< PEAK for Technology
+12,Hold Period by Sector,Technology @ 120d,60,48%,-0.4%,42%,-2.6%,HIGH,
+12,Hold Period by Sector,Technology @ 150d,59,42%,-2.6%,42%,-2.6%,HIGH,
+12,Hold Period by Sector,Technology @ 180d,59,51%,+1.8%,42%,-2.6%,HIGH,
+12,Hold Period by Sector,Consumer Cyclical @ 30d,28,64%,+2.6%,69%,+5.6%,HIGH,
+12,Hold Period by Sector,Consumer Cyclical @ 60d,28,75%,+7.6%,69%,+5.6%,HIGH,<< PEAK for Consumer Cyclical
+12,Hold Period by Sector,Consumer Cyclical @ 90d,28,61%,+5.5%,69%,+5.6%,HIGH,
+12,Hold Period by Sector,Consumer Cyclical @ 120d,27,59%,+3.3%,69%,+5.6%,HIGH,
+12,Hold Period by Sector,Consumer Cyclical @ 150d,26,69%,+5.6%,69%,+5.6%,HIGH,
+12,Hold Period by Sector,Consumer Cyclical @ 180d,23,52%,+5.2%,69%,+5.6%,HIGH,
+12,Hold Period by Sector,Industrials @ 30d,52,62%,+1.0%,51%,+0.8%,HIGH,
+12,Hold Period by Sector,Industrials @ 60d,52,63%,+2.5%,51%,+0.8%,HIGH,
+12,Hold Period by Sector,Industrials @ 90d,51,61%,+2.8%,51%,+0.8%,HIGH,<< PEAK for Industrials
+12,Hold Period by Sector,Industrials @ 120d,51,55%,+1.7%,51%,+0.8%,HIGH,
+12,Hold Period by Sector,Industrials @ 150d,49,51%,+0.8%,51%,+0.8%,HIGH,
+12,Hold Period by Sector,Industrials @ 180d,48,54%,+0.8%,51%,+0.8%,HIGH,
+12,Hold Period by Sector,Healthcare @ 30d,37,57%,+0.5%,58%,+3.0%,HIGH,
+12,Hold Period by Sector,Healthcare @ 60d,37,49%,-0.3%,58%,+3.0%,HIGH,
+12,Hold Period by Sector,Healthcare @ 90d,37,54%,+2.6%,58%,+3.0%,HIGH,
+12,Hold Period by Sector,Healthcare @ 120d,37,57%,+5.1%,58%,+3.0%,HIGH,
+12,Hold Period by Sector,Healthcare @ 150d,36,58%,+3.0%,58%,+3.0%,HIGH,
+12,Hold Period by Sector,Healthcare @ 180d,35,63%,+6.6%,58%,+3.0%,HIGH,<< PEAK for Healthcare
+13,Early Dip Rule,No dip (0–3%),151,70%,+5.8%,66%,+8.3%,HIGH,Recovery@90d: 34%
+13,Early Dip Rule,Mid dip (3–10%),130,58%,+2.6%,61%,+4.7%,HIGH,
+13,Early Dip Rule,Deep dip (>10%) — HOLD,59,36%,-4.9%,54%,+3.3%,HIGH,Recovery@90d: 36% — compare to exit below
+13,Early Dip Rule,Deep dip (>10%) — EXIT at dip,55,0%,-16.3%,N/A,N/A,HIGH,Simulated exit at max drawdown: dd30 is approx exit alpha. Compare vs HOLD row above.
+14,Take Profit Analysis,"Exit at +15% if hit, else hold 150d",327,61%,+4.3%,62%,+6.3%,HIGH,TP hit rate: 56%  |  Hold 150d median alpha: +6.3%
+14,Take Profit Analysis,"Exit at +20% if hit, else hold 150d",327,63%,+6.2%,62%,+6.3%,HIGH,TP hit rate: 47%  |  Hold 150d median alpha: +6.3%
+14,Take Profit Analysis,"Exit at +25% if hit, else hold 150d",327,62%,+6.8%,62%,+6.3%,HIGH,TP hit rate: 35%  |  Hold 150d median alpha: +6.3%
+14,Take Profit Analysis,"Exit at +30% if hit, else hold 150d",327,62%,+6.8%,62%,+6.3%,HIGH,TP hit rate: 24%  |  Hold 150d median alpha: +6.3%
+15,News/Volatility Proxy,|ret30| < 5% (low vol),148,60%,+3.8%,54%,+2.8%,HIGH,Quiet first 30 days
+15,News/Volatility Proxy,|ret30| 5-15% (moderate),136,58%,+2.7%,68%,+6.9%,HIGH,
+15,News/Volatility Proxy,|ret30| >= 15% (high vol),56,63%,+4.8%,67%,+11.3%,HIGH,Major move in first 30d
+16,SPY Pre-Trade 30d Momentum,SPY pre30 < -10% (crash),13,85%,+7.9%,69%,+11.0%,MEDIUM,Strong contrarian
+16,SPY Pre-Trade 30d Momentum,SPY pre30 -10% to -5%,33,67%,+2.8%,64%,+9.0%,HIGH,Mild weakness
+16,SPY Pre-Trade 30d Momentum,SPY pre30 -5% to 0%,68,58%,+4.3%,71%,+7.2%,HIGH,Slight dip
+16,SPY Pre-Trade 30d Momentum,SPY pre30 0% to +5%,193,57%,+2.9%,59%,+6.8%,HIGH,Flat/mild up
+16,SPY Pre-Trade 30d Momentum,SPY pre30 +5% to +10%,28,57%,+1.4%,46%,-0.6%,HIGH,Rising
+16,SPY Pre-Trade 30d Momentum,SPY pre30 > +10%,5,80%,+17.9%,100%,+4.4%,LOW,Strong up
+17,Sector ETF Pre-Trade Momentum,ETF pre30 < -5% (contrarian),52,77%,+5.5%,69%,+11.2%,HIGH,Sector under pressure — best contrarian setup?
+17,Sector ETF Pre-Trade Momentum,ETF pre30 -5% to 0%,97,56%,+2.6%,63%,+4.4%,HIGH,Slight sector weakness
+17,Sector ETF Pre-Trade Momentum,ETF pre30 0% to +5%,125,53%,+2.1%,59%,+6.8%,HIGH,Sector flat
+17,Sector ETF Pre-Trade Momentum,ETF pre30 > +5% (momentum),64,63%,+3.8%,59%,+3.0%,HIGH,Sector in momentum — riding wave?
+18,Volatility Filter (dd30 proxy),Low vol   |dd30| < 3%,151,70%,+5.8%,66%,+8.3%,HIGH,
+18,Volatility Filter (dd30 proxy),Medium vol |dd30| 3-7%,100,58%,+2.5%,62%,+4.3%,HIGH,
+18,Volatility Filter (dd30 proxy),High vol  |dd30| 7-15%,61,48%,-0.5%,64%,+5.3%,HIGH,
+18,Volatility Filter (dd30 proxy),Very high |dd30| > 15%,28,33%,-5.9%,35%,-6.1%,HIGH,
+19,Market Cap Effect,large cap,193,65%,+3.8%,70%,+8.2%,HIGH,
+19,Market Cap Effect,mid cap,126,52%,+2.1%,50%,-0.1%,HIGH,
+19,Market Cap Effect,small cap,21,57%,+5.1%,65%,+3.3%,HIGH,
+20,Auto Exclusion,TICKER: CVS,8,50%,-0.6%,50%,-0.0%,LOW,hit=50% med90=-0.6% — EXCLUDE
+20,Auto Exclusion,TICKER: VST,23,35%,-4.9%,26%,-5.8%,HIGH,hit=35% med90=-4.9% — EXCLUDE
+20,Auto Exclusion,TICKER: MSTR,9,11%,-20.2%,13%,-46.4%,LOW,hit=11% med90=-20.2% — EXCLUDE
+20,Auto Exclusion,TICKER: VRTX,5,40%,-9.9%,80%,+7.7%,LOW,hit=40% med90=-9.9% — EXCLUDE
+20,Auto Exclusion,TICKER: GME,6,33%,-2.9%,40%,-8.3%,LOW,hit=33% med90=-2.9% — EXCLUDE
+20,Auto Exclusion,TICKER: ALLE,5,20%,-6.6%,40%,-5.5%,LOW,hit=20% med90=-6.6% — EXCLUDE
+20,Auto Exclusion,TICKER: CRL,5,40%,-6.0%,20%,-10.7%,LOW,hit=40% med90=-6.0% — EXCLUDE
+20,Auto Exclusion,INSIDER: WALLMAN RICHARD F,11,45%,-0.1%,45%,-0.6%,MEDIUM,hit=45% med90=-0.1% — EXCLUDE
+20,Auto Exclusion,INSIDER: HELM SCOTT B,23,35%,-4.9%,26%,-5.8%,HIGH,hit=35% med90=-4.9% — EXCLUDE
+20,Auto Exclusion,INSIDER: Patten Jarrod M,5,0%,-33.0%,0%,-49.3%,LOW,hit=0% med90=-33.0% — EXCLUDE
+20,Auto Exclusion,INSIDER: Cheng Lawrence,6,33%,-2.9%,40%,-8.3%,LOW,hit=33% med90=-2.9% — EXCLUDE
+20,Auto Exclusion,INSIDER: Stone John H,6,33%,-3.4%,50%,-0.1%,LOW,hit=33% med90=-3.4% — EXCLUDE
+21,BTC Correlation,No strong BTC-correlated names,0,N/A,N/A,N/A,N/A,MEDIUM,No ticker shows |btcCorr| > 0.5 AND > |spyCorr| across 5+ trades
+22,Filing-Driven Insiders,(none flagged),0,N/A,N/A,N/A,N/A,MEDIUM,No insiders flagged as filing/compensation-driven in current dataset
+23,Small Trade as Confirming Signal,>=$500K primary + $100K–250K confirming (same month),18,89%,+11.3%,83%,+8.5%,MEDIUM,Does adding small confirming trades improve primary signal?
+23,Small Trade as Confirming Signal,>=$500K standalone (no small confirming),55,53%,+2.1%,62%,+5.8%,HIGH,
