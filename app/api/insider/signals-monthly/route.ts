@@ -124,9 +124,36 @@ export async function GET(req: Request) {
     .gte('transaction_date', rangeFrom)
     .lte('transaction_date', rangeTo)
     .not('transaction_direction', 'is', null)
-    .eq('is_plan_sale', false)
+    .neq('is_plan_sale', true)
 
   if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
+
+  // Diagnostic: log TTD-specific transaction counts to reveal is_plan_sale / classification gaps
+  const ttdAll = (allTx ?? []).filter((r: any) => r.ticker === 'TTD')
+  if (ttdAll.length > 0) {
+    console.log(`[signals-monthly] TTD: ${ttdAll.length} tx passed is_plan_sale=false filter`)
+    for (const r of ttdAll) {
+      const cik = (r as any).insider_cik
+      const cls = cik ? (classMap[cik] ?? 'NOT IN classMap') : 'NULL cik'
+      console.log(`[signals-monthly] TTD tx: ${(r as any).insider_name} | dir=${(r as any).transaction_direction} | val=${(r as any).total_value} | cik=${cik} | classification=${cls}`)
+    }
+  } else {
+    // Check if TTD trades exist at all but were blocked by is_plan_sale filter
+    const { data: ttdUnfiltered } = await supabase
+      .from('insider_transactions')
+      .select('insider_name, transaction_direction, total_value, is_plan_sale, transaction_date')
+      .eq('ticker', 'TTD')
+      .gte('transaction_date', rangeFrom)
+      .lte('transaction_date', rangeTo)
+    if ((ttdUnfiltered?.length ?? 0) > 0) {
+      console.log(`[signals-monthly] TTD: 0 rows passed filter BUT ${ttdUnfiltered!.length} exist unfiltered — is_plan_sale values:`)
+      for (const r of ttdUnfiltered!) {
+        console.log(`[signals-monthly] TTD unfiltered: ${(r as any).insider_name} | is_plan_sale=${(r as any).is_plan_sale} | val=${(r as any).total_value} | date=${(r as any).transaction_date}`)
+      }
+    } else {
+      console.log(`[signals-monthly] TTD: no transactions found in range ${rangeFrom}–${rangeTo}`)
+    }
+  }
 
   // Group transactions by ticker
   const txByTicker = new Map<string, typeof allTx>()

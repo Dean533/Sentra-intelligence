@@ -40,19 +40,48 @@ export async function GET(
     .limit(10)
 
   if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
-  if (!txRows || txRows.length === 0) return NextResponse.json({ data: null })
 
-  // ── 2. Opportunistic classification flags ──────────────────────────────────
+  console.log(`[conviction/${TK}] raw query: found ${txRows?.length ?? 0} row(s)`)
+  if (!txRows || txRows.length === 0) {
+    // Retry without transaction_code filter to check if the code is the blocker
+    const { data: relaxedRows } = await supabase
+      .from('insider_transactions')
+      .select('id, insider_name, insider_cik, transaction_code, transaction_direction, total_value, transaction_date')
+      .eq('ticker', TK)
+      .eq('transaction_direction', 'buy')
+      .order('transaction_date', { ascending: false })
+      .limit(5)
+    console.log(`[conviction/${TK}] relaxed query (no code filter): ${relaxedRows?.length ?? 0} row(s)`)
+    for (const r of relaxedRows ?? []) {
+      console.log(`[conviction/${TK}]   ${(r as any).insider_name} | code="${(r as any).transaction_code}" | dir="${(r as any).transaction_direction}" | val=${(r as any).total_value} | date=${(r as any).transaction_date} | cik=${(r as any).insider_cik}`)
+    }
+    return NextResponse.json({ data: null })
+  }
+
+  for (const r of txRows as any[]) {
+    console.log(`[conviction/${TK}] tx: ${r.insider_name} | code="${r.transaction_code}" | val=${r.total_value} | date=${r.transaction_date} | cik=${r.insider_cik ?? 'NULL'}`)
+  }
+
+  // ── 2. Classification flags ────────────────────────────────────────────────
+  // Fetch ALL classification rows for these CIKs (not just OPPORTUNISTIC) so we can
+  // distinguish "classified ROUTINE/UNCLASSIFIABLE" from "not in table yet".
   const ciks = [...new Set((txRows as any[]).map(r => r.insider_cik).filter(Boolean))]
-  const opportunisticCiks = new Set<string>()
+  const opportunisticCiks = new Set<string>()  // confirmed by classify job
+  const classifiedCiks    = new Set<string>()  // any classification — present in table
   if (ciks.length > 0) {
     const { data: cls } = await supabase
       .from('insider_classifications')
-      .select('insider_cik')
-      .eq('classification', 'OPPORTUNISTIC')
+      .select('insider_cik, classification')
       .in('insider_cik', ciks)
-    for (const c of cls ?? []) opportunisticCiks.add((c as any).insider_cik)
+    for (const c of cls ?? []) {
+      classifiedCiks.add((c as any).insider_cik)
+      if ((c as any).classification === 'OPPORTUNISTIC')
+        opportunisticCiks.add((c as any).insider_cik)
+    }
   }
+  console.log(`[conviction/${TK}] ciks found: [${ciks.join(', ')}]`)
+  console.log(`[conviction/${TK}] opportunistic ciks: [${[...opportunisticCiks].join(', ')}]`)
+  console.log(`[conviction/${TK}] classified (any): [${[...classifiedCiks].join(', ')}]`)
 
   // ── 3. Sector for this ticker ──────────────────────────────────────────────
   let sector: string | null = null
@@ -114,14 +143,28 @@ export async function GET(
   }
 
   // ── 7. Score every transaction, keep the best ──────────────────────────────
-  let bestScore  = -1
+
+  // Infer opportunistic status for insiders who have a CIK but have never been
+  // run through the annual classify job. Criteria: ≥$1M trade AND CEO/President role.
+  // Insiders classified as ROUTINE or UNCLASSIFIABLE are never inferred — they had their
+  // chance and lost. Only truly unclassified (absent from the table) qualify.
+  function isEligibleForInference(tx: any): boolean {
+    const val  = (tx.total_value ?? 0) as number
+    const text = ((tx.role ?? '') + ' ' + (tx.officer_title ?? '')).toLowerCase()
+    return (
+      val >= 1_000_000 &&
+      (text.includes('ceo') || text.includes('chief executive') || text.includes('president'))
+    )
+  }
+
+  let bestScore   = -1
   let bestResult: ReturnType<typeof computeConvictionScore> | null = null
-  let bestTx:     any = null
+  let bestTx:     any   = null
+  let bestInferred = false
 
   for (const tx of txRows as any[]) {
     const monthKey = (tx.transaction_date as string).slice(0, 7)
 
-    // Cluster for this trade's month
     const monthTx = (recentTikTx ?? []).filter(r =>
       (r as any).transaction_date.startsWith(monthKey)
     )
@@ -131,6 +174,21 @@ export async function GET(
     const insiderData = insiderHistoryMap.get(tx.insider_cik) ??
       { outcomes: [], medianValue: null }
 
+    // Determine opportunistic status, with inference fallback
+    const cik              = tx.insider_cik as string | null
+    const isConfirmed      = cik ? opportunisticCiks.has(cik) : false
+    const isKnownNonOpport = cik ? (classifiedCiks.has(cik) && !opportunisticCiks.has(cik)) : false
+    const isInferred       = !isConfirmed && !isKnownNonOpport && !!cik && isEligibleForInference(tx)
+    const isOpportunistic  = isConfirmed || isInferred
+
+    const inferTag = isInferred ? ' [INFERRED]' : isConfirmed ? ' [CONFIRMED]' : ' [NOT_OPPORTUNISTIC]'
+    console.log(
+      `[conviction/${TK}] scored ${tx.insider_name}${inferTag}: ` +
+      `val=${tx.total_value} | sector="${sector}" | ` +
+      `cluster=${clusterCount} ($${(clusterTotalValue / 1e6).toFixed(1)}M) | ` +
+      `history=${insiderData.outcomes.length} trades`
+    )
+
     const convTrade: ConvictionTrade = {
       ticker:               tx.ticker,
       insider_name:         tx.insider_name,
@@ -139,7 +197,7 @@ export async function GET(
       total_value:          tx.total_value ?? null,
       price_per_share:      tx.price_per_share ?? null,
       transaction_date:     tx.transaction_date,
-      is_opportunistic:     tx.insider_cik ? opportunisticCiks.has(tx.insider_cik) : false,
+      is_opportunistic:     isOpportunistic,
       is_local:             tx.is_local ?? null,
       sector,
       cluster_count:        clusterCount,
@@ -149,13 +207,20 @@ export async function GET(
 
     const result = computeConvictionScore(convTrade, insiderData.outcomes, tickerHistory)
 
+    console.log(
+      `[conviction/${TK}]   → score=${result.score} (${result.classification}) | ` +
+      `factors=[${result.factors.join(' · ')}]`
+    )
+
     if (result.score > bestScore) {
-      bestScore  = result.score
-      bestResult = result
-      bestTx     = tx
+      bestScore    = result.score
+      bestResult   = result
+      bestTx       = tx
+      bestInferred = isInferred
     }
   }
 
+  console.log(`[conviction/${TK}] best score: ${bestScore}`)
   if (!bestResult || !bestTx) return NextResponse.json({ data: null })
 
   return NextResponse.json({
@@ -168,13 +233,14 @@ export async function GET(
       positionMultiplier: bestResult.positionMultiplier,
       exitRules:          bestResult.exitRules,
       trade: {
-        insider_name:     bestTx.insider_name,
-        officer_title:    bestTx.officer_title ?? null,
-        transaction_date: bestTx.transaction_date,
-        total_value:      bestTx.total_value ?? null,
-        price_per_share:  bestTx.price_per_share ?? null,
-        shares:           bestTx.shares ?? null,
-        is_opportunistic: opportunisticCiks.has(bestTx.insider_cik ?? ''),
+        insider_name:              bestTx.insider_name,
+        officer_title:             bestTx.officer_title ?? null,
+        transaction_date:          bestTx.transaction_date,
+        total_value:               bestTx.total_value ?? null,
+        price_per_share:           bestTx.price_per_share ?? null,
+        shares:                    bestTx.shares ?? null,
+        is_opportunistic:          opportunisticCiks.has(bestTx.insider_cik ?? '') || bestInferred,
+        is_inferred_opportunistic: bestInferred,
       },
     },
   })

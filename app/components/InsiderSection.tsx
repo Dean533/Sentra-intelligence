@@ -110,6 +110,7 @@ function ConvictionPanel({ conviction }: { conviction: ConvictionData }) {
   const { score, classification, factors, holdDays, positionMultiplier, exitRules } = conviction
   const clsColor = classificationColor(classification)
   const barColor  = scoreBarColor(score)
+  console.log('[ConvictionPanel] rendering', { score, classification, holdDays, factors })
 
   return (
     <div style={{
@@ -288,7 +289,10 @@ export default function InsiderSection({
 
     fetch(`/api/insider/conviction/${ticker}`)
       .then(r => r.json())
-      .then(d => setConviction(d.data ?? null))
+      .then(d => {
+        console.log(`[InsiderSection] conviction response for ${ticker}:`, d)
+        setConviction(d.data ?? null)
+      })
       .finally(() => setLoadingConviction(false))
   }, [ticker])
 
