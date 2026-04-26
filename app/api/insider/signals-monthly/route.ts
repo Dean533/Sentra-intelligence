@@ -129,7 +129,7 @@ export async function GET(req: Request) {
     const text = ((tx.officer_title ?? '') + ' ' + (tx.role ?? '')).toLowerCase()
     return (
       !!cik &&
-      !classifiedCikSet.has(cik) &&
+      (!classifiedCikSet.has(cik) || classMap[cik] === 'UNCLASSIFIABLE') &&
       tx.transaction_direction === 'buy' &&
       val >= 1_000_000 &&
       (text.includes('ceo') || text.includes('chief executive') ||
