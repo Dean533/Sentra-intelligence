@@ -116,10 +116,32 @@ export async function GET(req: Request) {
     console.log(`[classify] ${fallbackCount} insider(s) using prior-year (${classifiedYear - 1}) classification as fallback`)
   }
 
-  // Fetch last month's transactions for all tracked tickers in one query
+  // Set of every CIK that appears in the classification table under any result.
+  // An absent CIK means the insider has never been run through the classify job —
+  // distinct from being classified ROUTINE or UNCLASSIFIABLE and failing.
+  const classifiedCikSet = new Set(Object.keys(classMap))
+
+  // Returns true when a transaction should be treated as inferred-opportunistic.
+  // Mirrors the same criteria used in app/api/insider/conviction/[ticker]/route.ts.
+  function inferredOpportunistic(tx: any): boolean {
+    const cik  = tx.insider_cik as string | null
+    const val  = (tx.total_value ?? 0) as number
+    const text = ((tx.officer_title ?? '') + ' ' + (tx.role ?? '')).toLowerCase()
+    return (
+      !!cik &&
+      !classifiedCikSet.has(cik) &&
+      tx.transaction_direction === 'buy' &&
+      val >= 1_000_000 &&
+      (text.includes('ceo') || text.includes('chief executive') ||
+       text.includes('president') || text.includes('10%'))
+    )
+  }
+
+  // Fetch last month's transactions for all tracked tickers in one query.
+  // officer_title and role are needed for inferred-opportunistic detection.
   const { data: allTx, error: txErr } = await supabase
     .from('insider_transactions')
-    .select('ticker, insider_cik, insider_name, transaction_direction, total_value, is_local')
+    .select('ticker, insider_cik, insider_name, officer_title, role, transaction_direction, total_value, is_local')
     .in('ticker', tickers)
     .gte('transaction_date', rangeFrom)
     .lte('transaction_date', rangeTo)
@@ -176,18 +198,24 @@ export async function GET(req: Request) {
     let buyValue           = 0
     let sellValue          = 0
     let routineFiltered    = 0
+    let hasInferred        = false
 
     for (const tx of txList) {
       const cik            = (tx as any).insider_cik as string | null
       const direction      = (tx as any).transaction_direction as string
       const value          = (tx as any).total_value as number | null
       const isLocal        = (tx as any).is_local as boolean | null
-      const classification = cik ? (classMap[cik] ?? 'UNCLASSIFIABLE') : 'UNCLASSIFIABLE'
+      const classification = cik ? (classMap[cik] ?? null) : null
 
-      if (classification !== 'OPPORTUNISTIC') {
+      const confirmed = classification === 'OPPORTUNISTIC'
+      const inferred  = !confirmed && inferredOpportunistic(tx)
+
+      if (!confirmed && !inferred) {
         routineFiltered++
         continue
       }
+
+      if (inferred) hasInferred = true
 
       if (direction === 'buy') {
         opportunisticBuys++
@@ -209,17 +237,18 @@ export async function GET(req: Request) {
 
     upserts.push({
       ticker,
-      signal_month:               signalMonth,
-      opportunistic_buy_count:    opportunisticBuys,
-      opportunistic_sell_count:   opportunisticSells,
-      opportunistic_buy_value:    buyValue > 0 ? Math.round(buyValue) : null,
-      opportunistic_sell_value:   sellValue > 0 ? Math.round(sellValue) : null,
-      local_opportunistic_count:  localOpportunistic,
-      cluster_strength:           strength,
-      expected_move_pct:          expectedMove,
-      signal_direction:           direction,
-      routine_trades_filtered:    routineFiltered,
-      computed_at:                new Date().toISOString(),
+      signal_month:                signalMonth,
+      opportunistic_buy_count:     opportunisticBuys,
+      opportunistic_sell_count:    opportunisticSells,
+      opportunistic_buy_value:     buyValue > 0 ? Math.round(buyValue) : null,
+      opportunistic_sell_value:    sellValue > 0 ? Math.round(sellValue) : null,
+      local_opportunistic_count:   localOpportunistic,
+      cluster_strength:            strength,
+      expected_move_pct:           expectedMove,
+      signal_direction:            direction,
+      routine_trades_filtered:     routineFiltered,
+      is_inferred_opportunistic:   hasInferred,
+      computed_at:                 new Date().toISOString(),
     })
 
     computed++
