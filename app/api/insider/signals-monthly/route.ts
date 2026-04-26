@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { authorizeCron } from '@/lib/cronAuth'
+import { computeConvictionScore, ConvictionTrade } from '@/lib/scoring/convictionScore'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -141,7 +142,7 @@ export async function GET(req: Request) {
   // officer_title and role are needed for inferred-opportunistic detection.
   const { data: allTx, error: txErr } = await supabase
     .from('insider_transactions')
-    .select('ticker, insider_cik, insider_name, officer_title, role, transaction_direction, total_value, is_local')
+    .select('ticker, insider_cik, insider_name, officer_title, role, transaction_direction, transaction_date, total_value, is_local')
     .in('ticker', tickers)
     .gte('transaction_date', rangeFrom)
     .lte('transaction_date', rangeTo)
@@ -149,6 +150,9 @@ export async function GET(req: Request) {
     .neq('is_plan_sale', true)
 
   if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
+
+  const mgmTrades = (allTx ?? []).filter((t: any) => t.ticker === 'MGM')
+  console.log('[debug] MGM trades found:', mgmTrades.length, JSON.stringify(mgmTrades.map((t: any) => ({ cik: t.insider_cik, value: t.total_value, title: t.officer_title, role: t.role, direction: t.transaction_direction }))))
 
   // Diagnostic: log TTD-specific transaction counts to reveal is_plan_sale / classification gaps
   const ttdAll = (allTx ?? []).filter((r: any) => r.ticker === 'TTD')
@@ -177,6 +181,24 @@ export async function GET(req: Request) {
     }
   }
 
+  // Diagnostic: MGM / IAC Inc. (CIK 0001800227) — $37M buy March 2026
+  // Most likely cause of missing signal: MGM absent from tickers table → filtered by .in('ticker', tickers)
+  if (!tickers.includes('MGM')) {
+    console.log('[signals-monthly] MGM: NOT in tickers table — all MGM transactions are excluded by the .in(ticker) filter. Add MGM to the tickers table to generate signals.')
+  } else {
+    const mgmAll = (allTx ?? []).filter((r: any) => r.ticker === 'MGM')
+    if (mgmAll.length > 0) {
+      console.log(`[signals-monthly] MGM: ${mgmAll.length} tx in range`)
+      for (const r of mgmAll) {
+        const cik = (r as any).insider_cik
+        const cls = cik ? (classMap[cik] ?? 'NOT IN classMap') : 'NULL cik'
+        console.log(`[signals-monthly] MGM tx: ${(r as any).insider_name} | dir=${(r as any).transaction_direction} | val=${(r as any).total_value} | cik=${cik} | classification=${cls} | inferred=${inferredOpportunistic(r)}`)
+      }
+    } else {
+      console.log(`[signals-monthly] MGM: in tickers table but 0 transactions in range ${rangeFrom}–${rangeTo} (check is_plan_sale / transaction_date)`)
+    }
+  }
+
   // Group transactions by ticker
   const txByTicker = new Map<string, typeof allTx>()
   for (const tx of allTx ?? []) {
@@ -199,6 +221,8 @@ export async function GET(req: Request) {
     let sellValue          = 0
     let routineFiltered    = 0
     let hasInferred        = false
+    // Collect qualifying buy trades so we can score each after counts are finalized.
+    const qualifyingBuys: Array<{ tx: any; isOpportunistic: boolean }> = []
 
     for (const tx of txList) {
       const cik            = (tx as any).insider_cik as string | null
@@ -220,6 +244,7 @@ export async function GET(req: Request) {
       if (direction === 'buy') {
         opportunisticBuys++
         buyValue += value ?? 0
+        qualifyingBuys.push({ tx, isOpportunistic: confirmed || inferred })
       } else if (direction === 'sell') {
         opportunisticSells++
         sellValue += value ?? 0
@@ -235,6 +260,30 @@ export async function GET(req: Request) {
     const expectedMove = computeExpectedMove(opportunisticBuys, opportunisticSells, localOpportunistic)
     const direction    = signalDirection(expectedMove)
 
+    // Score each qualifying buy; store the highest score for this ticker/month.
+    // cluster_count and cluster_total_value are now final so all trades in the
+    // cluster benefit from the full cluster bonus.
+    let maxConvictionScore = 0
+    for (const { tx, isOpportunistic } of qualifyingBuys) {
+      const convTrade: ConvictionTrade = {
+        ticker,
+        insider_name:         (tx as any).insider_name,
+        officer_title:        (tx as any).officer_title ?? null,
+        role:                 (tx as any).role ?? null,
+        total_value:          (tx as any).total_value ?? null,
+        price_per_share:      null,   // not fetched at this stage
+        transaction_date:     (tx as any).transaction_date ?? signalMonth,
+        is_opportunistic:     isOpportunistic,
+        is_local:             (tx as any).is_local ?? null,
+        sector:               null,   // not fetched at this stage
+        cluster_count:        opportunisticBuys,
+        cluster_total_value:  buyValue,
+        insider_median_value: null,   // no history available in cron context
+      }
+      const { score } = computeConvictionScore(convTrade, [], [])
+      if (score > maxConvictionScore) maxConvictionScore = score
+    }
+
     upserts.push({
       ticker,
       signal_month:                signalMonth,
@@ -248,6 +297,7 @@ export async function GET(req: Request) {
       signal_direction:            direction,
       routine_trades_filtered:     routineFiltered,
       is_inferred_opportunistic:   hasInferred,
+      conviction_score:            maxConvictionScore,
       computed_at:                 new Date().toISOString(),
     })
 
