@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import BackButton from '@/app/components/BackButton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -241,7 +242,7 @@ export default function EventDetailPage() {
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '48px', fontWeight: 800, color: '#1e2530', marginBottom: '16px' }}>404</div>
           <div style={{ fontSize: '16px', color: '#7b8498', marginBottom: '24px' }}>Event not found</div>
-          <a href="/events" style={{ fontSize: '13px', color: '#9ecbff', textDecoration: 'none' }}>← Back to Events</a>
+          <BackButton label="Back to Events" href="/events" />
         </div>
       </div>
     )
@@ -279,14 +280,7 @@ export default function EventDetailPage() {
       {/* ── HEADER ─────────────────────────────────────────────────────── */}
       <div style={{ borderBottom: '1px solid #1e2530', padding: '20px 24px' }}>
         <div style={{ maxWidth: '780px', margin: '0 auto' }}>
-          <a
-            href="/events"
-            style={{ fontSize: '13px', color: '#7b8498', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '20px' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = '#9ecbff' }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = '#7b8498' }}
-          >
-            ← Back to Events
-          </a>
+          <BackButton label="Back to Events" href="/events" />
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '24px' }}>
             <div>

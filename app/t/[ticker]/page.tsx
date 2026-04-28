@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { MarketRange } from '@/lib/marketData'
 import InsiderSection from '@/app/components/InsiderSection'
+import BackButton from '@/app/components/BackButton'
 
 const MarketPriceChart = dynamic(() => import('@/app/components/MarketPriceChart'), {
   ssr: false,
@@ -223,9 +224,7 @@ export default function TickerPage() {
 
         {/* ── back ────────────────────────────────────────────────────────────── */}
         <div style={{ paddingTop: '24px', paddingBottom: '20px' }}>
-          <a href="/explore" style={{ color: '#7b8498', fontSize: '12px', letterSpacing: '1.5px', textDecoration: 'none' }}>
-            ← EXPLORE
-          </a>
+          <BackButton label="EXPLORE" href="/explore" />
         </div>
 
         {/* ── header bar ──────────────────────────────────────────────────────── */}

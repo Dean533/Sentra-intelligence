@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import BackButton from '@/app/components/BackButton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,9 +194,7 @@ export default function InsiderAnalysisPage() {
 
         {/* ── back ──────────────────────────────────────────────────────────── */}
         <div style={{ paddingTop: '24px', paddingBottom: '20px' }}>
-          <a href={`/t/${ticker}`} style={{ color: '#7b8498', fontSize: '12px', letterSpacing: '1.5px', textDecoration: 'none' }}>
-            ← {ticker}
-          </a>
+          <BackButton label={ticker} href={`/t/${ticker}`} />
         </div>
 
         {/* ── header ────────────────────────────────────────────────────────── */}
