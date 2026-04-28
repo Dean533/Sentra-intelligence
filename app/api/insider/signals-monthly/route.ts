@@ -211,102 +211,106 @@ export async function GET(req: Request) {
   let computed = 0
 
   for (const ticker of tickers) {
-    const txList = txByTicker.get(ticker) ?? []
-    if (txList.length === 0) continue
+    try {
+      const txList = txByTicker.get(ticker) ?? []
+      if (txList.length === 0) continue
 
-    let opportunisticBuys  = 0
-    let opportunisticSells = 0
-    let localOpportunistic = 0
-    let buyValue           = 0
-    let sellValue          = 0
-    let routineFiltered    = 0
-    let hasInferred        = false
-    // Collect qualifying buy trades so we can score each after counts are finalized.
-    const qualifyingBuys: Array<{ tx: any; isOpportunistic: boolean }> = []
+      let opportunisticBuys  = 0
+      let opportunisticSells = 0
+      let localOpportunistic = 0
+      let buyValue           = 0
+      let sellValue          = 0
+      let routineFiltered    = 0
+      let hasInferred        = false
+      // Collect qualifying buy trades so we can score each after counts are finalized.
+      const qualifyingBuys: Array<{ tx: any; isOpportunistic: boolean }> = []
 
-    for (const tx of txList) {
-      const cik            = (tx as any).insider_cik as string | null
-      const direction      = (tx as any).transaction_direction as string
-      const value          = (tx as any).total_value as number | null
-      const isLocal        = (tx as any).is_local as boolean | null
-      const classification = cik ? (classMap[cik] ?? null) : null
+      for (const tx of txList) {
+        const cik            = (tx as any).insider_cik as string | null
+        const direction      = (tx as any).transaction_direction as string
+        const value          = (tx as any).total_value as number | null
+        const isLocal        = (tx as any).is_local as boolean | null
+        const classification = cik ? (classMap[cik] ?? null) : null
 
-      const confirmed = classification === 'OPPORTUNISTIC'
-      const inferred  = !confirmed && inferredOpportunistic(tx)
+        const confirmed = classification === 'OPPORTUNISTIC'
+        const inferred  = !confirmed && inferredOpportunistic(tx)
 
-      if (!confirmed && !inferred) {
-        routineFiltered++
-        continue
+        if (!confirmed && !inferred) {
+          routineFiltered++
+          continue
+        }
+
+        if (inferred) hasInferred = true
+
+        if (direction === 'buy') {
+          opportunisticBuys++
+          buyValue += value ?? 0
+          qualifyingBuys.push({ tx, isOpportunistic: confirmed || inferred })
+        } else if (direction === 'sell') {
+          opportunisticSells++
+          sellValue += value ?? 0
+        }
+
+        if (isLocal) localOpportunistic++
       }
 
-      if (inferred) hasInferred = true
+      if (opportunisticBuys === 0 && opportunisticSells === 0) continue
 
-      if (direction === 'buy') {
-        opportunisticBuys++
-        buyValue += value ?? 0
-        qualifyingBuys.push({ tx, isOpportunistic: confirmed || inferred })
-      } else if (direction === 'sell') {
-        opportunisticSells++
-        sellValue += value ?? 0
+      const maxCount     = Math.max(opportunisticBuys, opportunisticSells)
+      const strength     = clusterStrength(maxCount)
+      const expectedMove = computeExpectedMove(opportunisticBuys, opportunisticSells, localOpportunistic)
+      const direction    = signalDirection(expectedMove)
+
+      // Score each qualifying buy; store the highest score for this ticker/month.
+      // cluster_count and cluster_total_value are now final so all trades in the
+      // cluster benefit from the full cluster bonus.
+      let maxConvictionScore = 0
+      let maxHoldDays = 0
+      for (const { tx, isOpportunistic } of qualifyingBuys) {
+        const convTrade: ConvictionTrade = {
+          ticker,
+          insider_name:         (tx as any).insider_name,
+          officer_title:        (tx as any).officer_title ?? null,
+          role:                 (tx as any).role ?? null,
+          total_value:          (tx as any).total_value ?? null,
+          price_per_share:      null,   // not fetched at this stage
+          transaction_date:     (tx as any).transaction_date ?? signalMonth,
+          is_opportunistic:     isOpportunistic,
+          is_local:             (tx as any).is_local ?? null,
+          sector:               null,   // not fetched at this stage
+          cluster_count:        opportunisticBuys,
+          cluster_total_value:  buyValue,
+          insider_median_value: null,   // no history available in cron context
+        }
+        const { score, holdDays } = computeConvictionScore(convTrade, [], [])
+        if (score > maxConvictionScore) {
+          maxConvictionScore = score
+          maxHoldDays = holdDays
+        }
       }
 
-      if (isLocal) localOpportunistic++
-    }
-
-    if (opportunisticBuys === 0 && opportunisticSells === 0) continue
-
-    const maxCount     = Math.max(opportunisticBuys, opportunisticSells)
-    const strength     = clusterStrength(maxCount)
-    const expectedMove = computeExpectedMove(opportunisticBuys, opportunisticSells, localOpportunistic)
-    const direction    = signalDirection(expectedMove)
-
-    // Score each qualifying buy; store the highest score for this ticker/month.
-    // cluster_count and cluster_total_value are now final so all trades in the
-    // cluster benefit from the full cluster bonus.
-    let maxConvictionScore = 0
-    let maxHoldDays = 0
-    for (const { tx, isOpportunistic } of qualifyingBuys) {
-      const convTrade: ConvictionTrade = {
+      upserts.push({
         ticker,
-        insider_name:         (tx as any).insider_name,
-        officer_title:        (tx as any).officer_title ?? null,
-        role:                 (tx as any).role ?? null,
-        total_value:          (tx as any).total_value ?? null,
-        price_per_share:      null,   // not fetched at this stage
-        transaction_date:     (tx as any).transaction_date ?? signalMonth,
-        is_opportunistic:     isOpportunistic,
-        is_local:             (tx as any).is_local ?? null,
-        sector:               null,   // not fetched at this stage
-        cluster_count:        opportunisticBuys,
-        cluster_total_value:  buyValue,
-        insider_median_value: null,   // no history available in cron context
-      }
-      const { score, holdDays } = computeConvictionScore(convTrade, [], [])
-      if (score > maxConvictionScore) {
-        maxConvictionScore = score
-        maxHoldDays = holdDays
-      }
+        signal_month:                signalMonth,
+        opportunistic_buy_count:     opportunisticBuys,
+        opportunistic_sell_count:    opportunisticSells,
+        opportunistic_buy_value:     buyValue > 0 ? Math.round(buyValue) : null,
+        opportunistic_sell_value:    sellValue > 0 ? Math.round(sellValue) : null,
+        local_opportunistic_count:   localOpportunistic,
+        cluster_strength:            strength,
+        expected_move_pct:           expectedMove,
+        signal_direction:            direction,
+        routine_trades_filtered:     routineFiltered,
+        is_inferred_opportunistic:   hasInferred,
+        conviction_score:            maxConvictionScore,
+        hold_days:                   maxHoldDays > 0 ? maxHoldDays : null,
+        computed_at:                 new Date().toISOString(),
+      })
+
+      computed++
+    } catch (err) {
+      console.error('[signals-monthly] CRASH on ticker', ticker, err)
     }
-
-    upserts.push({
-      ticker,
-      signal_month:                signalMonth,
-      opportunistic_buy_count:     opportunisticBuys,
-      opportunistic_sell_count:    opportunisticSells,
-      opportunistic_buy_value:     buyValue > 0 ? Math.round(buyValue) : null,
-      opportunistic_sell_value:    sellValue > 0 ? Math.round(sellValue) : null,
-      local_opportunistic_count:   localOpportunistic,
-      cluster_strength:            strength,
-      expected_move_pct:           expectedMove,
-      signal_direction:            direction,
-      routine_trades_filtered:     routineFiltered,
-      is_inferred_opportunistic:   hasInferred,
-      conviction_score:            maxConvictionScore,
-      hold_days:                   maxHoldDays > 0 ? maxHoldDays : null,
-      computed_at:                 new Date().toISOString(),
-    })
-
-    computed++
   }
 
   if (upserts.length > 0) {
