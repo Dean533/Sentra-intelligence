@@ -139,6 +139,7 @@ export function computeConvictionScore(
     // routine: accumulates from 1, hard-capped at 49 before global clamp
   }
 
+  const hasRoleData = !!((trade.role ?? '').trim()) || !!((trade.officer_title ?? '').trim())
   const role   = classifyRole(trade)
   const sector = trade.sector ?? ''
   const val    = trade.total_value ?? 0
@@ -146,14 +147,18 @@ export function computeConvictionScore(
   const ticker = trade.ticker.toUpperCase()
 
   // ── Role bonus / penalty ───────────────────────────────────────────────────
-  if      (role === '10% Owner')          { score += 20; factors.push('10% Owner: +20') }
-  else if (role === 'CFO')                { score += 12; factors.push('CFO: +12') }
-  else if (role === 'CEO')                { score += 10; factors.push('CEO: +10') }
-  else if (role === 'Other/EVP')          { score += 8;  factors.push('Other/EVP: +8') }
-  else if (role === 'Director')           { score += 3;  factors.push('Director: +3') }
-  else if (role === 'President')          { score += 2;  factors.push('President: +2') }
-  else if (role === 'Insider (other)')    { score -= 15; factors.push('Insider (other): -15') }
-  else if (role === 'Co-Founder/Partner') { score -= 20; factors.push('Co-Founder/Partner: -20') }
+  // Skipped when both role and officer_title are absent — a size-based floor
+  // is applied instead (see below) so the trade isn't penalised for missing data.
+  if (hasRoleData) {
+    if      (role === '10% Owner')          { score += 20; factors.push('10% Owner: +20') }
+    else if (role === 'CFO')                { score += 12; factors.push('CFO: +12') }
+    else if (role === 'CEO')                { score += 10; factors.push('CEO: +10') }
+    else if (role === 'Other/EVP')          { score += 8;  factors.push('Other/EVP: +8') }
+    else if (role === 'Director')           { score += 3;  factors.push('Director: +3') }
+    else if (role === 'President')          { score += 2;  factors.push('President: +2') }
+    else if (role === 'Insider (other)')    { score -= 15; factors.push('Insider (other): -15') }
+    else if (role === 'Co-Founder/Partner') { score -= 20; factors.push('Co-Founder/Partner: -20') }
+  }
 
   // ── Trade size ─────────────────────────────────────────────────────────────
   if      (val > 25_000_000) { score -= 10; factors.push('Over $25M trade size: -10') }
@@ -224,6 +229,18 @@ export function computeConvictionScore(
       score += excl.penalty
       factors.push(`Excluded insider (${excl.name}): ${excl.penalty}`)
       break
+    }
+  }
+
+  // ── Unknown-role floor (opportunistic only) ───────────────────────────────
+  // When no role data is available, sector/exclusion penalties can drag an
+  // opportunistic trade below its base. Apply a size-based minimum so large
+  // trades with missing metadata aren't unfairly penalised.
+  if (!hasRoleData && trade.is_opportunistic) {
+    const floor = val >= 5_000_000 ? 55 : val >= 1_000_000 ? 52 : 50
+    if (score < floor) {
+      score = floor
+      factors.push(`Unknown role - size-based floor: ${floor}`)
     }
   }
 
