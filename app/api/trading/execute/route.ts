@@ -84,7 +84,7 @@ async function processSignals(
   return results
 }
 
-export async function POST(req: Request) {
+async function runExecute(req: Request): Promise<NextResponse> {
   const deny = authorizeCron(req)
   if (deny) return deny
 
@@ -183,3 +183,6 @@ export async function POST(req: Request) {
     results: allResults,
   })
 }
+
+export function GET(req: Request)  { return runExecute(req) }
+export function POST(req: Request) { return runExecute(req) }
