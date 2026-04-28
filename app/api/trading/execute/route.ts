@@ -55,7 +55,7 @@ async function processSignals(
 
     let order: any
     try {
-      order = await placeOrder(ticker, qty, 'buy', stopLoss, takeProfit)
+      order = await placeOrder(ticker, qty, 'buy', price, stopLoss, takeProfit)
     } catch (e: any) {
       results.push({ ticker, tier, skipped: true, reason: e.message })
       continue

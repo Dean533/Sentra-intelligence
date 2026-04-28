@@ -18,26 +18,31 @@ async function alpacaFetch(url: string, init?: RequestInit) {
   return res.json()
 }
 
-// Places a market bracket order (stop loss + take profit attached).
-// qty can be fractional (e.g. 1.5). time_in_force 'gtc' is required for bracket legs.
+// Places a day-limit bracket order (stop loss + take profit attached).
+// Uses last known price as limit_price so the order queues at market open
+// rather than being rejected outside regular trading hours.
+// extended_hours: false ensures it only executes during regular session.
 export async function placeOrder(
-  symbol:         string,
-  qty:            number,
-  side:           'buy' | 'sell',
-  stopLossPrice:  number,
+  symbol:          string,
+  qty:             number,
+  side:            'buy' | 'sell',
+  limitPrice:      number,
+  stopLossPrice:   number,
   takeProfitPrice: number,
 ) {
   return alpacaFetch(`${TRADING_URL}/v2/orders`, {
     method: 'POST',
     body: JSON.stringify({
       symbol,
-      qty:            qty.toFixed(6),
+      qty:             qty.toFixed(6),
       side,
-      type:           'market',
-      time_in_force:  'gtc',
-      order_class:    'bracket',
-      stop_loss:      { stop_price:  stopLossPrice.toFixed(2) },
-      take_profit:    { limit_price: takeProfitPrice.toFixed(2) },
+      type:            'limit',
+      limit_price:     limitPrice.toFixed(2),
+      time_in_force:   'day',
+      extended_hours:  false,
+      order_class:     'bracket',
+      stop_loss:       { stop_price:  stopLossPrice.toFixed(2) },
+      take_profit:     { limit_price: takeProfitPrice.toFixed(2) },
     }),
   })
 }
