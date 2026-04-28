@@ -223,7 +223,7 @@ export default function TickerPage() {
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 40px 80px' }}>
 
         {/* ── back ────────────────────────────────────────────────────────────── */}
-        <div style={{ paddingTop: '24px', paddingBottom: '20px' }}>
+        <div style={{ paddingTop: '24px', paddingBottom: '20px', position: 'relative', zIndex: 9999, pointerEvents: 'auto' }}>
           <BackButton label="EXPLORE" href="/explore" />
         </div>
 

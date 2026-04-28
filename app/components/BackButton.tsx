@@ -13,7 +13,7 @@ export default function BackButton({ label, href }: { label: string, href?: stri
   }
 
   return (
-    <button onClick={handleClick} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7b8498', fontSize: '12px', letterSpacing: '1.5px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+    <button onClick={handleClick} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7b8498', fontSize: '12px', letterSpacing: '1.5px', display: 'inline-flex', alignItems: 'center', gap: '4px', position: 'relative', zIndex: 9999, pointerEvents: 'auto' }}>
       ← {label}
     </button>
   )
