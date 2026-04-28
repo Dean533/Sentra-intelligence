@@ -89,9 +89,22 @@ export async function POST(req: Request) {
   if (deny) return deny
 
   // ── 1. Fetch all bullish signals with conviction_score >= 60 ─────────────
-  const now = new Date()
-  const signalMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-    .toISOString().split('T')[0]
+  // Use the most recent signal_month that has at least one qualifying signal,
+  // rather than the current calendar month (signals are computed on the 2nd of each month).
+  const { data: latestMonthRow, error: monthErr } = await supabase
+    .from('insider_signals_monthly')
+    .select('signal_month')
+    .gte('conviction_score', 60)
+    .order('signal_month', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (monthErr) return NextResponse.json({ error: monthErr.message }, { status: 500 })
+  if (!latestMonthRow) {
+    return NextResponse.json({ message: 'No signals with conviction_score >= 60 found in any month' })
+  }
+
+  const signalMonth = latestMonthRow.signal_month as string
 
   const { data: allSignals, error: sigErr } = await supabase
     .from('insider_signals_monthly')
@@ -103,7 +116,7 @@ export async function POST(req: Request) {
 
   if (sigErr) return NextResponse.json({ error: sigErr.message }, { status: 500 })
   if (!allSignals || allSignals.length === 0) {
-    return NextResponse.json({ message: 'No qualifying signals this month', signal_month: signalMonth })
+    return NextResponse.json({ message: 'No qualifying bullish signals', signal_month: signalMonth })
   }
 
   // ── 2. Skip tickers already held on Alpaca ────────────────────────────────
