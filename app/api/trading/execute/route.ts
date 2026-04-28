@@ -8,8 +8,8 @@ const supabase = createClient(
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const TIER1_BUDGET     = 1_000  // split equally across all tier-1 signals
-const TIER2_ALLOCATION =   100  // flat per tier-2 signal
+const TIER1_BUDGET     = 10_000  // split equally across all tier-1 signals
+const TIER2_ALLOCATION =    500  // flat per tier-2 signal
 const STOP_LOSS_PCT    =  0.10
 const TAKE_PROFIT_PCT  =  0.25
 
@@ -44,12 +44,12 @@ async function processSignals(
       continue
     }
 
-    const qty        = Math.floor((allocation / price) * 1000) / 1000  // 3dp, floor
+    const qty        = Math.floor(allocation / price)
     const stopLoss   = Math.round(price * (1 - STOP_LOSS_PCT) * 100) / 100
     const takeProfit = Math.round(price * (1 + TAKE_PROFIT_PCT) * 100) / 100
 
     if (qty <= 0) {
-      results.push({ ticker, tier, skipped: true, reason: `qty=0 at $${price} (allocation $${allocation.toFixed(0)})` })
+      results.push({ ticker, tier, skipped: true, reason: `price too high for allocation ($${price} > $${allocation.toFixed(0)})` })
       continue
     }
 

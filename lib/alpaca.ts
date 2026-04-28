@@ -34,7 +34,7 @@ export async function placeOrder(
     method: 'POST',
     body: JSON.stringify({
       symbol,
-      qty:             qty.toFixed(6),
+      qty:             String(qty),
       side,
       type:            'limit',
       limit_price:     limitPrice.toFixed(2),
