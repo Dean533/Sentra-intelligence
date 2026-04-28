@@ -264,6 +264,7 @@ export async function GET(req: Request) {
       // Score each qualifying buy; store the highest score for this ticker/month.
       // cluster_count and cluster_total_value are now final so all trades in the
       // cluster benefit from the full cluster bonus.
+      console.log('[signals-monthly] computing score for', ticker)
       let maxConvictionScore = 0
       let maxHoldDays = 0
       for (const { tx, isOpportunistic } of qualifyingBuys) {
@@ -289,6 +290,7 @@ export async function GET(req: Request) {
         }
       }
 
+      console.log('[signals-monthly] upserting', ticker, 'score:', maxConvictionScore)
       upserts.push({
         ticker,
         signal_month:                signalMonth,
@@ -309,7 +311,7 @@ export async function GET(req: Request) {
 
       computed++
     } catch (err) {
-      console.error('[signals-monthly] CRASH on ticker', ticker, err)
+      console.error('[signals-monthly] CRASH on', ticker, String(err))
     }
   }
 
