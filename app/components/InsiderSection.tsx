@@ -318,8 +318,10 @@ export default function InsiderSection({
             <span style={{ fontSize: '18px', fontWeight: 800, color: dirColor, letterSpacing: '0.5px', textTransform: 'uppercase' as const }}>
               {signal.signal_direction}
             </span>
-            <span style={{ fontSize: '13px', color: dirColor }}>
-              {signalStrengthLabel(signal.expected_move_pct)}
+            <span style={{ fontSize: '13px', color: !loadingConviction && conviction && conviction.score < 70 ? '#d4a037' : dirColor }}>
+              {!loadingConviction && conviction && conviction.score < 70
+                ? 'Monitor only - below trade threshold'
+                : signalStrengthLabel(signal.expected_move_pct)}
             </span>
             {signal.signal_month && (
               <span style={{ fontSize: '11px', color: '#7b8498' }}>

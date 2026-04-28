@@ -54,7 +54,7 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabase
       .from('insider_signals_monthly')
-      .select('ticker, signal_direction, expected_move_pct, opportunistic_buy_count, opportunistic_sell_count, cluster_strength, routine_trades_filtered, signal_month')
+      .select('ticker, signal_direction, expected_move_pct, opportunistic_buy_count, opportunistic_sell_count, cluster_strength, routine_trades_filtered, signal_month, conviction_score, hold_days')
       .eq('signal_month', monthStr)
       .order('expected_move_pct', { ascending: false })
       .limit(n)
@@ -264,6 +264,7 @@ export async function GET(req: Request) {
     // cluster_count and cluster_total_value are now final so all trades in the
     // cluster benefit from the full cluster bonus.
     let maxConvictionScore = 0
+    let maxHoldDays = 0
     for (const { tx, isOpportunistic } of qualifyingBuys) {
       const convTrade: ConvictionTrade = {
         ticker,
@@ -280,8 +281,11 @@ export async function GET(req: Request) {
         cluster_total_value:  buyValue,
         insider_median_value: null,   // no history available in cron context
       }
-      const { score } = computeConvictionScore(convTrade, [], [])
-      if (score > maxConvictionScore) maxConvictionScore = score
+      const { score, holdDays } = computeConvictionScore(convTrade, [], [])
+      if (score > maxConvictionScore) {
+        maxConvictionScore = score
+        maxHoldDays = holdDays
+      }
     }
 
     upserts.push({
@@ -298,6 +302,7 @@ export async function GET(req: Request) {
       routine_trades_filtered:     routineFiltered,
       is_inferred_opportunistic:   hasInferred,
       conviction_score:            maxConvictionScore,
+      hold_days:                   maxHoldDays > 0 ? maxHoldDays : null,
       computed_at:                 new Date().toISOString(),
     })
 
