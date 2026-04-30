@@ -13,7 +13,7 @@ const TIER2_ALLOCATION =    500  // flat per tier-2 signal
 const STOP_LOSS_PCT    =  0.15
 const TAKE_PROFIT_PCT  =  0.25
 
-type SignalRow = { ticker: string; conviction_score: number; signal_direction: string }
+type SignalRow = { ticker: string; conviction_score: number; signal_direction: string; is_inferred_opportunistic: boolean | null }
 type OrderResult = {
   ticker:           string
   tier:             number
@@ -108,7 +108,7 @@ async function runExecute(req: Request): Promise<NextResponse> {
 
   const { data: allSignals, error: sigErr } = await supabase
     .from('insider_signals_monthly')
-    .select('ticker, conviction_score, signal_direction')
+    .select('ticker, conviction_score, signal_direction, is_inferred_opportunistic')
     .eq('signal_month', signalMonth)
     .gte('conviction_score', 60)
     .eq('signal_direction', 'bullish')
@@ -199,21 +199,32 @@ async function runExecute(req: Request): Promise<NextResponse> {
     }
   }
 
-  // ── 4. Split into tiers ───────────────────────────────────────────────────
-  const tier1 = eligible.filter(s => s.conviction_score >= 70)
-  const tier2 = eligible.filter(s => s.conviction_score >= 60 && s.conviction_score < 70)
+  // ── 4. Gate: only confirmed opportunistic signals trigger trades ──────────
+  // Inferred signals (is_inferred_opportunistic = true) are shown on the alerts
+  // page as MONITOR only and never executed.
+  const confirmed  = eligible.filter(s => !s.is_inferred_opportunistic)
+  const inferredSkipped = eligible.filter(s => s.is_inferred_opportunistic)
 
-  if (eligible.length === 0) {
+  if (inferredSkipped.length > 0) {
+    console.log(`[execute] ${inferredSkipped.length} inferred signal(s) skipped (monitor only): ${inferredSkipped.map(s => s.ticker).join(', ')}`)
+  }
+
+  // ── 5. Split into tiers ───────────────────────────────────────────────────
+  const tier1 = confirmed.filter(s => s.conviction_score >= 70)
+  const tier2 = confirmed.filter(s => s.conviction_score >= 60 && s.conviction_score < 70)
+
+  if (confirmed.length === 0) {
     return NextResponse.json({
-      message:        'All qualifying signals already have open positions',
-      signal_month:   signalMonth,
-      already_held:   alreadyHeld,
-      stop_reattach:  stopReattachResults,
+      message:          'No confirmed opportunistic signals eligible for trading',
+      signal_month:     signalMonth,
+      already_held:     alreadyHeld,
+      inferred_skipped: inferredSkipped.length,
+      stop_reattach:    stopReattachResults,
     })
   }
 
-  // ── 5. Fetch prices for all eligible tickers in one call ─────────────────
-  const allTickers = eligible.map(s => s.ticker)
+  // ── 6. Fetch prices for all confirmed tickers in one call ─────────────────
+  const allTickers = confirmed.map(s => s.ticker)
   let prices: Record<string, number>
   try {
     prices = await getLatestPrices(allTickers)
@@ -221,7 +232,7 @@ async function runExecute(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: `Alpaca getLatestPrices failed: ${e.message}` }, { status: 502 })
   }
 
-  // ── 6. Process both tiers ─────────────────────────────────────────────────
+  // ── 7. Process both tiers ─────────────────────────────────────────────────
   const tier1Allocation = tier1.length > 0 ? TIER1_BUDGET / tier1.length : 0
 
   const [tier1Results, tier2Results] = await Promise.all([
@@ -232,9 +243,10 @@ async function runExecute(req: Request): Promise<NextResponse> {
   const allResults = [...tier1Results, ...tier2Results]
 
   return NextResponse.json({
-    signal_month:  signalMonth,
-    already_held:  alreadyHeld,
-    stop_reattach: stopReattachResults,
+    signal_month:     signalMonth,
+    already_held:     alreadyHeld,
+    inferred_skipped: inferredSkipped.length,
+    stop_reattach:    stopReattachResults,
     tier1: {
       signals:       tier1.length,
       allocation_each: tier1Allocation,
