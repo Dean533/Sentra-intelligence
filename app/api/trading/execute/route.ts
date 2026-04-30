@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { authorizeCron } from '@/lib/cronAuth'
-import { placeOrder, getPositions, getLatestPrices } from '@/lib/alpaca'
+import { placeOrder, getPositions, getLatestPrices, getOrders, placeStopOrder } from '@/lib/alpaca'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -132,21 +132,81 @@ async function runExecute(req: Request): Promise<NextResponse> {
     s => !heldTickers.has(s.ticker.toUpperCase())
   )
 
-  // ── 3. Split into tiers ───────────────────────────────────────────────────
+  const alreadyHeld = allSignals.length - eligible.length
+
+  // ── 3. Reattach stops for already-held signal positions ───────────────────
+  type StopReattachResult = { ticker: string; action: string; stop_price?: number; order_id?: string; error?: string }
+  const stopReattachResults: StopReattachResult[] = []
+
+  const heldSignalTickers = (allSignals as SignalRow[])
+    .filter(s => heldTickers.has(s.ticker.toUpperCase()))
+    .map(s => s.ticker.toUpperCase())
+
+  if (heldSignalTickers.length > 0) {
+    let openOrders: Awaited<ReturnType<typeof getOrders>>
+    try {
+      openOrders = await getOrders()
+    } catch (e: any) {
+      return NextResponse.json({ error: `Alpaca getOrders failed: ${e.message}` }, { status: 502 })
+    }
+
+    const tickersWithStop = new Set(
+      openOrders
+        .filter(o => o.side === 'sell' && (o.type === 'stop' || o.type === 'stop_limit'))
+        .map(o => o.symbol.toUpperCase())
+    )
+
+    for (const ticker of heldSignalTickers) {
+      if (tickersWithStop.has(ticker)) {
+        console.log(`[execute] ${ticker}: GTC stop already exists`)
+        stopReattachResults.push({ ticker, action: 'already_exists' })
+        continue
+      }
+
+      const { data: tradeRow } = await supabase
+        .from('paper_trades')
+        .select('entry_price, shares')
+        .eq('ticker', ticker)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!tradeRow) {
+        console.log(`[execute] ${ticker}: no open paper_trade row found, skipping stop reattach`)
+        stopReattachResults.push({ ticker, action: 'skipped', error: 'no open trade record' })
+        continue
+      }
+
+      const stopPrice = Math.round(tradeRow.entry_price * (1 - STOP_LOSS_PCT) * 100) / 100
+      const position  = positions.find(p => p.symbol.toUpperCase() === ticker)
+      const qty       = position ? Math.abs(parseInt(position.qty)) : (tradeRow.shares as number)
+
+      try {
+        const stopOrder = await placeStopOrder(ticker, qty, stopPrice)
+        console.log(`[execute] ${ticker}: stop reattached at $${stopPrice} (order ${stopOrder.id})`)
+        stopReattachResults.push({ ticker, action: 'reattached', stop_price: stopPrice, order_id: stopOrder.id })
+      } catch (e: any) {
+        console.error(`[execute] ${ticker}: stop reattach failed:`, e.message)
+        stopReattachResults.push({ ticker, action: 'failed', error: e.message })
+      }
+    }
+  }
+
+  // ── 4. Split into tiers ───────────────────────────────────────────────────
   const tier1 = eligible.filter(s => s.conviction_score >= 70)
   const tier2 = eligible.filter(s => s.conviction_score >= 60 && s.conviction_score < 70)
 
-  const alreadyHeld = allSignals.length - eligible.length
-
   if (eligible.length === 0) {
     return NextResponse.json({
-      message:      'All qualifying signals already have open positions',
-      signal_month: signalMonth,
-      already_held: alreadyHeld,
+      message:        'All qualifying signals already have open positions',
+      signal_month:   signalMonth,
+      already_held:   alreadyHeld,
+      stop_reattach:  stopReattachResults,
     })
   }
 
-  // ── 4. Fetch prices for all eligible tickers in one call ─────────────────
+  // ── 5. Fetch prices for all eligible tickers in one call ─────────────────
   const allTickers = eligible.map(s => s.ticker)
   let prices: Record<string, number>
   try {
@@ -155,7 +215,7 @@ async function runExecute(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: `Alpaca getLatestPrices failed: ${e.message}` }, { status: 502 })
   }
 
-  // ── 5. Process both tiers ─────────────────────────────────────────────────
+  // ── 6. Process both tiers ─────────────────────────────────────────────────
   const tier1Allocation = tier1.length > 0 ? TIER1_BUDGET / tier1.length : 0
 
   const [tier1Results, tier2Results] = await Promise.all([
@@ -166,8 +226,9 @@ async function runExecute(req: Request): Promise<NextResponse> {
   const allResults = [...tier1Results, ...tier2Results]
 
   return NextResponse.json({
-    signal_month: signalMonth,
-    already_held: alreadyHeld,
+    signal_month:  signalMonth,
+    already_held:  alreadyHeld,
+    stop_reattach: stopReattachResults,
     tier1: {
       signals:       tier1.length,
       allocation_each: tier1Allocation,

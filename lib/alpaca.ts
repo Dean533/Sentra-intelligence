@@ -52,6 +52,26 @@ export async function getPositions(): Promise<{ symbol: string; qty: string; mar
   return alpacaFetch(`${TRADING_URL}/v2/positions`)
 }
 
+// Returns all open orders.
+export async function getOrders(): Promise<{ id: string; symbol: string; side: string; type: string; time_in_force: string; status: string }[]> {
+  return alpacaFetch(`${TRADING_URL}/v2/orders?status=open`)
+}
+
+// Places a standalone GTC sell-stop order (used to reattach a missing stop loss).
+export async function placeStopOrder(symbol: string, qty: number, stopPrice: number): Promise<{ id: string }> {
+  return alpacaFetch(`${TRADING_URL}/v2/orders`, {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      qty:           String(qty),
+      side:          'sell',
+      type:          'stop',
+      stop_price:    stopPrice.toFixed(2),
+      time_in_force: 'gtc',
+    }),
+  })
+}
+
 // Returns account cash balance and buying power.
 export async function getAccount(): Promise<{ cash: string; buying_power: string; portfolio_value: string }> {
   return alpacaFetch(`${TRADING_URL}/v2/account`)
