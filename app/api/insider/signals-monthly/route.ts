@@ -124,13 +124,17 @@ export async function GET(req: Request) {
 
   // Returns true when a transaction should be treated as inferred-opportunistic.
   // Mirrors the same criteria used in app/api/insider/conviction/[ticker]/route.ts.
+  // ROUTINE insiders are explicitly excluded — never infer opportunistic from a
+  // confirmed routine trader regardless of title or size.
   function inferredOpportunistic(tx: any): boolean {
     const cik  = tx.insider_cik as string | null
     const val  = (tx.total_value ?? 0) as number
     const text = ((tx.officer_title ?? '') + ' ' + (tx.role ?? '')).toLowerCase()
+    const cls  = cik ? (classMap[cik] ?? null) : null
     return (
       !!cik &&
-      (!classifiedCikSet.has(cik) || classMap[cik] === 'UNCLASSIFIABLE') &&
+      cls !== 'ROUTINE' &&
+      (!classifiedCikSet.has(cik) || cls === 'UNCLASSIFIABLE') &&
       tx.transaction_direction === 'buy' &&
       val >= 1_000_000 &&
       (text.includes('ceo') || text.includes('chief executive') ||
@@ -199,6 +203,17 @@ export async function GET(req: Request) {
     }
   }
 
+  // Diagnostic: CSX / Angel Stephen F — confirm ROUTINE guard is firing
+  const csxAll = (allTx ?? []).filter((r: any) => r.ticker === 'CSX')
+  if (csxAll.length > 0) {
+    console.log(`[signals-monthly] CSX: ${csxAll.length} tx in range`)
+    for (const r of csxAll) {
+      const cik = (r as any).insider_cik
+      const cls = cik ? (classMap[cik] ?? 'NOT IN classMap') : 'NULL cik'
+      console.log(`[signals-monthly] CSX tx: ${(r as any).insider_name} | dir=${(r as any).transaction_direction} | val=${(r as any).total_value} | cik=${cik} | classification=${cls} | inferred=${inferredOpportunistic(r)}`)
+    }
+  }
+
   // Group transactions by ticker
   const txByTicker = new Map<string, typeof allTx>()
   for (const tx of allTx ?? []) {
@@ -231,6 +246,14 @@ export async function GET(req: Request) {
         const value          = (tx as any).total_value as number | null
         const isLocal        = (tx as any).is_local as boolean | null
         const classification = cik ? (classMap[cik] ?? null) : null
+
+        // Explicit ROUTINE guard — skip before any inferred-opportunistic check.
+        // This catches CIK formatting mismatches where classifiedCikSet.has(cik)
+        // might be false even though the insider is recorded as ROUTINE.
+        if (classification === 'ROUTINE') {
+          routineFiltered++
+          continue
+        }
 
         const confirmed = classification === 'OPPORTUNISTIC'
         const inferred  = !confirmed && inferredOpportunistic(tx)

@@ -35,6 +35,23 @@ type TickerMeta = {
   name: string | null
   sector: string | null
   market_cap: number | null
+  price: number | null
+}
+
+type ConvictionData = {
+  score: number
+  classification: 'HIGH_CONVICTION' | 'TAKE_TRADE' | 'MONITOR' | 'DO_NOT_TRADE'
+  role: string
+  factors: string[]
+  holdDays: number
+  positionMultiplier: number
+  exitRules: {
+    stopLoss: number
+    takeProfit: number
+    holdDays: number
+    stopLossPrice: number | null
+    takeProfitPrice: number | null
+  }
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -134,10 +151,11 @@ export default function InsiderAnalysisPage() {
   const params = useParams()
   const ticker = (params?.ticker as string)?.toUpperCase()
 
-  const [signal,       setSignal]       = useState<Signal | null>(null)
-  const [trades,       setTrades]       = useState<Trade[]>([])
-  const [meta,         setMeta]         = useState<TickerMeta | null>(null)
-  const [loading,      setLoading]      = useState(true)
+  const [signal,     setSignal]     = useState<Signal | null>(null)
+  const [trades,     setTrades]     = useState<Trade[]>([])
+  const [meta,       setMeta]       = useState<TickerMeta | null>(null)
+  const [conviction, setConviction] = useState<ConvictionData | null>(null)
+  const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
     if (!ticker) return
@@ -147,15 +165,18 @@ export default function InsiderAnalysisPage() {
       fetch(`/api/insider/cmp-signal/${ticker}`).then((r) => r.json()),
       fetch(`/api/insider/fetch?ticker=${ticker}&limit=50`).then((r) => r.json()),
       fetch(`/api/ticker/${ticker}`).then((r) => r.json()),
-    ]).then(([sigRes, tradesRes, tickerRes]) => {
+      fetch(`/api/insider/conviction/${ticker}`).then((r) => r.json()),
+    ]).then(([sigRes, tradesRes, tickerRes, convRes]) => {
       setSignal(sigRes.data ?? null)
       setTrades(tradesRes.rows ?? [])
+      setConviction(convRes.data ?? null)
       const q = tickerRes?.quote
       const t = tickerRes?.ticker
       setMeta({
         name:       q?.longName ?? q?.shortName ?? t?.name ?? null,
         sector:     t?.sector  ?? q?.sector    ?? null,
         market_cap: q?.marketCap ?? null,
+        price:      q?.regularMarketPrice ?? q?.currentPrice ?? null,
       })
     }).finally(() => setLoading(false))
   }, [ticker])
@@ -178,15 +199,26 @@ export default function InsiderAnalysisPage() {
     )
   }
 
-  const dirColor =
-    signal?.signal_direction === 'bullish' ? '#3fb950' :
-    signal?.signal_direction === 'bearish' ? '#f85149' : '#7b8498'
+  const hasConviction = conviction != null && conviction.score > 0
 
-  const verdictProse = signal && trades.length > 0
-    ? buildVerdictProse(signal, ticker, trades)
-    : signal
-    ? `${ticker} has a ${signal.signal_direction} insider signal for ${fmtMonth(signal.signal_month)} based on ${signal.opportunistic_buy_count} opportunistic buy${signal.opportunistic_buy_count !== 1 ? 's' : ''} and ${signal.opportunistic_sell_count} sell${signal.opportunistic_sell_count !== 1 ? 's' : ''}.`
-    : null
+  function convBarColor(s: number) {
+    if (s >= 85) return '#3fb950'
+    if (s >= 70) return '#58a6ff'
+    if (s >= 50) return '#d4a037'
+    return '#f85149'
+  }
+  function convClsColor(c: ConvictionData['classification']) {
+    if (c === 'HIGH_CONVICTION') return '#3fb950'
+    if (c === 'TAKE_TRADE')      return '#58a6ff'
+    if (c === 'MONITOR')         return '#d4a037'
+    return '#f85149'
+  }
+  function convClsLabel(c: ConvictionData['classification']) {
+    if (c === 'HIGH_CONVICTION') return 'HIGH CONVICTION'
+    if (c === 'TAKE_TRADE')      return 'TAKE TRADE'
+    if (c === 'MONITOR')         return 'MONITOR ONLY'
+    return 'DO NOT TRADE'
+  }
 
   return (
     <div style={{ background: '#0a0e14', minHeight: '100vh', color: '#e6edf3', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -223,79 +255,67 @@ export default function InsiderAnalysisPage() {
 
         {/* ── verdict ───────────────────────────────────────────────────────── */}
         <div style={sep}>
-          {signal ? (
-            <>
-              {/* direction + strength label */}
-              <div style={{ marginBottom: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '16px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '44px', fontWeight: 900, color: dirColor, letterSpacing: '-0.5px', textTransform: 'uppercase', lineHeight: 1 }}>
-                    {signal.signal_direction}
-                  </span>
-                  <span style={{ fontSize: '22px', fontWeight: 600, color: dirColor, alignSelf: 'center' }}>
-                    {signalStrengthLabel(signal.expected_move_pct)}
-                  </span>
-                </div>
-                <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '12px', color: '#7b8498' }}>
-                    1–6 month signal window · {fmtMonth(signal.signal_month)}
+          <p style={secTitle}>Conviction Score</p>
+          {hasConviction ? (() => {
+            const { score, classification, factors, holdDays, positionMultiplier, exitRules } = conviction!
+            const barColor = convBarColor(score)
+            const clsColor = convClsColor(classification)
+            return (
+              <div style={{ background: '#0d1117', border: '1px solid #1f2937', borderRadius: '6px', padding: '16px' }}>
+                {/* Score row */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498', textTransform: 'uppercase' }}>Score</span>
+                  <span style={{ fontSize: '22px', fontWeight: 800, color: barColor, letterSpacing: '-0.5px' }}>
+                    {score}<span style={{ fontSize: '14px', fontWeight: 400, color: '#4a5568', marginLeft: '2px' }}>/100</span>
                   </span>
                 </div>
-                <p style={{ fontSize: '12px', color: '#4a5568', margin: '6px 0 0', maxWidth: '560px' }}>
-                  Based on the timing and size of recent insider trades, adjusted for historical trading patterns
-                </p>
+                {/* Score bar */}
+                <div style={{ height: '3px', background: '#1f2937', borderRadius: '2px', marginBottom: '12px' }}>
+                  <div style={{ height: '100%', width: `${score}%`, background: barColor, borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                </div>
+                {/* Classification + hold + multiplier */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: clsColor, letterSpacing: '0.5px' }}>
+                    {convClsLabel(classification)}
+                  </span>
+                  <span style={{ color: '#3a4a60' }}>·</span>
+                  <span style={{ fontSize: '12px', color: '#c9d1d9' }}>
+                    Hold <strong style={{ color: '#e6edf3' }}>{holdDays}d</strong>
+                  </span>
+                  {positionMultiplier > 1 && (
+                    <>
+                      <span style={{ color: '#3a4a60' }}>·</span>
+                      <span style={{ fontSize: '12px', color: '#c9d1d9' }}>
+                        Position <strong style={{ color: '#e6edf3' }}>{positionMultiplier}×</strong>
+                      </span>
+                    </>
+                  )}
+                </div>
+                {/* Exit rules */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '12px', fontSize: '12px', color: '#7b8498' }}>
+                  <span>Stop loss <strong style={{ color: '#f85149' }}>{exitRules.stopLossPrice != null ? `$${exitRules.stopLossPrice.toFixed(2)}` : '−15%'}</strong></span>
+                  <span style={{ color: '#3a4a60' }}>·</span>
+                  <span>Take profit <strong style={{ color: '#3fb950' }}>{exitRules.takeProfitPrice != null ? `$${exitRules.takeProfitPrice.toFixed(2)}` : '+25%'}</strong></span>
+                </div>
+                {/* Factors */}
+                {factors.length > 0 && (
+                  <div style={{ borderTop: '1px solid #1f2937', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {factors.map((f, i) => (
+                      <div key={i} style={{ fontSize: '11px', color: f.includes('-') ? '#f85149' : '#7b8498', display: 'flex', gap: '6px' }}>
+                        <span style={{ color: f.includes('-') ? '#f85149' : '#4a5568', flexShrink: 0 }}>{f.includes('-') ? '✕' : '✓'}</span>
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-
-              {/* prose explanation */}
-              {verdictProse && (
-                <p style={{ fontSize: '15px', lineHeight: '1.7', color: '#c9d1d9', margin: 0, maxWidth: '720px' }}>
-                  {verdictProse}
-                </p>
-              )}
-            </>
-          ) : (
-            <div>
-              <p style={secTitle}>Verdict</p>
-              <p style={{ fontSize: '15px', color: '#7b8498', margin: 0 }}>
-                No active CMP insider signal for {ticker} in the past 6 months.
-              </p>
-            </div>
+            )
+          })() : (
+            <p style={{ fontSize: '15px', color: '#7b8498', margin: 0 }}>
+              No actionable signal for {ticker}.
+            </p>
           )}
         </div>
-
-        {/* ── signal breakdown ──────────────────────────────────────────────── */}
-        {signal && (
-          <div style={sep}>
-            <p style={secTitle}>Signal Breakdown</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '24px' }}>
-
-              <div>
-                <div style={{ fontSize: '11px', color: '#7b8498', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Opportunistic Buys</div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#3fb950' }}>{signal.opportunistic_buy_count}</div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: '11px', color: '#7b8498', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Opportunistic Sells</div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#f85149' }}>{signal.opportunistic_sell_count}</div>
-              </div>
-
-              {signal.cluster_strength && (
-                <div>
-                  <div style={{ fontSize: '11px', color: '#7b8498', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Cluster Strength</div>
-                  <div style={{ fontSize: '28px', fontWeight: 800, color: signal.cluster_strength === 'HIGH' ? '#3fb950' : signal.cluster_strength === 'MEDIUM' ? '#d29922' : '#7b8498' }}>
-                    {signal.cluster_strength}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <div style={{ fontSize: '11px', color: '#7b8498', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Routine Filtered</div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#7b8498' }}>{signal.routine_trades_filtered}</div>
-                <div style={{ fontSize: '11px', color: '#4a5568', marginTop: '4px' }}>Trades on predictable calendars — excluded per CMP methodology</div>
-              </div>
-
-            </div>
-          </div>
-        )}
 
         {/* ── trade history table ───────────────────────────────────────────── */}
         <div style={{ ...sep, borderBottom: 'none' }}>

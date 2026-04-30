@@ -187,7 +187,7 @@ export default function AboutPage() {
             { criterion: 'Open market purchase (Form 4, Code P)',                desc: 'Required condition — signal is void if absent',                                             value: 'Required: +0 pts' },
             { criterion: 'Transaction size $500K–$5M',                          desc: '',                                                                                           value: '+8 pts' },
             { criterion: 'Transaction size $5M–$25M',                           desc: '',                                                                                           value: '+15 pts' },
-            { criterion: 'Transaction size >$25M',                              desc: '',                                                                                           value: '+20 pts' },
+            { criterion: 'Transaction size >$25M',                              desc: '',                                                                                           value: '-10 pts' },
             { criterion: 'Purchase as % of market cap 0.01–0.05%',              desc: '',                                                                                           value: '+5 pts' },
             { criterion: 'Purchase as % of market cap 0.05–0.1%',               desc: '',                                                                                           value: '+10 pts' },
             { criterion: 'Purchase as % of market cap >0.1%',                   desc: '',                                                                                           value: '+18 pts' },
@@ -202,8 +202,6 @@ export default function AboutPage() {
             { criterion: 'Financial Services sector',                            desc: '',                                                                                           value: '+8 pts' },
             { criterion: 'Industrials sector',                                   desc: '',                                                                                           value: '+7 pts' },
             { criterion: 'Consumer Cyclical sector',                             desc: '',                                                                                           value: '+6 pts' },
-            { criterion: 'News sentiment bullish in 48h window',                 desc: '',                                                                                           value: '+4 pts' },
-            { criterion: 'News sentiment bearish in 48h window',                 desc: '',                                                                                           value: '-3 pts' },
             { criterion: 'Stock in bottom 20% of 52-week range',                desc: '',                                                                                           value: '+6 pts' },
             { criterion: 'Stock in bottom 40% of 52-week range',                desc: '',                                                                                           value: '+3 pts' },
             { criterion: 'Stock in top 20% of 52-week range',                   desc: '',                                                                                           value: '-4 pts' },
@@ -275,7 +273,7 @@ export default function AboutPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
           {[
             { label: 'ENTRY',       value: 'Score ≥70',         sub: 'Opportunistic only' },
-            { label: 'STOP LOSS',   value: '−10%',              sub: 'Hard exit within 30d' },
+            { label: 'STOP LOSS',   value: '−15%',              sub: 'Hard exit within 30d' },
             { label: 'TAKE PROFIT', value: '+25%',              sub: 'Limit order attached' },
             { label: 'HOLD PERIOD', value: '90–180 days',       sub: 'Role and sector adjusted' },
             { label: 'TIER 1',      value: '$10,000 split',     sub: 'Score ≥70, equal weight' },

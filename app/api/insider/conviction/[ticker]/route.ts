@@ -68,6 +68,7 @@ export async function GET(
   const ciks = [...new Set((txRows as any[]).map(r => r.insider_cik).filter(Boolean))]
   const opportunisticCiks = new Set<string>()  // confirmed by classify job
   const classifiedCiks    = new Set<string>()  // any classification — present in table
+  const routineCiks       = new Set<string>()  // explicitly ROUTINE — never scored
   if (ciks.length > 0) {
     const { data: cls } = await supabase
       .from('insider_classifications')
@@ -77,6 +78,8 @@ export async function GET(
       classifiedCiks.add((c as any).insider_cik)
       if ((c as any).classification === 'OPPORTUNISTIC')
         opportunisticCiks.add((c as any).insider_cik)
+      if ((c as any).classification === 'ROUTINE')
+        routineCiks.add((c as any).insider_cik)
     }
   }
   console.log(`[conviction/${TK}] ciks found: [${ciks.join(', ')}]`)
@@ -163,6 +166,12 @@ export async function GET(
   let bestInferred = false
 
   for (const tx of txRows as any[]) {
+    const txCik = tx.insider_cik as string | null
+    if (txCik && routineCiks.has(txCik)) {
+      console.log(`[conviction/${TK}] skipping ${tx.insider_name} — classified ROUTINE`)
+      continue
+    }
+
     const monthKey = (tx.transaction_date as string).slice(0, 7)
 
     const monthTx = (recentTikTx ?? []).filter(r =>
