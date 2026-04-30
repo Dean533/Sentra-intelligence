@@ -33,9 +33,10 @@ function FadeUp({ children, delay = 0, className = '' }: { children: React.React
 
 function ScoreCard() {
   const bars = [
-    { label: 'News Sentiment', value: 38, max: 40 },
-    { label: 'SEC Activity',   value: 30, max: 35 },
-    { label: 'Mispricing',     value: 24, max: 25 },
+    { label: 'Role (10% Owner)',        value: 20, max: 20 },
+    { label: 'Trade Size ($5M–$25M)',   value: 15, max: 15 },
+    { label: 'Sector (Comm. Services)', value: 12, max: 12 },
+    { label: 'Cluster (3 insiders)',    value:  8, max:  8 },
   ]
   return (
     <div style={{
@@ -48,17 +49,17 @@ function ScoreCard() {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
         <div>
-          <div style={{ fontSize: '13px', color: '#555', letterSpacing: '2px', marginBottom: '4px' }}>SENTRA SCORE</div>
+          <div style={{ fontSize: '13px', color: '#555', letterSpacing: '2px', marginBottom: '4px' }}>CONVICTION SCORE</div>
           <div style={{ fontSize: '13px', fontWeight: 700, color: '#e6edf3' }}>APH</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '64px', fontWeight: 900, color: '#fbbf24', lineHeight: 1, letterSpacing: '-2px' }}>92</div>
+          <div style={{ fontSize: '64px', fontWeight: 900, color: '#3fb950', lineHeight: 1, letterSpacing: '-2px' }}>92</div>
           <div style={{
-            fontSize: '11px', fontWeight: 600, color: '#fbbf24',
-            border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.08)',
+            fontSize: '11px', fontWeight: 600, color: '#3fb950',
+            border: '1px solid rgba(63,185,80,0.2)', background: 'rgba(63,185,80,0.08)',
             borderRadius: '999px', padding: '3px 12px', marginTop: '6px', display: 'inline-block',
           }}>
-            Strong Signal
+            HIGH CONVICTION
           </div>
         </div>
       </div>
@@ -72,7 +73,7 @@ function ScoreCard() {
             </div>
             <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)' }}>
               <div style={{
-                height: '100%', borderRadius: '2px', background: 'rgba(251,191,36,0.6)',
+                height: '100%', borderRadius: '2px', background: 'rgba(63,185,80,0.6)',
                 width: `${(value / max) * 100}%`,
                 transition: 'width 1s ease',
               }} />
@@ -81,13 +82,6 @@ function ScoreCard() {
         ))}
       </div>
 
-      <div style={{
-        borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      }}>
-        <span style={{ fontSize: '12px', color: '#3fb950', fontWeight: 600 }}>Undervalued</span>
-        <span style={{ fontSize: '13px', color: '#3fb950', fontWeight: 700 }}>+37.6% analyst upside</span>
-      </div>
     </div>
   )
 }
@@ -135,15 +129,15 @@ function FAQItem({ q, a }: { q: string; a: string }) {
 const FAQS = [
   {
     q: 'What is the Sentra Score?',
-    a: 'The Sentra Score is a 0–100 signal that combines news sentiment, SEC filing activity, and mispricing detection. A score above 70 indicates elevated signal strength.',
+    a: "The conviction score is a 0-100 number that measures how strong an insider signal is. It weighs the insider's role, trade size, sector, and whether multiple insiders bought the same stock. Scores above 70 trigger a trade alert.",
   },
   {
     q: 'Where does the data come from?',
-    a: 'We pull from SEC EDGAR for official filings, Google News RSS for real-time headlines, and Yahoo Finance for price and analyst data. All sources are free and official.',
+    a: 'All data comes from SEC EDGAR Form 4 filings — the mandatory disclosure form every corporate insider must file within 2 business days of trading their company\'s stock.',
   },
   {
     q: 'How often is data updated?',
-    a: 'News and scores are refreshed daily. SEC filings are ingested within hours of being published on EDGAR.',
+    a: 'Signals are updated daily. New Form 4 filings are ingested every morning and scored automatically.',
   },
   {
     q: 'Is this financial advice?',
@@ -388,21 +382,21 @@ export default function HomePage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
             {[
               {
-                icon: <Newspaper size={22} color="#fff" />,
-                title: 'News Sentiment',
-                body: 'We scan headlines across 500+ tickers and score them bullish, bearish, or neutral using real-time RSS feeds.',
+                icon: <FileText size={22} color="#fff" />,
+                title: 'SEC EDGAR Ingestion',
+                body: 'Every Form 4 insider filing across 522 S&P 500 stocks is ingested daily, parsed, and stored with full metadata.',
                 delay: 0,
               },
               {
-                icon: <FileText size={22} color="#fff" />,
-                title: 'SEC Filings',
-                body: 'Every 8-K filing is tracked the moment it hits EDGAR. Earnings, mergers, legal events — all scored for signal strength.',
+                icon: <Newspaper size={22} color="#fff" />,
+                title: 'Insider Classification',
+                body: 'Each insider is classified as ROUTINE or OPPORTUNISTIC using a 3-year calendar pattern analysis based on Harvard and MIT research.',
                 delay: 0.1,
               },
               {
                 icon: <TrendingUp size={22} color="#fff" />,
-                title: 'Mispricing Signal',
-                body: "We compare sentiment direction vs price movement. When they diverge, that's your edge.",
+                title: 'Conviction Scoring',
+                body: 'Every opportunistic signal is scored 0-100 based on role seniority, trade size, sector alpha history, and insider clustering. Only scores above 70 trigger alerts.',
                 delay: 0.2,
               },
             ].map(({ icon, title, body, delay }) => (
@@ -449,20 +443,21 @@ export default function HomePage() {
           {/* left */}
           <FadeUp>
             <div>
-              <p style={{ fontSize: '11px', letterSpacing: '2.5px', color: '#555', margin: '0 0 14px' }}>THE SENTRA SCORE</p>
+              <p style={{ fontSize: '11px', letterSpacing: '2.5px', color: '#555', margin: '0 0 14px' }}>THE CONVICTION SCORE</p>
               <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 44px)', fontWeight: 900, letterSpacing: '-1px', margin: '0 0 20px', lineHeight: 1.1 }}>
-                One Number That Tells You Everything
+                One number that tells you whether to act
               </h2>
               <p style={{ fontSize: '15px', color: '#666', lineHeight: 1.8, margin: '0 0 32px' }}>
-                The Sentra Score combines news sentiment, SEC filing recency, and price-vs-sentiment
-                divergence into a single 0–100 signal. Above 70 means something is happening. Above 85 means act now.
+                The conviction score weighs role seniority, trade size, sector performance, and insider
+                clustering into a single number. Scores above 70 are actionable. Scores above 85 are high conviction.
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '36px' }}>
                 {[
-                  { label: 'News Sentiment', pts: 'up to 40 pts' },
-                  { label: 'SEC Filing Activity', pts: 'up to 35 pts' },
-                  { label: 'Mispricing Signal', pts: 'up to 25 pts' },
+                  { label: 'Role seniority',     pts: 'up to 20 pts' },
+                  { label: 'Trade size',          pts: 'up to 15 pts' },
+                  { label: 'Sector performance',  pts: 'up to 12 pts' },
+                  { label: 'Insider clustering',  pts: 'up to 12 pts' },
                 ].map(({ label, pts }, i, arr) => (
                   <div key={label} style={{
                     display: 'flex', justifyContent: 'space-between',
@@ -521,13 +516,13 @@ export default function HomePage() {
         <FadeUp>
           <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
             <h2 style={{ fontSize: 'clamp(28px, 4vw, 52px)', fontWeight: 900, letterSpacing: '-1.5px', margin: '0 0 16px', lineHeight: 1.1 }}>
-              Start Finding Mispricing Opportunities
+              See Today's Insider Signals
             </h2>
             <p style={{ fontSize: '17px', color: '#666', margin: '0 0 40px', lineHeight: 1.7 }}>
-              Explore 500+ stocks ranked by signal strength. Free.
+              522 S&P 500 stocks monitored daily. Only the strongest signals surface.
             </p>
             <Link
-              href="/explore"
+              href="/alerts"
               style={{
                 display: 'inline-block',
                 background: '#fff', color: '#000',
@@ -538,7 +533,7 @@ export default function HomePage() {
               onMouseEnter={(e) => (e.currentTarget.style.background = '#f3f4f6')}
               onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
             >
-              Explore Tickers
+              View Alerts
             </Link>
           </div>
         </FadeUp>
