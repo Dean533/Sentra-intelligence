@@ -276,10 +276,10 @@ export function computeConvictionScore(
     holdDays,
     positionMultiplier,
     exitRules: {
-      stopLoss:        -0.10,
+      stopLoss:        -0.15,
       takeProfit:       0.25,
       holdDays,
-      stopLossPrice:   p ? round2(p * 0.90) : null,
+      stopLossPrice:   p ? round2(p * 0.85) : null,
       takeProfitPrice: p ? round2(p * 1.25) : null,
     },
   }

@@ -10,7 +10,7 @@ const supabase = createClient(
 
 const TIER1_BUDGET     = 10_000  // split equally across all tier-1 signals
 const TIER2_ALLOCATION =    500  // flat per tier-2 signal
-const STOP_LOSS_PCT    =  0.10
+const STOP_LOSS_PCT    =  0.15
 const TAKE_PROFIT_PCT  =  0.25
 
 type SignalRow = { ticker: string; conviction_score: number; signal_direction: string }
@@ -178,9 +178,15 @@ async function runExecute(req: Request): Promise<NextResponse> {
         continue
       }
 
-      const stopPrice = Math.round(tradeRow.entry_price * (1 - STOP_LOSS_PCT) * 100) / 100
-      const position  = positions.find(p => p.symbol.toUpperCase() === ticker)
-      const qty       = position ? Math.abs(parseInt(position.qty)) : (tradeRow.shares as number)
+      const position    = positions.find(p => p.symbol.toUpperCase() === ticker)
+      const qty         = position ? Math.abs(parseInt(position.qty)) : (tradeRow.shares as number)
+      const currentPrice = position && qty > 0
+        ? parseFloat(position.market_value) / qty
+        : null
+      const entryStop   = Math.round(tradeRow.entry_price * (1 - STOP_LOSS_PCT) * 100) / 100
+      const stopPrice   = currentPrice !== null && entryStop > currentPrice
+        ? Math.round(currentPrice * (1 - STOP_LOSS_PCT) * 100) / 100
+        : entryStop
 
       try {
         const stopOrder = await placeStopOrder(ticker, qty, stopPrice)
