@@ -41,8 +41,8 @@ export async function placeOrder(
       time_in_force:   'day',
       extended_hours:  false,
       order_class:     'bracket',
-      stop_loss:       { stop_price:  stopLossPrice.toFixed(2) },
-      take_profit:     { limit_price: takeProfitPrice.toFixed(2) },
+      stop_loss:       { stop_price:  stopLossPrice.toFixed(2),   time_in_force: 'gtc' },
+      take_profit:     { limit_price: takeProfitPrice.toFixed(2), time_in_force: 'gtc' },
     }),
   })
 }
