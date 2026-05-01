@@ -1,0 +1,135 @@
+Loaded 340 total rows → 322 eligible (buy, code P, with 90d+180d outcomes)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKTEST — NEW CONVICTION SCORING vs 322 OPPORTUNISTIC TRADES (2015–2026)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Note: insiderHistory, tickerHistory, and is_local are all empty/null in this backtest.
+Live scoring will be higher due to track-record and local-insider bonuses.
+
+Overall baseline (n=322):  90d α=+3.89%  180d α=+3.93%  hit90=60.6%  hit180=61.5%
+
+Score range: min=2  max=100  avg=64.6
+
+════════════════════════════════════════════════════════════════════════════════
+SCORE BUCKETS
+════════════════════════════════════════════════════════════════════════════════
+Bucket                    n     %   hit90   hit180      α90     α180
+────────────────────────────────────────────────────────────────────────────────
+< 55  (below base)       88  27.3%   35.2%    34.1%   -3.82%   -9.14%
+55–59 (base only)        31  9.6%   58.1%    67.7%   +3.33%   +5.42%
+60–64                    35  10.9%   62.9%    54.3%   +6.53%   +3.98%
+65–69                    38  11.8%   73.7%    60.5%   +7.88%   +9.12%
+70–74 ▶ TIER 1           24  7.5%   62.5%    62.5%   +6.11%   +6.03%
+75–79 ▶ TIER 1           24  7.5%   54.2%    66.7%   +9.02%  +10.18%
+80–84 ▶ TIER 1           22  6.8%   63.6%    90.9%   +5.73%  +13.69%
+85–89 ▶ TIER 1            7  2.2%  100.0%    85.7%   +8.86%   +8.97%
+90–100 ▶ TIER 1          53  16.5%   88.7%    90.6%   +7.70%  +12.50%
+────────────────────────────────────────────────────────────────────────────────
+TOTAL                   322  100%   60.6%    61.5%   +3.89%   +3.93%
+
+════════════════════════════════════════════════════════════════════════════════
+CLASSIFICATION DISTRIBUTION
+════════════════════════════════════════════════════════════════════════════════
+  HIGH_CONVICTION (≥70)     n= 130 (40.4%)  α90=+7.38%  hit90=73.8%
+  TAKE_TRADE (60–69)        n=  73 (22.7%)  α90=+7.23%  hit90=68.5%
+  MONITOR (50–59)           n=  52 (16.1%)  α90=+1.93%  hit90=53.8%
+  DO_NOT_TRADE (<50)        n=  67 (20.8%)  α90=-4.98%  hit90=31.3%
+
+════════════════════════════════════════════════════════════════════════════════
+ROLE DISTRIBUTION IN RESULTS
+════════════════════════════════════════════════════════════════════════════════
+  Role                    n  avg score      α90   hit90
+────────────────────────────────────────────────────────────────────────────────
+  Director              143       54.1   +3.72%   53.8%
+  CEO                    73       77.1   +6.40%   68.5%
+  10% Owner              52       90.9   +5.75%   84.6%
+  Insider (other)        23       41.1   -3.67%   47.8%
+  Other/EVP              12       52.3   +4.31%   58.3%
+  Co-Founder/Partner      8       56.8   -7.55%    0.0%
+  President               6       53.5   -2.34%   33.3%
+  CFO                     5       73.8  +12.61%   80.0%
+
+════════════════════════════════════════════════════════════════════════════════
+TOP 15 HIGHEST-SCORING TRADES
+════════════════════════════════════════════════════════════════════════════════
+  [100] ARES   2022-06-06  ARES MANAGEMENT LLC     α90=+4.71%  α180=+1.67%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $500K–$1M trade size: +12 · Financial Services sector (long-hold): +8 · SPY -5.1% (weak market): +5 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [100] TKO    2025-01-17  Emanuel Ariel           α90=+16.85%  α180=+14.48%
+        Opportunistic confirmed: base 55 · CEO: +8 · $5M–$25M trade size: +8 · Communication Services sector: +12 · Cluster total $34.2M: +3 · SPY -11.9% (bear market): +10 · Trade 3.1× insider median: +6 · High-alpha insider (EMANUEL ARIEL): +6
+
+  [100] TKO    2025-01-22  Emanuel Ariel           α90=+16.70%  α180=+14.35%
+        Opportunistic confirmed: base 55 · CEO: +8 · $5M–$25M trade size: +8 · Communication Services sector: +12 · Cluster total $34.2M: +3 · SPY -13.1% (bear market): +10 · Trade 2.3× insider median: +6 · High-alpha insider (EMANUEL ARIEL): +6
+
+  [100] TKO    2025-01-23  Emanuel Ariel           α90=+11.55%  α180=+6.42%
+        Opportunistic confirmed: base 55 · CEO: +8 · $1M–$5M trade size: +6 · Communication Services sector: +12 · Cluster total $34.2M: +3 · SPY -12.2% (bear market): +10 · High-alpha insider (EMANUEL ARIEL): +6
+
+  [100] TKO    2025-01-24  Emanuel Ariel           α90=+11.52%  α180=+5.24%
+        Opportunistic confirmed: base 55 · CEO: +8 · $5M–$25M trade size: +8 · Communication Services sector: +12 · Cluster total $34.2M: +3 · SPY -10.1% (bear market): +10 · Trade 2.7× insider median: +6 · High-alpha insider (EMANUEL ARIEL): +6
+
+  [100] TKO    2025-02-04  Emanuel Ariel           α90=+12.12%  α180=+0.20%
+        Opportunistic confirmed: base 55 · CEO: +8 · $5M–$25M trade size: +8 · Communication Services sector: +12 · Cluster total $27.9M: +3 · SPY -6.4% (weak market): +5 · Trade 3.3× insider median: +6 · High-alpha insider (EMANUEL ARIEL): +6
+
+  [100] TKO    2025-02-06  Emanuel Ariel           α90=+12.70%  α180=-2.18%
+        Opportunistic confirmed: base 55 · CEO: +8 · $5M–$25M trade size: +8 · Communication Services sector: +12 · Cluster total $27.9M: +3 · SPY -7.5% (weak market): +5 · Trade 2.6× insider median: +6 · High-alpha insider (EMANUEL ARIEL): +6
+
+  [ 99] ARES   2023-01-18  ARES MANAGEMENT LLC     α90=+4.27%  α180=+14.31%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $500K–$1M trade size: +12 · Financial Services sector (long-hold): +8 · Cluster total $9.7M: +3 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [ 99] ARES   2023-03-13  ARES MANAGEMENT LLC     α90=+15.19%  α180=+28.82%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $1M–$5M trade size: +6 · Financial Services sector (long-hold): +8 · Cluster total $41.2M: +3 · Trade 4.2× insider median: +6 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [ 99] ARES   2023-03-16  ARES MANAGEMENT LLC     α90=+13.10%  α180=+25.89%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $1M–$5M trade size: +6 · Financial Services sector (long-hold): +8 · Cluster total $41.2M: +3 · Trade 2.0× insider median: +6 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [ 99] ARES   2023-03-29  ARES MANAGEMENT LLC     α90=+5.60%  α180=+22.16%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $1M–$5M trade size: +6 · Financial Services sector (long-hold): +8 · Cluster total $41.2M: +3 · Trade 3.1× insider median: +6 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [ 99] ARES   2023-04-14  ARES MANAGEMENT LLC     α90=+13.02%  α180=+28.35%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $1M–$5M trade size: +6 · Financial Services sector (long-hold): +8 · Cluster total $13.8M: +3 · Trade 4.5× insider median: +6 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [ 99] ARES   2023-04-20  ARES MANAGEMENT LLC     α90=+7.81%  α180=+21.10%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $1M–$5M trade size: +6 · Financial Services sector (long-hold): +8 · Cluster total $13.8M: +3 · Trade 4.4× insider median: +6 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [ 99] ARES   2023-05-04  ARES MANAGEMENT LLC     α90=+15.19%  α180=+20.74%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $1M–$5M trade size: +6 · Financial Services sector (long-hold): +8 · Cluster total $7.6M: +3 · Trade 4.6× insider median: +6 · High-alpha insider (ARES MANAGEMENT): +5
+
+  [ 99] ARES   2023-05-05  ARES MANAGEMENT LLC     α90=+13.00%  α180=+21.68%
+        Opportunistic confirmed: base 55 · 10% Owner + long-hold bonus: +16 · $1M–$5M trade size: +6 · Financial Services sector (long-hold): +8 · Cluster total $7.6M: +3 · Trade 3.4× insider median: +6 · High-alpha insider (ARES MANAGEMENT): +5
+
+
+════════════════════════════════════════════════════════════════════════════════
+BOTTOM 10 LOWEST-SCORING TRADES
+════════════════════════════════════════════════════════════════════════════════
+  [  2] MSTR   2025-06-05  Patten Jarrod M         α90=-19.00%  α180=-65.75%
+        Opportunistic confirmed: base 55 · Insider (other): -12 · $250K–$500K trade size: +2 · Technology sector: +4 · Trade 0.4× insider median (<0.5×): -2 · Excluded ticker MSTR: -25 · Excluded insider (PATTEN JARROD M): -20
+
+  [  6] MSTR   2025-10-16  Patten Jarrod M         α90=-41.32%  α180=-56.71%
+        Opportunistic confirmed: base 55 · Insider (other): -12 · $1M–$5M trade size: +6 · Technology sector: +4 · SPY 4.5% (low-alpha env): -2 · Excluded ticker MSTR: -25 · Excluded insider (PATTEN JARROD M): -20
+
+  [  6] MSTR   2025-10-17  Patten Jarrod M         α90=-45.23%  α180=-55.83%
+        Opportunistic confirmed: base 55 · Insider (other): -12 · $1M–$5M trade size: +6 · Technology sector: +4 · SPY 4.2% (low-alpha env): -2 · Excluded ticker MSTR: -25 · Excluded insider (PATTEN JARROD M): -20
+
+  [  8] MSTR   2025-05-27  Patten Jarrod M         α90=-16.47%  α180=-65.02%
+        Opportunistic confirmed: base 55 · Insider (other): -12 · $1M–$5M trade size: +6 · Technology sector: +4 · Excluded ticker MSTR: -25 · Excluded insider (PATTEN JARROD M): -20
+
+  [  8] MSTR   2025-07-29  Patten Jarrod M         α90=-32.96%  α180=-68.36%
+        Opportunistic confirmed: base 55 · Insider (other): -12 · $250K–$500K trade size: +2 · Technology sector: +4 · 2 insiders same ticker this month: +6 · Trade 0.5× insider median (<0.5×): -2 · Excluded ticker MSTR: -25 · Excluded insider (PATTEN JARROD M): -20
+
+  [ 16] VST    2019-12-05  HELM SCOTT B            α90=-14.18%  α180=-14.36%
+        Opportunistic confirmed: base 55 · Director: +1 · Under $250K trade size: -2 · Utilities sector: -12 · SPY 0.3% (low-alpha env): -2 · Excluded ticker VST: -12 · Excluded insider (HELM SCOTT B): -12
+
+  [ 16] VST    2021-05-06  HELM SCOTT B            α90=+13.00%  α180=+13.50%
+        Opportunistic confirmed: base 55 · Director: +1 · Under $250K trade size: -2 · Utilities sector: -12 · SPY 4.8% (low-alpha env): -2 · Excluded ticker VST: -12 · Excluded insider (HELM SCOTT B): -12
+
+  [ 16] VST    2022-05-26  HELM SCOTT B            α90=-4.91%  α180=-8.31%
+        Opportunistic confirmed: base 55 · Director: +1 · Under $250K trade size: -2 · Utilities sector: -12 · SPY 2.1% (low-alpha env): -2 · Excluded ticker VST: -12 · Excluded insider (HELM SCOTT B): -12
+
+  [ 16] VST    2022-11-15  HELM SCOTT B            α90=-2.06%  α180=+5.61%
+        Opportunistic confirmed: base 55 · Director: +1 · Under $250K trade size: -2 · Utilities sector: -12 · SPY 3.6% (low-alpha env): -2 · Excluded ticker VST: -12 · Excluded insider (HELM SCOTT B): -12
+
+  [ 16] VST    2022-11-21  HELM SCOTT B            α90=-2.49%  α180=+0.99%
+        Opportunistic confirmed: base 55 · Director: +1 · Under $250K trade size: -2 · Utilities sector: -12 · SPY 1.1% (low-alpha env): -2 · Excluded ticker VST: -12 · Excluded insider (HELM SCOTT B): -12
+
+════════════════════════════════════════════════════════════════════════════════

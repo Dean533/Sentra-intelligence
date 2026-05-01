@@ -1,45 +1,45 @@
 // Pure conviction scoring — no I/O. All inputs pre-fetched by caller.
 // Empirically calibrated from factor analysis of 322 confirmed opportunistic
-// trades, 2015–2026. Every point value is justified by measured 90d/180d alpha.
-// See output/full-factor-analysis.txt for the source numbers.
+// trades, 2015–2026. Every point value is justified by measured alpha.
+// See output/full-factor-analysis.txt for source data.
 
 // ─── Exclusion tables ─────────────────────────────────────────────────────────
 
 export const EXCLUDED_TICKER_PENALTIES: Record<string, number> = {
-  MSTR: -30,
-  VST:  -15,
-  CVS:  -15,
-  VRTX: -15,
-  GME:  -15,
-  ALLE: -15,
-  CRL:  -15,
+  MSTR: -25,
+  VST:  -12,
+  CVS:  -12,
+  VRTX: -12,
+  GME:  -12,
+  ALLE: -12,
+  CRL:  -12,
 }
 
 export const EXCLUDED_INSIDER_PENALTIES: Array<{ name: string; penalty: number }> = [
-  { name: 'PATTEN JARROD M',   penalty: -25 },
-  { name: 'HELM SCOTT B',      penalty: -15 },
-  { name: 'WALLMAN RICHARD F', penalty: -10 },
-  { name: 'STONE JOHN H',      penalty: -10 },
-  { name: 'CHENG LAWRENCE',    penalty: -10 },
+  { name: 'PATTEN JARROD M',   penalty: -20 },
+  { name: 'HELM SCOTT B',      penalty: -12 },
+  { name: 'WALLMAN RICHARD F', penalty:  -8 },
+  { name: 'STONE JOHN H',      penalty:  -8 },
+  { name: 'CHENG LAWRENCE',    penalty:  -8 },
 ]
 
 export const EXCLUDED_TICKERS  = Object.keys(EXCLUDED_TICKER_PENALTIES)
 export const EXCLUDED_INSIDERS = EXCLUDED_INSIDER_PENALTIES.map(e => e.name)
 
 // Known high-alpha insiders. Both SEC name orderings listed.
-// ticker=null applies at any ticker.
+// ticker=null applies at any ticker. Only applied to confirmed opportunistic.
 const HIGH_ALPHA_INSIDERS: Array<{ name: string; ticker: string | null; bonus: number }> = [
-  { name: 'MYERS FRANKLIN',   ticker: 'FIX',  bonus: 8 },
-  { name: 'FRANKLIN MYERS',   ticker: 'FIX',  bonus: 8 },
-  { name: 'EMANUEL ARIEL',    ticker: 'TKO',  bonus: 8 },
-  { name: 'ARIEL EMANUEL',    ticker: 'TKO',  bonus: 8 },
-  { name: 'AUSTIN ROXANNE',   ticker: 'CRWD', bonus: 8 },
-  { name: 'ROXANNE AUSTIN',   ticker: 'CRWD', bonus: 8 },
-  { name: 'JACOBSON MATTHEW', ticker: 'DDOG', bonus: 6 },
-  { name: 'MATTHEW JACOBSON', ticker: 'DDOG', bonus: 6 },
-  { name: 'ARORA NIKESH',     ticker: 'PANW', bonus: 6 },
-  { name: 'NIKESH ARORA',     ticker: 'PANW', bonus: 6 },
-  { name: 'ARES MANAGEMENT',  ticker: null,   bonus: 6 },
+  { name: 'MYERS FRANKLIN',   ticker: 'FIX',  bonus: 6 },
+  { name: 'FRANKLIN MYERS',   ticker: 'FIX',  bonus: 6 },
+  { name: 'EMANUEL ARIEL',    ticker: 'TKO',  bonus: 6 },
+  { name: 'ARIEL EMANUEL',    ticker: 'TKO',  bonus: 6 },
+  { name: 'AUSTIN ROXANNE',   ticker: 'CRWD', bonus: 6 },
+  { name: 'ROXANNE AUSTIN',   ticker: 'CRWD', bonus: 6 },
+  { name: 'JACOBSON MATTHEW', ticker: 'DDOG', bonus: 5 },
+  { name: 'MATTHEW JACOBSON', ticker: 'DDOG', bonus: 5 },
+  { name: 'ARORA NIKESH',     ticker: 'PANW', bonus: 5 },
+  { name: 'NIKESH ARORA',     ticker: 'PANW', bonus: 5 },
+  { name: 'ARES MANAGEMENT',  ticker: null,   bonus: 5 },
 ]
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -85,7 +85,6 @@ export type ConvictionResult = {
 }
 
 // ─── Role classifier ──────────────────────────────────────────────────────────
-// Priority order matters: CEO/CFO before 10% Owner before President.
 
 export function classifyRole(trade: Pick<ConvictionTrade, 'role' | 'officer_title'>): string {
   const r = (trade.role          ?? '').toLowerCase()
@@ -103,15 +102,14 @@ export function classifyRole(trade: Pick<ConvictionTrade, 'role' | 'officer_titl
 }
 
 // ─── Hold period ──────────────────────────────────────────────────────────────
-// Calibrated on 180d vs 90d alpha divergence per role.
 // CFO/10%Owner: 180d — both show materially stronger 180d alpha.
-// CEO: 90d — alpha peaks at 90d (+6.40%) then fades.
+// CEO: 90d — peaks at 90d (+6.40%), fades after.
 // Other/EVP: 60d — negative by 180d (-7.30%), cut early.
 
 function holdByRole(role: string): number {
-  if (role === 'CFO' || role === '10% Owner')  return 180
-  if (role === 'CEO' || role === 'Director')   return 90
-  if (role === 'Other/EVP')                    return 60
+  if (role === 'CFO' || role === '10% Owner') return 180
+  if (role === 'CEO' || role === 'Director')  return 90
+  if (role === 'Other/EVP')                   return 60
   return 150
 }
 
@@ -133,16 +131,24 @@ export function computeConvictionScore(
   const factors: string[] = []
   let score = 0
 
+  // ── Tier flags ───────────────────────────────────────────────────────────
+  const isConfirmed = trade.is_opportunistic && !trade.is_inferred_opportunistic
+  const isInferred  = trade.is_opportunistic && !!trade.is_inferred_opportunistic
+  const isRoutine   = !trade.is_opportunistic
+
   // ── Starting points ──────────────────────────────────────────────────────
-  if (trade.is_opportunistic && trade.is_inferred_opportunistic) {
-    score = 45
-    factors.push('Inferred opportunistic: base 45')
-  } else if (trade.is_opportunistic) {
-    score = 50
-    factors.push('Opportunistic insider: base 50')
+  // Confirmed: 55 base (avg trade with modest factors lands ~65).
+  // Inferred/unclassifiable: 20 base, hard cap 55 — shown on alerts as MONITOR only.
+  // Routine: 10 base, hard cap 30 — never traded.
+  if (isConfirmed) {
+    score = 55
+    factors.push('Opportunistic confirmed: base 55')
+  } else if (isInferred) {
+    score = 20
+    factors.push('Inferred opportunistic: base 20')
   } else {
-    score = 1
-    // Routine: accumulates from 1, hard-capped at 49
+    score = 10
+    factors.push('Routine: base 10')
   }
 
   const hasRoleData = !!((trade.role ?? '').trim()) || !!((trade.officer_title ?? '').trim())
@@ -152,99 +158,146 @@ export function computeConvictionScore(
   const name   = trade.insider_name.toUpperCase()
   const ticker = trade.ticker.toUpperCase()
 
-  // ── Hold period (needed for long-hold bonuses below) ─────────────────────
+  // ── Hold period (needed for long-hold bonuses) ───────────────────────────
   const holdDays = holdByRole(role)
 
   // ── Role bonus / penalty ─────────────────────────────────────────────────
-  // Skipped when both role and officer_title are absent — size floor applied
-  // instead so trades with missing metadata aren't unfairly penalised.
-  //
-  // Source alphas vs 3.89% baseline:
-  //   CFO +12.61%, CEO +6.40%, 10%Owner +5.75%, Director +3.72%,
-  //   President -2.34%, Other/EVP -2.17% (180d: -7.30%)
+  // Full bonuses for confirmed opportunistic only.
+  // Routine/inferred: role contribution capped at +5 (classification dominates).
+  // Negative penalties apply at all tiers — they indicate bad actors.
+  let rolePoints = 0
   if (hasRoleData) {
-    if      (role === 'CFO')                { score += 15; factors.push('CFO: +15') }
-    else if (role === 'CEO')                { score += 10; factors.push('CEO: +10') }
+    if      (role === 'CFO')                { rolePoints = 12 }
+    else if (role === 'CEO')                { rolePoints = 8  }
     else if (role === '10% Owner') {
-      score += 8
-      factors.push('10% Owner: +8')
-      // 10% Owner 180d alpha +15.96% vs 90d +5.75% — strong long-hold case
-      if (holdDays > 150) { score += 12; factors.push('10% Owner long-hold bonus (180d alpha +15.96%): +12') }
+      rolePoints = 6
+      // 180d alpha +15.96% vs 90d +5.75% — reward long-hold conviction
+      if (holdDays >= 180) rolePoints += 10
     }
-    else if (role === 'Director')           { score += 2;  factors.push('Director: +2') }
-    else if (role === 'President')          { score -= 8;  factors.push('President: -8') }
-    else if (role === 'Other/EVP')          { score -= 10; factors.push('Other/EVP: -10') }
-    else if (role === 'Insider (other)')    { score -= 15; factors.push('Insider (other): -15') }
-    else if (role === 'Co-Founder/Partner') { score -= 20; factors.push('Co-Founder/Partner: -20') }
+    else if (role === 'Director')           { rolePoints =  1  }
+    else if (role === 'President')          { rolePoints = -6  }
+    else if (role === 'Other/EVP')          { rolePoints = -8  }
+    else if (role === 'Insider (other)')    { rolePoints = -12 }
+    else if (role === 'Co-Founder/Partner') { rolePoints = -15 }
+
+    // Cap positive role contribution for non-confirmed tiers
+    if (!isConfirmed && rolePoints > 5) rolePoints = 5
+
+    if (rolePoints !== 0) {
+      score += rolePoints
+      const label = role === '10% Owner' && holdDays >= 180
+        ? `10% Owner + long-hold bonus`
+        : role
+      factors.push(`${label}: ${rolePoints > 0 ? '+' : ''}${rolePoints}`)
+    }
+  } else if (isConfirmed) {
+    // Unknown role floor: size-based minimum so large trades aren't penalised for missing metadata
+    const floor = val >= 5_000_000 ? 60 : val >= 1_000_000 ? 57 : 55
+    if (score < floor) {
+      score = floor
+      factors.push(`Unknown role — size floor: ${floor}`)
+    }
   }
 
   // ── Trade size ───────────────────────────────────────────────────────────
-  // Best bucket is $500K–$1M (alpha +8.96%, t=1.75) — not the largest trades.
+  // $500K–$1M is empirically the best bucket (alpha +8.96%, t=1.75).
   // >$25M trades show negative 90d alpha (-1.22%).
-  if      (val > 25_000_000)  { score -= 10; factors.push('Over $25M trade size: -10') }
-  else if (val >= 5_000_000)  { score += 10; factors.push('$5M–$25M trade size: +10') }
-  else if (val >= 1_000_000)  { score +=  8; factors.push('$1M–$5M trade size: +8') }
-  else if (val >= 500_000)    { score += 15; factors.push('$500K–$1M trade size: +15') }
-  else if (val >= 250_000)    { score +=  2; factors.push('$250K–$500K trade size: +2') }
-  else if (val > 0)           { score -=  3; factors.push('Under $250K trade size: -3') }
+  let sizePoints = 0
+  if      (val > 25_000_000) { sizePoints = -8  }
+  else if (val >= 5_000_000) { sizePoints =  8  }
+  else if (val >= 1_000_000) { sizePoints =  6  }
+  else if (val >= 500_000)   { sizePoints = 12  }
+  else if (val >= 250_000)   { sizePoints =  2  }
+  else if (val > 0)          { sizePoints = -2  }
+
+  if (!isConfirmed && sizePoints > 5) sizePoints = 5
+
+  if (sizePoints !== 0) {
+    const label =
+      val > 25_000_000  ? 'Over $25M trade size' :
+      val >= 5_000_000  ? '$5M–$25M trade size'  :
+      val >= 1_000_000  ? '$1M–$5M trade size'   :
+      val >= 500_000    ? '$500K–$1M trade size'  :
+      val >= 250_000    ? '$250K–$500K trade size' : 'Under $250K trade size'
+    score += sizePoints
+    factors.push(`${label}: ${sizePoints > 0 ? '+' : ''}${sizePoints}`)
+  }
 
   // ── Sector bonus / penalty ───────────────────────────────────────────────
-  // Communication Services t=2.85 (only statistically significant positive).
-  // Utilities t=-2.82 (only statistically significant negative).
-  // Financial Services weak at 90d (+3.56%) but strong at 180d (+11.26%).
-  if      (sector === 'Communication Services') { score += 15; factors.push('Communication Services sector: +15') }
-  else if (sector === 'Consumer Cyclical')       { score +=  8; factors.push('Consumer Cyclical sector: +8') }
-  else if (sector === 'Industrials')             { score +=  6; factors.push('Industrials sector: +6') }
-  else if (sector === 'Technology')              { score +=  5; factors.push('Technology sector: +5') }
+  // Communication Services t=2.85, Utilities t=-2.82 — only statistically
+  // significant sectors in the dataset.
+  // Financial Services: weak 90d (+3.56%) but strong 180d (+11.26%).
+  let sectorPoints = 0
+  if      (sector === 'Communication Services') { sectorPoints = 12 }
+  else if (sector === 'Consumer Cyclical')       { sectorPoints =  6 }
+  else if (sector === 'Industrials')             { sectorPoints =  5 }
+  else if (sector === 'Technology')              { sectorPoints =  4 }
   else if (sector === 'Financial Services') {
-    score += 5
-    factors.push('Financial Services sector: +5')
-    // Weak 90d (+3.56%) but strong 180d (+11.26%) — reward long hold
-    if (holdDays > 150) { score += 5; factors.push('Financial Services long-hold bonus (180d alpha +11.26%): +5') }
+    sectorPoints = holdDays >= 180 ? 8 : 4
   }
-  else if (sector === 'Healthcare')              { score +=  3; factors.push('Healthcare sector: +3') }
-  else if (sector === 'Real Estate')             { score +=  3; factors.push('Real Estate sector: +3') }
-  else if (sector === 'Energy')                  { /* 0 — n=4, unreliable */ }
-  else if (sector === 'Basic Materials')         { /* 0 — n=2, too small  */ }
-  else if (sector === 'Consumer Defensive')      { score -= 12; factors.push('Consumer Defensive sector: -12') }
-  else if (sector === 'Utilities')               { score -= 15; factors.push('Utilities sector: -15') }
+  else if (sector === 'Healthcare')              { sectorPoints =  2 }
+  else if (sector === 'Real Estate')             { sectorPoints =  2 }
+  // Energy and Basic Materials: too few observations (n=4, n=2), no adjustment
+  else if (sector === 'Consumer Defensive')      { sectorPoints = -10 }
+  else if (sector === 'Utilities')               { sectorPoints = -12 }
 
-  // ── Cluster count ────────────────────────────────────────────────────────
-  // 2–3 insiders: alpha +6.41% vs +3.65% single (+2.76% delta).
-  // 4+ insiders: zero trades in dataset — bonus removed entirely.
-  if (trade.cluster_count >= 2 && trade.cluster_count <= 3) {
-    score += 8
-    factors.push(`${trade.cluster_count} insiders same ticker this month: +8`)
-  }
-  // Note: cluster_count >= 4 intentionally gets no bonus (no empirical support).
+  if (!isConfirmed && sectorPoints > 4) sectorPoints = 4
 
-  // ── Cluster dollar total ─────────────────────────────────────────────────
-  if (trade.cluster_total_value >= 5_000_000) {
-    score += 4
-    factors.push(`Cluster total $${(trade.cluster_total_value / 1e6).toFixed(1)}M: +4`)
+  if (sectorPoints !== 0) {
+    const holdSuffix = sector === 'Financial Services' && holdDays >= 180 ? ' (long-hold)' : ''
+    score += sectorPoints
+    factors.push(`${sector} sector${holdSuffix}: ${sectorPoints > 0 ? '+' : ''}${sectorPoints}`)
   }
 
-  // ── Market condition (SPY 90d return) ────────────────────────────────────
-  // Insiders in falling markets generate the strongest alpha — contrarian signal.
-  // SPY < -10%: alpha +13.84%; SPY 0–5%: alpha +1.25% (weakest environment).
-  if (spy_90d_return != null) {
-    if      (spy_90d_return < -10) { score += 12; factors.push(`SPY ${spy_90d_return.toFixed(1)}% (bear market contrarian): +12`) }
-    else if (spy_90d_return < -5)  { score +=  6; factors.push(`SPY ${spy_90d_return.toFixed(1)}% (weak market): +6`) }
-    else if (spy_90d_return < 0)   { /* ~0 alpha, no adjustment */ }
-    else if (spy_90d_return < 5)   { score -=  3; factors.push(`SPY ${spy_90d_return.toFixed(1)}% (weakest insider alpha env): -3`) }
-    // SPY >= 5%: alpha +5–6%, decent — no bonus or penalty
+  // ── Confirmed-only factors ────────────────────────────────────────────────
+  // Cluster, market condition, relative size, and high-alpha insiders only
+  // apply to confirmed opportunistic trades — no empirical basis for the others.
+
+  if (isConfirmed) {
+    // ── Cluster count ───────────────────────────────────────────────────────
+    // 2–3 insiders: alpha +6.41% vs +3.65% single. 4+ removed: zero trades.
+    if (trade.cluster_count >= 2 && trade.cluster_count <= 3) {
+      score += 6
+      factors.push(`${trade.cluster_count} insiders same ticker this month: +6`)
+    }
+
+    // ── Cluster dollar total ────────────────────────────────────────────────
+    if (trade.cluster_total_value >= 5_000_000) {
+      score += 3
+      factors.push(`Cluster total $${(trade.cluster_total_value / 1e6).toFixed(1)}M: +3`)
+    }
+
+    // ── Market condition (SPY 90d return) ───────────────────────────────────
+    // Insiders in falling markets generate the strongest alpha — contrarian.
+    // SPY < -10%: alpha +13.84%.  SPY 0–5%: alpha +1.25% (weakest env).
+    if (spy_90d_return != null) {
+      if      (spy_90d_return < -10) { score += 10; factors.push(`SPY ${spy_90d_return.toFixed(1)}% (bear market): +10`) }
+      else if (spy_90d_return < -5)  { score +=  5; factors.push(`SPY ${spy_90d_return.toFixed(1)}% (weak market): +5`) }
+      else if (spy_90d_return < 0)   { /* neutral */ }
+      else if (spy_90d_return < 5)   { score -=  2; factors.push(`SPY ${spy_90d_return.toFixed(1)}% (low-alpha env): -2`) }
+      // SPY >= 5%: decent alpha, no adjustment
+    }
+
+    // ── Trade size relative to insider median ───────────────────────────────
+    // 2×–5× own median: alpha +8.71%, t=1.88. >5× drops to +1.90%.
+    if (trade.insider_median_value && trade.insider_median_value > 0 && val > 0) {
+      const ratio = val / trade.insider_median_value
+      if      (ratio >= 2 && ratio < 5) { score += 6; factors.push(`Trade ${ratio.toFixed(1)}× insider median: +6`) }
+      else if (ratio >= 5)               { score += 1; factors.push(`Trade ${ratio.toFixed(1)}× insider median (>5×): +1`) }
+      else if (ratio < 0.5)              { score -= 2; factors.push(`Trade ${ratio.toFixed(1)}× insider median (<0.5×): -2`) }
+    }
+
+    // ── High-alpha insider bonus ────────────────────────────────────────────
+    for (const ha of HIGH_ALPHA_INSIDERS) {
+      if (name.includes(ha.name) && (ha.ticker === null || ha.ticker === ticker)) {
+        score += ha.bonus
+        factors.push(`High-alpha insider (${ha.name}): +${ha.bonus}`)
+        break
+      }
+    }
   }
 
-  // ── Trade size relative to insider median ────────────────────────────────
-  // 2×–5× own median is the sweet spot: alpha +8.71%, t=1.88.
-  // >5× drops to +1.90% — outsized trades aren't reliably better.
-  if (trade.insider_median_value && trade.insider_median_value > 0 && val > 0) {
-    const ratio = val / trade.insider_median_value
-    if      (ratio >= 2 && ratio < 5) { score += 8; factors.push(`Trade ${ratio.toFixed(1)}× insider median (sweet spot): +8`) }
-    else if (ratio >= 5)               { score += 2; factors.push(`Trade ${ratio.toFixed(1)}× insider median (>5×): +2`) }
-  }
-
-  // ── Track record ─────────────────────────────────────────────────────────
+  // ── Track record (all tiers) ─────────────────────────────────────────────
   const insHit = hitRate(insiderHistory)
   if (insHit !== null) {
     if      (insHit >= 0.80) { score += 10; factors.push(`Insider ${Math.round(insHit * 100)}% hit rate (≥5 trades): +10`) }
@@ -257,23 +310,15 @@ export function computeConvictionScore(
     else if (tikHit >= 0.65) { score += 3; factors.push(`Ticker signal history ${Math.round(tikHit * 100)}% bullish: +3`) }
   }
 
-  // ── High-alpha insider bonus ──────────────────────────────────────────────
-  for (const ha of HIGH_ALPHA_INSIDERS) {
-    if (name.includes(ha.name) && (ha.ticker === null || ha.ticker === ticker)) {
-      score += ha.bonus
-      factors.push(`High-alpha insider (${ha.name}): +${ha.bonus}`)
-      break
-    }
-  }
-
-  // ── Local insider bonus ───────────────────────────────────────────────────
-  // Local: +5.02% alpha vs +1.56% non-local — measured +3.46% edge.
+  // ── Local insider ─────────────────────────────────────────────────────────
+  // Confirmed local: +5.02% alpha vs +1.56% non-local (+3.46% edge).
   if (trade.is_local === true) {
-    score += 4
-    factors.push('Local insider (same state as HQ): +4')
+    const localBonus = isConfirmed ? 3 : 1
+    score += localBonus
+    factors.push(`Local insider (same state as HQ): +${localBonus}`)
   }
 
-  // ── Exclusion penalties ───────────────────────────────────────────────────
+  // ── Exclusion penalties (all tiers) ──────────────────────────────────────
   const tickerPenalty = EXCLUDED_TICKER_PENALTIES[ticker]
   if (tickerPenalty != null) {
     score += tickerPenalty
@@ -288,28 +333,25 @@ export function computeConvictionScore(
     }
   }
 
-  // ── Unknown-role floor (opportunistic only) ───────────────────────────────
-  // Prevents large trades with missing SEC metadata from being penalised
-  // purely on sector/exclusion adjustments.
-  if (!hasRoleData && trade.is_opportunistic) {
-    const floor = val >= 5_000_000 ? 55 : val >= 1_000_000 ? 52 : 50
-    if (score < floor) {
-      score = floor
-      factors.push(`Unknown role — size-based floor: ${floor}`)
-    }
-  }
-
-  // ── Routine trade cap ─────────────────────────────────────────────────────
-  if (!trade.is_opportunistic) score = Math.min(49, Math.max(1, score))
+  // ── Tier caps ─────────────────────────────────────────────────────────────
+  if (isInferred) score = Math.min(55, Math.max(0, score))
+  if (isRoutine)  score = Math.min(30, Math.max(0, score))
 
   // ── Global clamp ──────────────────────────────────────────────────────────
   score = Math.min(100, Math.max(0, score))
 
   // ── Classification ────────────────────────────────────────────────────────
-  const classification: ConvictionResult['classification'] =
-    score >= 85 ? 'HIGH_CONVICTION' :
-    score >= 70 ? 'TAKE_TRADE'      :
-    score >= 50 ? 'MONITOR'         : 'DO_NOT_TRADE'
+  // Trading tiers only apply to confirmed opportunistic.
+  // Inferred and routine are always MONITOR or DO_NOT_TRADE.
+  let classification: ConvictionResult['classification']
+  if (isConfirmed) {
+    classification =
+      score >= 70 ? 'HIGH_CONVICTION' :
+      score >= 60 ? 'TAKE_TRADE'      :
+      score >= 50 ? 'MONITOR'         : 'DO_NOT_TRADE'
+  } else {
+    classification = score >= 20 ? 'MONITOR' : 'DO_NOT_TRADE'
+  }
 
   // ── Position multiplier ───────────────────────────────────────────────────
   const positionMultiplier =

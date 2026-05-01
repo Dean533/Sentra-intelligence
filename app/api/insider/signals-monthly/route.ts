@@ -306,7 +306,7 @@ export async function GET(req: Request) {
           cluster_total_value:  buyValue,
           insider_median_value: null,   // no history available in cron context
         }
-        const { score, holdDays } = computeConvictionScore(convTrade, [], [])
+        const { score, holdDays } = computeConvictionScore(convTrade, [], [], null)
         if (score > maxConvictionScore) {
           maxConvictionScore = score
           maxHoldDays = holdDays
