@@ -238,7 +238,7 @@ export async function GET(req: Request) {
       let routineFiltered    = 0
       let hasInferred        = false
       // Collect qualifying buy trades so we can score each after counts are finalized.
-      const qualifyingBuys: Array<{ tx: any; isOpportunistic: boolean }> = []
+      const qualifyingBuys: Array<{ tx: any; isOpportunistic: boolean; isInferred: boolean }> = []
 
       for (const tx of txList) {
         const cik            = (tx as any).insider_cik as string | null
@@ -268,7 +268,7 @@ export async function GET(req: Request) {
         if (direction === 'buy') {
           opportunisticBuys++
           buyValue += value ?? 0
-          qualifyingBuys.push({ tx, isOpportunistic: confirmed || inferred })
+          qualifyingBuys.push({ tx, isOpportunistic: confirmed || inferred, isInferred: inferred })
         } else if (direction === 'sell') {
           opportunisticSells++
           sellValue += value ?? 0
@@ -287,33 +287,36 @@ export async function GET(req: Request) {
       // Score each qualifying buy; store the highest score for this ticker/month.
       // cluster_count and cluster_total_value are now final so all trades in the
       // cluster benefit from the full cluster bonus.
-      console.log('[signals-monthly] computing score for', ticker)
       let maxConvictionScore = 0
       let maxHoldDays = 0
-      for (const { tx, isOpportunistic } of qualifyingBuys) {
+      let maxResult: ReturnType<typeof computeConvictionScore> | null = null
+      for (const { tx, isOpportunistic, isInferred } of qualifyingBuys) {
         const convTrade: ConvictionTrade = {
           ticker,
-          insider_name:         (tx as any).insider_name,
-          officer_title:        (tx as any).officer_title ?? null,
-          role:                 (tx as any).role ?? null,
-          total_value:          (tx as any).total_value ?? null,
-          price_per_share:      null,   // not fetched at this stage
-          transaction_date:     (tx as any).transaction_date ?? signalMonth,
-          is_opportunistic:     isOpportunistic,
-          is_local:             (tx as any).is_local ?? null,
-          sector:               null,   // not fetched at this stage
-          cluster_count:        opportunisticBuys,
-          cluster_total_value:  buyValue,
-          insider_median_value: null,   // no history available in cron context
+          insider_name:              (tx as any).insider_name,
+          officer_title:             (tx as any).officer_title ?? null,
+          role:                      (tx as any).role ?? null,
+          total_value:               (tx as any).total_value ?? null,
+          price_per_share:           null,     // not fetched at this stage
+          transaction_date:          (tx as any).transaction_date ?? signalMonth,
+          is_opportunistic:          isOpportunistic,
+          is_inferred_opportunistic: isInferred,
+          is_local:                  (tx as any).is_local ?? null,
+          sector:                    null,     // not fetched at this stage
+          cluster_count:             opportunisticBuys,
+          cluster_total_value:       buyValue,
+          insider_median_value:      null,     // no history in cron context
         }
-        const { score, holdDays } = computeConvictionScore(convTrade, [], [], null)
-        if (score > maxConvictionScore) {
-          maxConvictionScore = score
-          maxHoldDays = holdDays
+        const result = computeConvictionScore(convTrade, [], [], null)
+        console.log(`[signals-monthly] scored ${ticker} | insider="${(tx as any).insider_name}" | isOpportunistic=${isOpportunistic} isInferred=${isInferred} | score=${result.score} | factors=[${result.factors.join(' · ')}]`)
+        if (result.score > maxConvictionScore) {
+          maxConvictionScore = result.score
+          maxHoldDays        = result.holdDays
+          maxResult          = result
         }
       }
 
-      console.log('[signals-monthly] upserting', ticker, 'score:', maxConvictionScore)
+      console.log(`[signals-monthly] upserting ${ticker} | qualifyingBuys=${qualifyingBuys.length} | maxConvictionScore=${maxConvictionScore} | classification=${maxResult?.classification ?? 'N/A (no buys)'}`)
       upserts.push({
         ticker,
         signal_month:                signalMonth,
