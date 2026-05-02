@@ -6,11 +6,12 @@ import { useRouter } from 'next/navigation'
 // ─── shared types ─────────────────────────────────────────────────────────────
 
 type Tab = 'insider' | 'sec' | 'news'
+type DirFilter = 'all' | 'buys' | 'sells'
 
 const TABS: { label: string; value: Tab }[] = [
-  { label: 'Insider Buys',  value: 'insider' },
-  { label: 'SEC Filings',   value: 'sec' },
-  { label: 'News',          value: 'news' },
+  { label: 'Insider Activity', value: 'insider' },
+  { label: 'SEC Filings',      value: 'sec' },
+  { label: 'News',             value: 'news' },
 ]
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -76,6 +77,22 @@ const thStyle: React.CSSProperties = {
   fontWeight: 500, whiteSpace: 'nowrap',
 }
 
+const dropdownStyle: React.CSSProperties = {
+  padding: '7px 28px 7px 12px',
+  borderRadius: '8px',
+  border: '1px solid #1e2530',
+  background: '#0d1117',
+  color: '#c9d1d9',
+  fontSize: '13px',
+  cursor: 'pointer',
+  outline: 'none',
+  appearance: 'none',
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237b8498' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 10px center',
+  fontFamily: 'inherit',
+}
+
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type EventItem = {
@@ -96,17 +113,17 @@ type InsiderRow = {
   price_per_share: number | null
   total_value: number | null
   source_url: string | null
+  classification: string | null
 }
 
 // ─── EVENTS FEED (SEC Filings + News) ────────────────────────────────────────
 
-// Maps tab value → the event_type value stored in the DB
 const TAB_EVENT_TYPE: Record<string, string> = {
   sec:  'sec_filing',
   news: 'news',
 }
 
-function EventsFeed({ eventType }: { eventType: string }) {
+function EventsFeed({ eventType, ticker }: { eventType: string; ticker?: string }) {
   const [events,  setEvents]  = useState<EventItem[]>([])
   const [loading, setLoading] = useState(true)
   const [page,    setPage]    = useState(1)
@@ -114,17 +131,17 @@ function EventsFeed({ eventType }: { eventType: string }) {
   const [pages,   setPages]   = useState(1)
   const router = useRouter()
 
-  useEffect(() => {
-    setPage(1)
-  }, [eventType])
+  useEffect(() => { setPage(1) }, [eventType, ticker])
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/signals?type=${eventType}&page=${page}&limit=30`)
+    const params = new URLSearchParams({ type: eventType, page: String(page), limit: '30' })
+    if (ticker) params.set('ticker', ticker)
+    fetch(`/api/signals?${params}`)
       .then((r) => r.json())
       .then((d) => { setEvents(d.events ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
       .finally(() => setLoading(false))
-  }, [eventType, page])
+  }, [eventType, ticker, page])
 
   const pageStart = (page - 1) * 30 + 1
   const pageEnd   = Math.min(page * 30, total)
@@ -227,50 +244,120 @@ function EventsFeed({ eventType }: { eventType: string }) {
   )
 }
 
-// ─── INSIDER BUYS TABLE ───────────────────────────────────────────────────────
+// ─── INSIDER ACTIVITY TABLE ───────────────────────────────────────────────────
 
 function transactionColor(t: string | null) {
   if (!t) return '#7b8498'
-  const upper = t.toUpperCase()
-  if (upper.includes('BUY') || upper === 'P') return '#3fb950'
-  if (upper.includes('SELL') || upper === 'S') return '#f85149'
+  if (t.toUpperCase() === 'P') return '#3fb950'
+  if (t.toUpperCase() === 'S') return '#f85149'
   return '#d29922'
 }
 
 function transactionLabel(t: string | null) {
   if (!t) return '—'
-  const upper = t.toUpperCase()
-  if (upper === 'P') return 'Purchase'
-  if (upper === 'S') return 'Sale'
+  if (t.toUpperCase() === 'P') return 'Purchase'
+  if (t.toUpperCase() === 'S') return 'Sale'
   return t
 }
 
-function InsiderBuysTable() {
-  const [rows,    setRows]    = useState<InsiderRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [page,    setPage]    = useState(1)
-  const [total,   setTotal]   = useState(0)
-  const [pages,   setPages]   = useState(1)
+const CLS_BADGE: Record<string, { color: string; bg: string; border: string }> = {
+  OPPORTUNISTIC:  { color: '#3fb950', bg: 'rgba(63,185,80,0.1)',    border: 'rgba(63,185,80,0.25)'   },
+  ROUTINE:        { color: '#d29922', bg: 'rgba(210,153,34,0.1)',   border: 'rgba(210,153,34,0.25)'  },
+  UNCLASSIFIABLE: { color: '#7b8498', bg: 'rgba(123,132,152,0.1)', border: 'rgba(123,132,152,0.2)'  },
+}
+
+function matchesRole(row: InsiderRow, filter: string): boolean {
+  const title = (row.officer_title ?? row.role ?? '').toLowerCase()
+  if (filter === 'ceo')      return title.includes('chief executive') || title.includes(' ceo')  || title.startsWith('ceo')
+  if (filter === 'cfo')      return title.includes('chief financial') || title.includes(' cfo')  || title.startsWith('cfo')
+  if (filter === 'director') return title.includes('director')
+  if (filter === '10pct')    return title.includes('10%') || title.includes('10 percent')
+  if (filter === 'other')    return !title.includes('chief') && !title.includes('director') && !title.includes('10%')
+  return true
+}
+
+function InsiderActivityTable({ ticker }: { ticker?: string }) {
+  const [rows,      setRows]      = useState<InsiderRow[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [page,      setPage]      = useState(1)
+  const [total,     setTotal]     = useState(0)
+  const [pages,     setPages]     = useState(1)
+  const [dirFilter, setDirFilter] = useState<DirFilter>('all')
+  const [clsFilter, setClsFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [valueFilter, setValueFilter] = useState('all')
   const router = useRouter()
+
+  useEffect(() => { setPage(1) }, [ticker, dirFilter])
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/insider/fetch?page=${page}&limit=50`)
+    const params = new URLSearchParams({ page: String(page), limit: '50', direction: dirFilter })
+    if (ticker) params.set('ticker', ticker)
+    fetch(`/api/insider/fetch?${params}`)
       .then((r) => r.json())
       .then((d) => { setRows(d.rows ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
       .finally(() => setLoading(false))
-  }, [page])
+  }, [ticker, dirFilter, page])
 
-  const pageStart = (page - 1) * 50 + 1
-  const pageEnd   = Math.min(page * 50, total)
+  const filteredRows = rows.filter((row) => {
+    if (clsFilter !== 'all'   && row.classification !== clsFilter) return false
+    if (roleFilter !== 'all'  && !matchesRole(row, roleFilter))    return false
+    if (valueFilter !== 'all' && (row.total_value ?? 0) < parseInt(valueFilter)) return false
+    return true
+  })
+
+  const hasClientFilter = clsFilter !== 'all' || roleFilter !== 'all' || valueFilter !== 'all'
+  const pageStart       = (page - 1) * 50 + 1
+  const pageEnd         = Math.min(page * 50, total)
+  const countLabel      = dirFilter === 'buys' ? 'purchases' : dirFilter === 'sells' ? 'sales' : 'transactions'
 
   const COLS = ['Ticker', 'Insider Name', 'Role', 'Date', 'Type', 'Price', 'Shares', 'Value']
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <span style={{ color: '#7b8498', fontSize: '13px' }}>
-          {loading ? 'Loading…' : total === 0 ? 'No insider purchases found yet' : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} purchases`}
+      {/* filter controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        <select value={dirFilter} onChange={(e) => setDirFilter(e.target.value as DirFilter)} style={dropdownStyle}>
+          <option value="all">All</option>
+          <option value="buys">Buys</option>
+          <option value="sells">Sells</option>
+        </select>
+
+        <select value={clsFilter} onChange={(e) => setClsFilter(e.target.value)} style={dropdownStyle}>
+          <option value="all">All Classifications</option>
+          <option value="OPPORTUNISTIC">Opportunistic</option>
+          <option value="ROUTINE">Routine</option>
+          <option value="UNCLASSIFIABLE">Unclassifiable</option>
+        </select>
+
+        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={dropdownStyle}>
+          <option value="all">All Roles</option>
+          <option value="ceo">CEO</option>
+          <option value="cfo">CFO</option>
+          <option value="director">Director</option>
+          <option value="10pct">10% Owner</option>
+          <option value="other">Other</option>
+        </select>
+
+        <select value={valueFilter} onChange={(e) => setValueFilter(e.target.value)} style={dropdownStyle}>
+          <option value="all">All Values</option>
+          <option value="100000">$100K+</option>
+          <option value="500000">$500K+</option>
+          <option value="1000000">$1M+</option>
+          <option value="5000000">$5M+</option>
+          <option value="10000000">$10M+</option>
+        </select>
+
+        <span style={{ color: '#7b8498', fontSize: '13px', marginLeft: 'auto' }}>
+          {loading
+            ? 'Loading…'
+            : hasClientFilter
+              ? `${filteredRows.length} ${countLabel} on this page`
+              : total === 0
+                ? `No ${countLabel} found`
+                : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} ${countLabel}`
+          }
         </span>
       </div>
 
@@ -292,33 +379,35 @@ function InsiderBuysTable() {
               </tr>
             ))}
 
-            {!loading && rows.length === 0 && (
+            {!loading && filteredRows.length === 0 && (
               <tr>
                 <td colSpan={8} style={{ padding: '56px 24px', textAlign: 'center' }}>
                   <div style={{ color: '#3a4a60', fontSize: '12px', letterSpacing: '2px', marginBottom: '8px' }}>NO DATA</div>
-                  <div style={{ color: '#7b8498', fontSize: '14px' }}>
-                    Insider transaction data coming soon.
-                  </div>
-                  <div style={{ color: '#3a4a60', fontSize: '12px', marginTop: '6px' }}>
-                    Run <code style={{ color: '#9ecbff' }}>/api/insider/ingest</code> to populate.
-                  </div>
+                  <div style={{ color: '#7b8498', fontSize: '14px' }}>No {countLabel} match these filters.</div>
                 </td>
               </tr>
             )}
 
-            {!loading && rows.map((row, i) => {
+            {!loading && filteredRows.map((row, i) => {
               const displayRole = row.officer_title ?? row.role ?? '—'
+              const isBuy       = row.transaction_code?.toUpperCase() === 'P'
+              const rowBg       = isBuy ? 'rgba(63,185,80,0.02)' : 'rgba(248,81,73,0.02)'
+              const rowBgHover  = isBuy ? 'rgba(63,185,80,0.06)' : 'rgba(248,81,73,0.05)'
+              const txColor     = transactionColor(row.transaction_code)
+              const txLabel     = transactionLabel(row.transaction_code)
+              const cls         = row.classification ?? 'UNCLASSIFIABLE'
+              const badge       = CLS_BADGE[cls] ?? CLS_BADGE.UNCLASSIFIABLE
               return (
                 <tr
                   key={row.id}
                   style={{
-                    borderBottom: i < rows.length - 1 ? '1px solid #141920' : 'none',
+                    borderBottom: i < filteredRows.length - 1 ? '1px solid #141920' : 'none',
                     cursor: 'pointer', transition: 'background 0.12s',
-                    background: 'rgba(63,185,80,0.02)',  // subtle green tint for buy rows
+                    background: rowBg,
                   }}
                   onClick={() => router.push(`/t/${row.ticker}`)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(63,185,80,0.06)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(63,185,80,0.02)')}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = rowBgHover)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = rowBg)}
                 >
                   <td style={{ padding: '13px 14px' }}>
                     <span style={{
@@ -333,6 +422,14 @@ function InsiderBuysTable() {
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {row.insider_name ?? '—'}
                     </div>
+                    <span style={{
+                      display: 'inline-block', marginTop: '3px',
+                      fontSize: '10px', fontWeight: 600, padding: '1px 6px', borderRadius: '4px',
+                      color: badge.color, background: badge.bg,
+                      border: `1px solid ${badge.border}`, letterSpacing: '0.4px',
+                    }}>
+                      {cls}
+                    </span>
                   </td>
                   <td style={{ padding: '13px 14px', color: '#7b8498', fontSize: '12px', maxWidth: '160px' }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -345,10 +442,9 @@ function InsiderBuysTable() {
                   <td style={{ padding: '13px 14px' }}>
                     <span style={{
                       fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px',
-                      color: '#3fb950', background: 'rgba(63,185,80,0.12)',
-                      border: '1px solid rgba(63,185,80,0.25)',
+                      color: txColor, background: `${txColor}1a`, border: `1px solid ${txColor}40`,
                     }}>
-                      Purchase
+                      {txLabel}
                     </span>
                   </td>
                   <td style={{ padding: '13px 14px', color: '#c9d1d9', fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
@@ -357,7 +453,7 @@ function InsiderBuysTable() {
                   <td style={{ padding: '13px 14px', color: '#c9d1d9', fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
                     {row.shares != null ? Number(row.shares).toLocaleString() : '—'}
                   </td>
-                  <td style={{ padding: '13px 14px', fontSize: '13px', fontWeight: 600, color: '#3fb950', fontVariantNumeric: 'tabular-nums' }}>
+                  <td style={{ padding: '13px 14px', fontSize: '13px', fontWeight: 600, color: txColor, fontVariantNumeric: 'tabular-nums' }}>
                     {fmtCurrency(row.total_value)}
                   </td>
                 </tr>
@@ -378,25 +474,17 @@ function InsiderBuysTable() {
   )
 }
 
-// ─── PLACEHOLDER ──────────────────────────────────────────────────────────────
-
-function Placeholder({ label }: { label: string }) {
-  return (
-    <div style={{
-      background: '#0d1117', border: '1px solid #1e2530',
-      borderRadius: '12px', padding: '64px 24px',
-      textAlign: 'center',
-    }}>
-      <div style={{ fontSize: '13px', color: '#3a4a60', letterSpacing: '2px', marginBottom: '10px' }}>COMING SOON</div>
-      <div style={{ color: '#7b8498', fontSize: '14px' }}>{label} feed is under construction.</div>
-    </div>
-  )
-}
-
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
 export default function EventsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('insider')
+  const [activeTab,    setActiveTab]    = useState<Tab>('insider')
+  const [tickerInput,  setTickerInput]  = useState('')
+  const [tickerFilter, setTickerFilter] = useState('')
+
+  useEffect(() => {
+    const t = setTimeout(() => setTickerFilter(tickerInput.toUpperCase().trim()), 300)
+    return () => clearTimeout(t)
+  }, [tickerInput])
 
   return (
     <div style={{ padding: '48px 40px 80px', maxWidth: '1000px', margin: '0 auto' }}>
@@ -408,16 +496,12 @@ export default function EventsPage() {
       <h1 style={{ fontSize: '40px', fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.5px' }}>
         Events
       </h1>
-      <p style={{ color: '#7b8498', fontSize: '15px', margin: '0 0 32px', lineHeight: 1.6 }}>
+      <p style={{ color: '#7b8498', fontSize: '15px', margin: '0 0 24px', lineHeight: 1.6 }}>
         Real-time feed of news, SEC filings, and insider activity across all tracked tickers.
       </p>
 
       {/* tab bar */}
-      <div style={{
-        display: 'flex', gap: '2px',
-        borderBottom: '1px solid #1e2530',
-        marginBottom: '24px',
-      }}>
+      <div style={{ display: 'flex', gap: '2px', borderBottom: '1px solid #1e2530', marginBottom: '16px' }}>
         {TABS.map((tab) => (
           <button
             key={tab.value}
@@ -439,10 +523,44 @@ export default function EventsPage() {
         ))}
       </div>
 
+      {/* ticker search — below tab bar, full width */}
+      <div style={{ position: 'relative', marginBottom: '24px' }}>
+        <span style={{
+          position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)',
+          color: '#3a4a60', fontSize: '15px', pointerEvents: 'none',
+        }}>⌕</span>
+        <input
+          type="text"
+          placeholder="Filter by ticker…"
+          value={tickerInput}
+          onChange={(e) => setTickerInput(e.target.value)}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            padding: '12px 40px 12px 38px',
+            background: '#0d1117', border: '1px solid #1e2530',
+            borderRadius: '8px', color: '#c9d1d9',
+            fontSize: '15px', outline: 'none',
+            fontFamily: 'inherit',
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = '#2a3a50')}
+          onBlur={(e)  => (e.currentTarget.style.borderColor = '#1e2530')}
+        />
+        {tickerInput && (
+          <button
+            onClick={() => setTickerInput('')}
+            style={{
+              position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', color: '#3a4a60', cursor: 'pointer',
+              fontSize: '18px', padding: '0', lineHeight: 1,
+            }}
+          >×</button>
+        )}
+      </div>
+
       {/* tab content */}
-      {activeTab === 'insider' && <InsiderBuysTable />}
-      {activeTab === 'sec'     && <EventsFeed eventType={TAB_EVENT_TYPE.sec} />}
-      {activeTab === 'news'    && <EventsFeed eventType={TAB_EVENT_TYPE.news} />}
+      {activeTab === 'insider' && <InsiderActivityTable ticker={tickerFilter || undefined} />}
+      {activeTab === 'sec'     && <EventsFeed eventType={TAB_EVENT_TYPE.sec}  ticker={tickerFilter || undefined} />}
+      {activeTab === 'news'    && <EventsFeed eventType={TAB_EVENT_TYPE.news} ticker={tickerFilter || undefined} />}
 
       <style>{`@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.9} }`}</style>
     </div>

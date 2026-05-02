@@ -9,6 +9,7 @@ const supabase = createClient(
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const type    = searchParams.get('type')   ?? 'all'    // 'all' | 'news' | 'sec_filing'
+  const ticker  = searchParams.get('ticker')?.toUpperCase().trim() ?? null
   const limit   = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '30', 10)))
   const page    = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
   const offset  = (page - 1) * limit
@@ -21,6 +22,9 @@ export async function GET(req: Request) {
 
   if (type !== 'all') {
     query = query.eq('event_type', type)
+  }
+  if (ticker) {
+    query = query.eq('ticker', ticker)
   }
 
   const { data, count, error } = await query

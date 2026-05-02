@@ -106,18 +106,72 @@ async function runExecute(req: Request): Promise<NextResponse> {
 
   const signalMonth = latestMonthRow.signal_month as string
 
+  // is_inferred_opportunistic = false is enforced at the DB level here.
+  // A second check against insider_classifications is done below to ensure
+  // at least one confirmed OPPORTUNISTIC insider exists for each ticker.
   const { data: allSignals, error: sigErr } = await supabase
     .from('insider_signals_monthly')
     .select('ticker, conviction_score, signal_direction, is_inferred_opportunistic')
     .eq('signal_month', signalMonth)
     .gte('conviction_score', 60)
     .eq('signal_direction', 'bullish')
+    .eq('is_inferred_opportunistic', false)
     .order('conviction_score', { ascending: false })
 
   if (sigErr) return NextResponse.json({ error: sigErr.message }, { status: 500 })
   if (!allSignals || allSignals.length === 0) {
     return NextResponse.json({ message: 'No qualifying bullish signals', signal_month: signalMonth })
   }
+
+  // ── 1b. Verify each ticker has a confirmed OPPORTUNISTIC insider in the DB ──
+  // Fetch the actual transactions for these tickers in this signal month to
+  // confirm at least one insider_cik is classified OPPORTUNISTIC.
+  // This guards against any data inconsistency where is_inferred_opportunistic
+  // was saved incorrectly or the classification was later changed.
+  const signalTickers = (allSignals as SignalRow[]).map(s => s.ticker)
+
+  const { data: txRows } = await supabase
+    .from('insider_transactions')
+    .select('ticker, insider_cik')
+    .in('ticker', signalTickers)
+    .gte('transaction_date', signalMonth)
+    .lt('transaction_date', new Date(new Date(signalMonth).setUTCMonth(new Date(signalMonth).getUTCMonth() + 1)).toISOString().split('T')[0])
+    .eq('transaction_direction', 'buy')
+    .not('insider_cik', 'is', null)
+
+  // Build a set of CIKs that appear in these transactions
+  const relevantCiks = [...new Set((txRows ?? []).map((r: any) => r.insider_cik as string).filter(Boolean))]
+
+  const confirmedOpportCiks = new Set<string>()
+  if (relevantCiks.length > 0) {
+    const { data: clsRows } = await supabase
+      .from('insider_classifications')
+      .select('insider_cik, classification')
+      .in('insider_cik', relevantCiks)
+      .eq('classification', 'OPPORTUNISTIC')
+    for (const r of clsRows ?? []) {
+      if ((r as any).insider_cik) confirmedOpportCiks.add((r as any).insider_cik)
+    }
+  }
+
+  // Map ticker -> whether it has at least one confirmed OPPORTUNISTIC CIK
+  const tickerConfirmedMap = new Map<string, boolean>()
+  for (const r of txRows ?? []) {
+    const tk  = ((r as any).ticker as string).toUpperCase()
+    const cik = (r as any).insider_cik as string
+    if (!tickerConfirmedMap.has(tk)) tickerConfirmedMap.set(tk, false)
+    if (confirmedOpportCiks.has(cik)) tickerConfirmedMap.set(tk, true)
+  }
+
+  const classificationVerified = (allSignals as SignalRow[]).filter(s => {
+    const verified = tickerConfirmedMap.get(s.ticker.toUpperCase()) === true
+    if (!verified) {
+      console.log(`[execute] ${s.ticker}: skipped — no confirmed OPPORTUNISTIC insider found in classification table`)
+    }
+    return verified
+  })
+
+  const unverifiedCount = allSignals.length - classificationVerified.length
 
   // ── 2. Skip tickers already held on Alpaca ────────────────────────────────
   let positions: Awaited<ReturnType<typeof getPositions>>
@@ -128,17 +182,17 @@ async function runExecute(req: Request): Promise<NextResponse> {
   }
   const heldTickers = new Set(positions.map(p => p.symbol.toUpperCase()))
 
-  const eligible = (allSignals as SignalRow[]).filter(
+  const eligible = classificationVerified.filter(
     s => !heldTickers.has(s.ticker.toUpperCase())
   )
 
-  const alreadyHeld = allSignals.length - eligible.length
+  const alreadyHeld = classificationVerified.length - eligible.length
 
   // ── 3. Reattach stops for already-held signal positions ───────────────────
   type StopReattachResult = { ticker: string; action: string; stop_price?: number; order_id?: string; error?: string }
   const stopReattachResults: StopReattachResult[] = []
 
-  const heldSignalTickers = (allSignals as SignalRow[])
+  const heldSignalTickers = classificationVerified
     .filter(s => heldTickers.has(s.ticker.toUpperCase()))
     .map(s => s.ticker.toUpperCase())
 
@@ -199,27 +253,21 @@ async function runExecute(req: Request): Promise<NextResponse> {
     }
   }
 
-  // ── 4. Gate: only confirmed opportunistic signals trigger trades ──────────
-  // Inferred signals (is_inferred_opportunistic = true) are shown on the alerts
-  // page as MONITOR only and never executed.
-  const confirmed  = eligible.filter(s => !s.is_inferred_opportunistic)
-  const inferredSkipped = eligible.filter(s => s.is_inferred_opportunistic)
-
-  if (inferredSkipped.length > 0) {
-    console.log(`[execute] ${inferredSkipped.length} inferred signal(s) skipped (monitor only): ${inferredSkipped.map(s => s.ticker).join(', ')}`)
-  }
-
-  // ── 5. Split into tiers ───────────────────────────────────────────────────
+  // ── 4. Split into tiers ───────────────────────────────────────────────────
+  // All signals reaching this point are confirmed opportunistic:
+  //   • is_inferred_opportunistic = false (enforced in DB query)
+  //   • at least one insider_cik classified OPPORTUNISTIC (verified above)
+  const confirmed = eligible  // alias for clarity in downstream code
   const tier1 = confirmed.filter(s => s.conviction_score >= 70)
   const tier2 = confirmed.filter(s => s.conviction_score >= 60 && s.conviction_score < 70)
 
   if (confirmed.length === 0) {
     return NextResponse.json({
-      message:          'No confirmed opportunistic signals eligible for trading',
-      signal_month:     signalMonth,
-      already_held:     alreadyHeld,
-      inferred_skipped: inferredSkipped.length,
-      stop_reattach:    stopReattachResults,
+      message:           'No confirmed opportunistic signals eligible for trading',
+      signal_month:      signalMonth,
+      already_held:      alreadyHeld,
+      unverified_skipped: unverifiedCount,
+      stop_reattach:     stopReattachResults,
     })
   }
 
@@ -243,10 +291,10 @@ async function runExecute(req: Request): Promise<NextResponse> {
   const allResults = [...tier1Results, ...tier2Results]
 
   return NextResponse.json({
-    signal_month:     signalMonth,
-    already_held:     alreadyHeld,
-    inferred_skipped: inferredSkipped.length,
-    stop_reattach:    stopReattachResults,
+    signal_month:        signalMonth,
+    already_held:        alreadyHeld,
+    unverified_skipped:  unverifiedCount,
+    stop_reattach:       stopReattachResults,
     tier1: {
       signals:       tier1.length,
       allocation_each: tier1Allocation,
