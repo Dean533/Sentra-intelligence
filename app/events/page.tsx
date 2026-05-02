@@ -72,7 +72,7 @@ const paginationBtn = (disabled: boolean): React.CSSProperties => ({
 })
 
 const thStyle: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 14px',
+  textAlign: 'left', padding: '10px 10px',
   color: '#7b8498', fontSize: '11px', letterSpacing: '1px',
   fontWeight: 500, whiteSpace: 'nowrap',
 }
@@ -112,6 +112,7 @@ type InsiderRow = {
   shares: number | null
   price_per_share: number | null
   total_value: number | null
+  shares_owned_after: number | null
   source_url: string | null
   classification: string | null
 }
@@ -276,48 +277,149 @@ function matchesRole(row: InsiderRow, filter: string): boolean {
   return true
 }
 
+function holdingsPctOf(row: InsiderRow): number | null {
+  const s     = row.shares
+  const after = row.shares_owned_after
+  if (s == null || after == null) return null
+  const before = after - s
+  if (before <= 0) return null
+  return (s / before) * 100
+}
+
+function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string } | null {
+  const s     = row.shares
+  const after = row.shares_owned_after
+  if (s == null || after == null) return null
+  const isBuy = row.transaction_code?.toUpperCase() === 'P'
+  const denom = isBuy ? after - s : after + s
+  if (denom <= 0) return null
+  const raw = (s / denom) * 100
+  const pct = Math.min(raw, 999)
+  return { pct: isBuy ? pct : -pct, color: isBuy ? '#3fb950' : '#f85149' }
+}
+
 function InsiderActivityTable({ ticker }: { ticker?: string }) {
-  const [rows,      setRows]      = useState<InsiderRow[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [page,      setPage]      = useState(1)
-  const [total,     setTotal]     = useState(0)
-  const [pages,     setPages]     = useState(1)
-  const [dirFilter, setDirFilter] = useState<DirFilter>('all')
-  const [clsFilter, setClsFilter] = useState('all')
-  const [roleFilter, setRoleFilter] = useState('all')
+  const [rows,        setRows]        = useState<InsiderRow[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [page,        setPage]        = useState(1)
+  const [total,       setTotal]       = useState(0)
+  const [pages,       setPages]       = useState(1)
+  const [dirFilter,   setDirFilter]   = useState<DirFilter>('all')
+  const [clsFilter,   setClsFilter]   = useState('all')
+  const [roleFilter,  setRoleFilter]  = useState('all')
   const [valueFilter, setValueFilter] = useState('all')
+  const [startDate,   setStartDate]   = useState('')
+  const [endDate,     setEndDate]     = useState('')
+  const [holdingsPct, setHoldingsPct] = useState('any')
+  const [clusterMin,  setClusterMin]  = useState('none')
   const router = useRouter()
 
-  useEffect(() => { setPage(1) }, [ticker, dirFilter])
+  useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, startDate, endDate, clusterMin, holdingsPct])
 
   useEffect(() => {
     setLoading(true)
     const params = new URLSearchParams({ page: String(page), limit: '50', direction: dirFilter })
-    if (ticker) params.set('ticker', ticker)
+    if (ticker)              params.set('ticker', ticker)
+    if (clsFilter  !== 'all') params.set('classification', clsFilter)
+    if (roleFilter !== 'all') params.set('role', roleFilter)
+    if (startDate)            params.set('start_date', startDate)
+    if (endDate)              params.set('end_date', endDate)
+    if (clusterMin !== 'none') params.set('cluster_min', clusterMin)
+    if (holdingsPct !== 'any') params.set('holdings_min', holdingsPct)
     fetch(`/api/insider/fetch?${params}`)
       .then((r) => r.json())
       .then((d) => { setRows(d.rows ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
       .finally(() => setLoading(false))
-  }, [ticker, dirFilter, page])
+  }, [ticker, dirFilter, clsFilter, roleFilter, startDate, endDate, clusterMin, holdingsPct, page])
 
+  // 'other' role and value filter remain client-side (negation / local threshold)
   const filteredRows = rows.filter((row) => {
-    if (clsFilter !== 'all'   && row.classification !== clsFilter) return false
-    if (roleFilter !== 'all'  && !matchesRole(row, roleFilter))    return false
-    if (valueFilter !== 'all' && (row.total_value ?? 0) < parseInt(valueFilter)) return false
+    if (roleFilter === 'other' && !matchesRole(row, 'other')) return false
+    if (valueFilter !== 'all'  && (row.total_value ?? 0) < parseInt(valueFilter)) return false
     return true
   })
 
-  const hasClientFilter = clsFilter !== 'all' || roleFilter !== 'all' || valueFilter !== 'all'
+  const hasClientFilter = roleFilter === 'other' || valueFilter !== 'all'
   const pageStart       = (page - 1) * 50 + 1
   const pageEnd         = Math.min(page * 50, total)
   const countLabel      = dirFilter === 'buys' ? 'purchases' : dirFilter === 'sells' ? 'sales' : 'transactions'
 
-  const COLS = ['Ticker', 'Insider Name', 'Role', 'Date', 'Type', 'Price', 'Shares', 'Value']
+  const COLS = ['Ticker', 'Insider Name', 'Role', 'Date', 'Type', 'Price', 'Shares', 'Δ Hold', 'Value']
+
+  // In cluster mode, group by ticker (sorted by each group's most recent trade) then flatten.
+  const displayRows: InsiderRow[] = (() => {
+    if (clusterMin === 'none') return filteredRows
+    const map = new Map<string, InsiderRow[]>()
+    for (const row of filteredRows) {
+      if (!map.has(row.ticker)) map.set(row.ticker, [])
+      map.get(row.ticker)!.push(row)
+    }
+    return [...map.entries()]
+      .sort(([, a], [, b]) => (b[0]?.transaction_date ?? '').localeCompare(a[0]?.transaction_date ?? ''))
+      .flatMap(([, rows]) => rows)
+  })()
+
+  const renderRow = (row: InsiderRow, isLast: boolean) => {
+    const displayRole = row.officer_title ?? row.role ?? '—'
+    const isBuy       = row.transaction_code?.toUpperCase() === 'P'
+    const rowBg       = isBuy ? 'rgba(63,185,80,0.02)' : 'rgba(248,81,73,0.02)'
+    const rowBgHover  = isBuy ? 'rgba(63,185,80,0.06)' : 'rgba(248,81,73,0.05)'
+    const txColor     = transactionColor(row.transaction_code)
+    const txLabel     = transactionLabel(row.transaction_code)
+    const cls         = row.classification ?? 'UNCLASSIFIABLE'
+    const badge       = CLS_BADGE[cls] ?? CLS_BADGE.UNCLASSIFIABLE
+    const delta       = holdingsDeltaDisplay(row)
+    return (
+      <tr
+        key={row.id}
+        style={{ borderBottom: isLast ? 'none' : '1px solid #141920', cursor: 'pointer', transition: 'background 0.12s', background: rowBg }}
+        onClick={() => router.push(`/t/${row.ticker}`)}
+        onMouseEnter={(e) => (e.currentTarget.style.background = rowBgHover)}
+        onMouseLeave={(e) => (e.currentTarget.style.background = rowBg)}
+      >
+        <td style={{ padding: '11px 10px' }}>
+          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '6px', background: '#151c28', border: '1px solid #1e2a3a', color: '#9ecbff', fontSize: '12px', fontWeight: 700 }}>
+            {row.ticker}
+          </span>
+        </td>
+        <td style={{ padding: '11px 10px', color: '#c9d1d9', fontSize: '13px', maxWidth: '200px' }}>
+          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.insider_name ?? '—'}</div>
+          <span style={{ display: 'inline-block', marginTop: '3px', fontSize: '10px', fontWeight: 600, padding: '1px 6px', borderRadius: '4px', color: badge.color, background: badge.bg, border: `1px solid ${badge.border}`, letterSpacing: '0.4px' }}>
+            {cls}
+          </span>
+        </td>
+        <td style={{ padding: '11px 10px', color: '#7b8498', fontSize: '12px', maxWidth: '160px' }}>
+          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayRole}</div>
+        </td>
+        <td style={{ padding: '11px 10px', color: '#7b8498', fontSize: '13px', whiteSpace: 'nowrap' }}>{fmtDate(row.transaction_date)}</td>
+        <td style={{ padding: '11px 10px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', color: txColor, background: `${txColor}1a`, border: `1px solid ${txColor}40` }}>
+            {txLabel}
+          </span>
+        </td>
+        <td style={{ padding: '11px 10px', color: '#c9d1d9', fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
+          {row.price_per_share != null ? `$${Number(row.price_per_share).toFixed(2)}` : '—'}
+        </td>
+        <td style={{ padding: '11px 10px', color: '#c9d1d9', fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
+          {row.shares != null ? Number(row.shares).toLocaleString() : '—'}
+        </td>
+        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+          {delta
+            ? <span style={{ color: delta.color }}>{delta.pct >= 0 ? '+' : ''}{delta.pct.toFixed(1)}%</span>
+            : <span style={{ color: '#3a4a60' }}>—</span>
+          }
+        </td>
+        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 600, color: txColor, fontVariantNumeric: 'tabular-nums' }}>
+          {fmtCurrency(row.total_value)}
+        </td>
+      </tr>
+    )
+  }
 
   return (
     <>
-      {/* filter controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+      {/* filter row 1 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
         <select value={dirFilter} onChange={(e) => setDirFilter(e.target.value as DirFilter)} style={dropdownStyle}>
           <option value="all">All</option>
           <option value="buys">Buys</option>
@@ -348,6 +450,53 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
           <option value="5000000">$5M+</option>
           <option value="10000000">$10M+</option>
         </select>
+      </div>
+
+      {/* filter row 2 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ color: '#7b8498', fontSize: '12px' }}>From</span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={{
+              ...dropdownStyle,
+              padding: '7px 10px',
+              colorScheme: 'dark',
+              minWidth: '130px',
+            }}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ color: '#7b8498', fontSize: '12px' }}>To</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            style={{
+              ...dropdownStyle,
+              padding: '7px 10px',
+              colorScheme: 'dark',
+              minWidth: '130px',
+            }}
+          />
+        </div>
+
+        <select value={holdingsPct} onChange={(e) => setHoldingsPct(e.target.value)} style={dropdownStyle}>
+          <option value="any">Any Holdings Δ</option>
+          <option value="10">10%+ increase</option>
+          <option value="25">25%+ increase</option>
+          <option value="50">50%+ increase</option>
+          <option value="100">100%+ increase</option>
+        </select>
+
+        <select value={clusterMin} onChange={(e) => setClusterMin(e.target.value)} style={dropdownStyle}>
+          <option value="none">No Cluster Filter</option>
+          <option value="2">2+ Insiders</option>
+          <option value="3">3+ Insiders</option>
+          <option value="4">4+ Insiders</option>
+        </select>
 
         <span style={{ color: '#7b8498', fontSize: '13px', marginLeft: 'auto' }}>
           {loading
@@ -362,7 +511,8 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
       </div>
 
       <div style={{ background: '#0d1117', border: '1px solid #1e2530', borderRadius: '12px', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #1e2530' }}>
               {COLS.map((h) => <th key={h} style={thStyle}>{h.toUpperCase()}</th>)}
@@ -371,8 +521,8 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
           <tbody>
             {loading && Array.from({ length: 8 }).map((_, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #141920' }}>
-                {Array.from({ length: 8 }).map((_, j) => (
-                  <td key={j} style={{ padding: '13px 14px' }}>
+                {Array.from({ length: 9 }).map((_, j) => (
+                  <td key={j} style={{ padding: '11px 10px' }}>
                     <div style={{ height: '13px', borderRadius: '4px', background: '#1a1f2a', width: j === 1 ? '140px' : '64px', animation: 'pulse 1.5s ease-in-out infinite' }} />
                   </td>
                 ))}
@@ -381,86 +531,19 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
 
             {!loading && filteredRows.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: '56px 24px', textAlign: 'center' }}>
+                <td colSpan={9} style={{ padding: '56px 24px', textAlign: 'center' }}>
                   <div style={{ color: '#3a4a60', fontSize: '12px', letterSpacing: '2px', marginBottom: '8px' }}>NO DATA</div>
                   <div style={{ color: '#7b8498', fontSize: '14px' }}>No {countLabel} match these filters.</div>
                 </td>
               </tr>
             )}
 
-            {!loading && filteredRows.map((row, i) => {
-              const displayRole = row.officer_title ?? row.role ?? '—'
-              const isBuy       = row.transaction_code?.toUpperCase() === 'P'
-              const rowBg       = isBuy ? 'rgba(63,185,80,0.02)' : 'rgba(248,81,73,0.02)'
-              const rowBgHover  = isBuy ? 'rgba(63,185,80,0.06)' : 'rgba(248,81,73,0.05)'
-              const txColor     = transactionColor(row.transaction_code)
-              const txLabel     = transactionLabel(row.transaction_code)
-              const cls         = row.classification ?? 'UNCLASSIFIABLE'
-              const badge       = CLS_BADGE[cls] ?? CLS_BADGE.UNCLASSIFIABLE
-              return (
-                <tr
-                  key={row.id}
-                  style={{
-                    borderBottom: i < filteredRows.length - 1 ? '1px solid #141920' : 'none',
-                    cursor: 'pointer', transition: 'background 0.12s',
-                    background: rowBg,
-                  }}
-                  onClick={() => router.push(`/t/${row.ticker}`)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = rowBgHover)}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = rowBg)}
-                >
-                  <td style={{ padding: '13px 14px' }}>
-                    <span style={{
-                      display: 'inline-block', padding: '2px 8px', borderRadius: '6px',
-                      background: '#151c28', border: '1px solid #1e2a3a',
-                      color: '#9ecbff', fontSize: '12px', fontWeight: 700,
-                    }}>
-                      {row.ticker}
-                    </span>
-                  </td>
-                  <td style={{ padding: '13px 14px', color: '#c9d1d9', fontSize: '13px', maxWidth: '200px' }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {row.insider_name ?? '—'}
-                    </div>
-                    <span style={{
-                      display: 'inline-block', marginTop: '3px',
-                      fontSize: '10px', fontWeight: 600, padding: '1px 6px', borderRadius: '4px',
-                      color: badge.color, background: badge.bg,
-                      border: `1px solid ${badge.border}`, letterSpacing: '0.4px',
-                    }}>
-                      {cls}
-                    </span>
-                  </td>
-                  <td style={{ padding: '13px 14px', color: '#7b8498', fontSize: '12px', maxWidth: '160px' }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {displayRole}
-                    </div>
-                  </td>
-                  <td style={{ padding: '13px 14px', color: '#7b8498', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    {fmtDate(row.transaction_date)}
-                  </td>
-                  <td style={{ padding: '13px 14px' }}>
-                    <span style={{
-                      fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px',
-                      color: txColor, background: `${txColor}1a`, border: `1px solid ${txColor}40`,
-                    }}>
-                      {txLabel}
-                    </span>
-                  </td>
-                  <td style={{ padding: '13px 14px', color: '#c9d1d9', fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
-                    {row.price_per_share != null ? `$${Number(row.price_per_share).toFixed(2)}` : '—'}
-                  </td>
-                  <td style={{ padding: '13px 14px', color: '#c9d1d9', fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
-                    {row.shares != null ? Number(row.shares).toLocaleString() : '—'}
-                  </td>
-                  <td style={{ padding: '13px 14px', fontSize: '13px', fontWeight: 600, color: txColor, fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtCurrency(row.total_value)}
-                  </td>
-                </tr>
-              )
-            })}
+            {!loading && displayRows.map((row, i) =>
+              renderRow(row, i === displayRows.length - 1)
+            )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {!loading && pages > 1 && (
