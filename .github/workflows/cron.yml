@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Batch 0
         run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=0" \
+          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=0&start_date=2026-04-27&end_date=2026-05-02" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
       - name: Wait 5 minutes
@@ -20,7 +20,7 @@ jobs:
 
       - name: Batch 1
         run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=1" \
+          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=1&start_date=2026-04-27&end_date=2026-05-02" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
       - name: Wait 5 minutes
@@ -28,7 +28,7 @@ jobs:
 
       - name: Batch 2
         run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=2" \
+          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=2&start_date=2026-04-27&end_date=2026-05-02" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
       - name: Wait 5 minutes
@@ -36,7 +36,7 @@ jobs:
 
       - name: Batch 3 + Price Enrich
         run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=3" \
+          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=3&start_date=2026-04-27&end_date=2026-05-02" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" &
           curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/price-enrich" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" &

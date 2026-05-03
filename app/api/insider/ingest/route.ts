@@ -452,46 +452,89 @@ export async function GET(req: Request) {
   }
 
   // ── full-text search mode (normal cron path) ─────────────────────────────
-  const today      = searchParams.get('date') ?? new Date().toISOString().split('T')[0]
   const batchParam = searchParams.get('batch')
   const batch      = batchParam !== null ? Math.max(0, Math.min(3, parseInt(batchParam, 10))) : null
-
-  let entries: FeedEntry[]
-  try {
-    entries = await fetchTodaysForm4s(today, cikToTicker)
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? 'Search fetch failed' }, { status: 502 })
-  }
-
   const BATCH_SIZE = 50
-  const slice = batch !== null
-    ? entries.slice(batch * BATCH_SIZE, (batch + 1) * BATCH_SIZE)
-    : entries
 
-  let totalInserted = 0
-  let totalSkipped  = 0
-  let failed        = 0
-
-  for (const entry of slice) {
-    const ticker  = cikToTicker[entry.cik]
-    const hqState = tickerToHqState[ticker] ?? null
+  async function processDay(date: string): Promise<{
+    date: string; total_fetched: number; processed: number; inserted: number; skipped: number; failed: number; error?: string
+  }> {
+    let entries: FeedEntry[]
     try {
-      await sleep(150)
-      const { inserted, skipped } = await processFiling(ticker, entry.cik, entry.adsh, entry.primaryDoc, entry.filedDate, hqState)
-      totalInserted += inserted
-      totalSkipped  += skipped
-    } catch {
-      failed++
+      entries = await fetchTodaysForm4s(date, cikToTicker)
+    } catch (err: any) {
+      return { date, total_fetched: 0, processed: 0, inserted: 0, skipped: 0, failed: 0, error: err.message ?? 'Search fetch failed' }
     }
+
+    const slice = batch !== null
+      ? entries.slice(batch * BATCH_SIZE, (batch + 1) * BATCH_SIZE)
+      : entries
+
+    let inserted = 0
+    let skipped  = 0
+    let failed   = 0
+
+    for (const entry of slice) {
+      const ticker  = cikToTicker[entry.cik]
+      const hqState = tickerToHqState[ticker] ?? null
+      try {
+        await sleep(150)
+        const result = await processFiling(ticker, entry.cik, entry.adsh, entry.primaryDoc, entry.filedDate, hqState)
+        inserted += result.inserted
+        skipped  += result.skipped
+      } catch {
+        failed++
+      }
+    }
+
+    return { date, total_fetched: entries.length, processed: slice.length, inserted, skipped, failed }
   }
+
+  // ── date range backfill mode ──────────────────────────────────────────────
+  const startDateParam = searchParams.get('start_date')
+  const endDateParam   = searchParams.get('end_date')
+
+  if (startDateParam && endDateParam) {
+    const start = new Date(startDateParam)
+    const end   = new Date(endDateParam)
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+      return NextResponse.json({ error: 'Invalid start_date or end_date' }, { status: 400 })
+    }
+
+    const days: string[] = []
+    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      days.push(d.toISOString().split('T')[0])
+    }
+
+    const results = []
+    for (const day of days) {
+      results.push(await processDay(day))
+    }
+
+    const totals = results.reduce(
+      (acc, r) => ({
+        inserted: acc.inserted + r.inserted,
+        skipped:  acc.skipped  + r.skipped,
+        failed:   acc.failed   + r.failed,
+      }),
+      { inserted: 0, skipped: 0, failed: 0 }
+    )
+
+    return NextResponse.json({ batch, days: results, totals })
+  }
+
+  // ── single-day mode ───────────────────────────────────────────────────────
+  const today  = searchParams.get('date') ?? new Date().toISOString().split('T')[0]
+  const result = await processDay(today)
+  if (result.error) return NextResponse.json({ error: result.error }, { status: 502 })
 
   return NextResponse.json({
-    date:          today,
-    total_fetched: entries.length,
-    batch:         batch,
-    processed:     slice.length,
-    inserted:      totalInserted,
-    skipped:       totalSkipped,
-    failed,
+    date:          result.date,
+    total_fetched: result.total_fetched,
+    batch,
+    processed:     result.processed,
+    inserted:      result.inserted,
+    skipped:       result.skipped,
+    failed:        result.failed,
   })
 }
