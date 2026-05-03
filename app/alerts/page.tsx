@@ -6,21 +6,18 @@ import { useRouter } from 'next/navigation'
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type SignalRow = {
+  id:                string
   ticker:            string
-  conviction_score:  number
-  signal_direction:  'bullish' | 'bearish' | 'neutral'
-  signal_month:      string
-  hold_days:         number | null
-  lead_insider_name: string | null
-  lead_insider_role: string | null
-  total_buy_value:   number | null
+  insider_name:      string | null
+  officer_title:     string | null
+  role:              string | null
+  transaction_date:  string
+  total_value:       number | null
+  filed_date:        string | null
+  days_since_filing: number | null
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-function scoreColor(s: number) {
-  return s >= 70 ? '#3fb950' : '#d29922'
-}
 
 function fmtValue(v: number | null) {
   if (!v) return null
@@ -29,17 +26,54 @@ function fmtValue(v: number | null) {
   return `$${v.toFixed(0)}`
 }
 
-function fmtMonth(s: string) {
-  return new Date(s + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+function fmtDate(s: string) {
+  return new Date(s + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// ─── row ─────────────────────────────────────────────────────────────────────
+function displayRole(row: SignalRow): string | null {
+  return row.officer_title || row.role || null
+}
 
-function AlertRow({ row }: { row: SignalRow }) {
-  const router    = useRouter()
-  const sc        = scoreColor(row.conviction_score)
-  const isTrade   = row.conviction_score >= 70
-  const val       = fmtValue(row.total_buy_value)
+// ─── filter bar ───────────────────────────────────────────────────────────────
+
+const dropdownStyle: React.CSSProperties = {
+  background: '#0d1117', color: '#e6edf3', border: '1px solid #1e2530',
+  borderRadius: '6px', padding: '6px 10px', fontSize: '13px', cursor: 'pointer',
+  outline: 'none',
+}
+
+function FilterBar({
+  days, setDays,
+  role, setRole,
+}: {
+  days: string; setDays: (v: string) => void
+  role: string; setRole: (v: string) => void
+}) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '28px' }}>
+      <select value={days} onChange={e => setDays(e.target.value)} style={dropdownStyle}>
+        <option value="30">Last 30 days</option>
+        <option value="60">Last 60 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="all">All time</option>
+      </select>
+      <select value={role} onChange={e => setRole(e.target.value)} style={dropdownStyle}>
+        <option value="all">All Roles</option>
+        <option value="ceo">CEO</option>
+        <option value="cfo">CFO</option>
+        <option value="director">Director</option>
+        <option value="10pct">10% Owner</option>
+      </select>
+    </div>
+  )
+}
+
+// ─── card ─────────────────────────────────────────────────────────────────────
+
+function SignalCard({ row }: { row: SignalRow }) {
+  const router = useRouter()
+  const val    = fmtValue(row.total_value)
+  const role   = displayRole(row)
   const [hovered, setHovered] = useState(false)
 
   return (
@@ -48,90 +82,56 @@ function AlertRow({ row }: { row: SignalRow }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        background:     hovered ? '#111620' : '#0d1117',
-        border:         `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
-        borderLeft:     `3px solid ${sc}`,
-        borderRadius:   '10px',
-        padding:        '16px 20px',
-        cursor:         'pointer',
-        transition:     'background 0.15s, border-color 0.15s',
-        display:        'flex',
-        alignItems:     'center',
+        background:   hovered ? '#111620' : '#0d1117',
+        borderTop:    `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
+        borderRight:  `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
+        borderBottom: `1px solid ${hovered ? '#2a3a50' : '#1e2530'}`,
+        borderLeft:   '3px solid #3fb950',
+        borderRadius: '10px',
+        padding:      '16px 20px',
+        cursor:       'pointer',
+        transition:   'background 0.15s, border-color 0.15s',
+        display:      'flex',
+        alignItems:   'center',
         justifyContent: 'space-between',
-        gap:            '16px',
+        gap:          '16px',
       }}
     >
-      {/* left: ticker + insider */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '18px', fontWeight: 800, color: '#e6edf3', letterSpacing: '-0.3px' }}>
-              {row.ticker}
-            </span>
-
-            {/* conviction score badge */}
-            <span style={{
-              fontSize: '11px', fontWeight: 700, padding: '2px 8px',
-              borderRadius: '20px', color: sc,
-              border: `1px solid ${sc}33`, background: `${sc}11`,
-            }}>
-              {row.conviction_score}
-            </span>
-
-            {/* BULLISH badge */}
-            <span style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
-              padding: '2px 8px', borderRadius: '20px', textTransform: 'uppercase' as const,
-              color: '#3fb950', border: '1px solid #3fb95033', background: '#3fb95011',
-            }}>
-              BULLISH
-            </span>
-
-            {/* entry recommendation */}
-            <span style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
-              padding: '2px 10px', borderRadius: '20px', textTransform: 'uppercase' as const,
-              color: isTrade ? '#e6edf3' : '#7b8498',
-              background: isTrade ? '#1a2a4a' : '#111620',
-              border: `1px solid ${isTrade ? '#2a4a7a' : '#1e2530'}`,
-            }}>
-              {isTrade ? 'TRADE' : 'MONITOR'}
-            </span>
-          </div>
-
-          {row.lead_insider_name && (
-            <div style={{
-              fontSize: '12px', color: '#7b8498', marginTop: '4px',
-              overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '340px',
-            }}>
-              {row.lead_insider_name}
-              {row.lead_insider_role && (
-                <span style={{ color: '#3a4a60', marginLeft: '6px' }}>· {row.lead_insider_role}</span>
-              )}
-            </div>
-          )}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+          <span style={{ fontSize: '18px', fontWeight: 800, color: '#e6edf3', letterSpacing: '-0.3px' }}>
+            {row.ticker}
+          </span>
+          <span style={{
+            fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
+            padding: '2px 8px', borderRadius: '20px', textTransform: 'uppercase',
+            color: '#3fb950', border: '1px solid #3fb95033', background: '#3fb95011',
+          }}>
+            OPPORTUNISTIC
+          </span>
         </div>
-      </div>
 
-      {/* right: buy value + hold + score */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexShrink: 0 }}>
-        {val && (
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '10px', color: '#7b8498', letterSpacing: '1px', marginBottom: '2px' }}>BUY VALUE</div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#e6edf3' }}>{val}</div>
+        {row.insider_name && (
+          <div style={{ fontSize: '13px', color: '#c9d1d9', fontWeight: 500 }}>
+            {row.insider_name}
           </div>
         )}
-        {row.hold_days && (
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '10px', color: '#7b8498', letterSpacing: '1px', marginBottom: '2px' }}>HOLD</div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#e6edf3' }}>{row.hold_days}d</div>
+        {role && (
+          <div style={{ fontSize: '11px', color: '#7b8498', marginTop: '2px' }}>
+            {role}
           </div>
         )}
-        <div style={{ textAlign: 'right', minWidth: '44px' }}>
-          <div style={{ fontSize: '10px', color: '#7b8498', letterSpacing: '1px', marginBottom: '2px' }}>SCORE</div>
-          <div style={{ fontSize: '24px', fontWeight: 800, color: sc, lineHeight: 1 }}>
-            {row.conviction_score}
-          </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '8px', flexWrap: 'wrap' }}>
+          {val && (
+            <span style={{ fontSize: '12px', color: '#e6edf3', fontWeight: 600 }}>{val}</span>
+          )}
+          <span style={{ fontSize: '12px', color: '#7b8498' }}>{fmtDate(row.transaction_date)}</span>
+          {row.days_since_filing !== null && (
+            <span style={{ fontSize: '12px', color: '#7b8498' }}>
+              Filed {row.days_since_filing}d ago
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -140,26 +140,26 @@ function AlertRow({ row }: { row: SignalRow }) {
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
-export default function AlertsPage() {
-  const [rows,        setRows]        = useState<SignalRow[]>([])
-  const [signalMonth, setSignalMonth] = useState<string | null>(null)
-  const [loading,     setLoading]     = useState(true)
-  const [error,       setError]       = useState<string | null>(null)
+export default function TopSignalsPage() {
+  const [rows,    setRows]    = useState<SignalRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+  const [days,    setDays]    = useState('90')
+  const [role,    setRole]    = useState('all')
 
   useEffect(() => {
-    fetch('/api/insider/top-signals')
+    setLoading(true)
+    setError(null)
+    const params = new URLSearchParams({ days, role })
+    fetch(`/api/insider/top-signals?${params}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) { setError(d.error); return }
-        const filtered = (d.data ?? [] as SignalRow[]).filter((r: SignalRow) => r.conviction_score >= 60)
-        setRows(filtered)
-        setSignalMonth(d.signal_month ?? null)
+        setRows(d.data ?? [])
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
-
-  const tradeReady = rows.filter(r => r.conviction_score >= 70).length
+  }, [days, role])
 
   return (
     <div style={{
@@ -168,54 +168,58 @@ export default function AlertsPage() {
     }}>
       <div style={{ maxWidth: '860px', margin: '0 auto', padding: '48px 40px 80px' }}>
 
-        {/* heading */}
         <p style={{ fontSize: '11px', letterSpacing: '2px', color: '#7b8498', margin: '0 0 10px' }}>
           SENTRA INTELLIGENCE
         </p>
-        <h1 style={{ fontSize: '36px', fontWeight: 800, margin: '0 0 16px', letterSpacing: '-0.5px' }}>
-          Alerts
+        <h1 style={{ fontSize: '36px', fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.5px' }}>
+          Top Signals
         </h1>
+        <p style={{ fontSize: '14px', color: '#7b8498', margin: '0 0 32px', lineHeight: 1.6 }}>
+          Most recent confirmed opportunistic insider purchases.
+        </p>
 
-        {/* summary line */}
-        {!loading && !error && signalMonth && (
-          <p style={{ color: '#7b8498', fontSize: '14px', margin: '0 0 32px', lineHeight: 1.6 }}>
-            <span style={{ color: '#e6edf3', fontWeight: 600 }}>{rows.length}</span> active signal{rows.length !== 1 ? 's' : ''}
-            {' · '}
-            <span style={{ color: '#3fb950', fontWeight: 600 }}>{tradeReady}</span> trade-ready
-            {' · '}
-            {fmtMonth(signalMonth)}
-          </p>
-        )}
+        <FilterBar days={days} setDays={setDays} role={role} setRole={setRole} />
 
         {loading && (
-          <>
-            <div style={{ height: '20px', width: '240px', borderRadius: '4px', background: '#1a1f2a', marginBottom: '32px', animation: 'pulse 1.5s ease-in-out infinite' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} style={{ height: '76px', borderRadius: '10px', background: '#0d1117', border: '1px solid #1e2530', animation: 'pulse 1.5s ease-in-out infinite' }} />
-              ))}
-            </div>
-          </>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} style={{
+                height: '96px', borderRadius: '10px', background: '#0d1117',
+                border: '1px solid #1e2530', animation: 'pulse 1.5s ease-in-out infinite',
+              }} />
+            ))}
+          </div>
         )}
 
         {error && !loading && (
-          <div style={{ background: '#1a0d0d', border: '1px solid #5a1a1a', borderRadius: '10px', padding: '20px', color: '#f85149', fontSize: '13px' }}>
+          <div style={{
+            background: '#1a0d0d', border: '1px solid #5a1a1a',
+            borderRadius: '10px', padding: '20px', color: '#f85149', fontSize: '13px',
+          }}>
             {error}
           </div>
         )}
 
         {!loading && !error && rows.length === 0 && (
-          <div style={{ background: '#0d1117', border: '1px solid #1e2530', borderRadius: '12px', padding: '48px 32px', textAlign: 'center' }}>
-            <div style={{ fontSize: '14px', color: '#7b8498' }}>No signals with conviction ≥ 60 this month.</div>
+          <div style={{
+            background: '#0d1117', border: '1px solid #1e2530',
+            borderRadius: '12px', padding: '48px 32px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '14px', color: '#7b8498' }}>
+              No confirmed opportunistic purchases match these filters.
+            </div>
           </div>
         )}
 
-        {!loading && rows.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {rows.map(row => (
-              <AlertRow key={row.ticker} row={row} />
-            ))}
-          </div>
+        {!loading && !error && rows.length > 0 && (
+          <>
+            <div style={{ fontSize: '12px', color: '#7b8498', marginBottom: '12px' }}>
+              <span style={{ color: '#e6edf3', fontWeight: 600 }}>{rows.length}</span> purchase{rows.length !== 1 ? 's' : ''}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {rows.map(row => <SignalCard key={row.id} row={row} />)}
+            </div>
+          </>
         )}
 
       </div>

@@ -48,8 +48,29 @@ export async function placeOrder(
 }
 
 // Returns all open positions on the account.
-export async function getPositions(): Promise<{ symbol: string; qty: string; market_value: string }[]> {
+export async function getPositions(): Promise<{
+  symbol:            string
+  qty:               string
+  market_value:      string
+  avg_entry_price:   string
+  current_price:     string
+  unrealized_plpc:   string
+}[]> {
   return alpacaFetch(`${TRADING_URL}/v2/positions`)
+}
+
+// Places a market sell order for the given symbol and quantity.
+export async function placeMarketSell(symbol: string, qty: number): Promise<{ id: string }> {
+  return alpacaFetch(`${TRADING_URL}/v2/orders`, {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      qty:           String(qty),
+      side:          'sell',
+      type:          'market',
+      time_in_force: 'day',
+    }),
+  })
 }
 
 // Returns all open orders.

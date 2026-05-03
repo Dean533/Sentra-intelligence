@@ -125,35 +125,84 @@ const TAB_EVENT_TYPE: Record<string, string> = {
 }
 
 function EventsFeed({ eventType, ticker }: { eventType: string; ticker?: string }) {
-  const [events,  setEvents]  = useState<EventItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [page,    setPage]    = useState(1)
-  const [total,   setTotal]   = useState(0)
-  const [pages,   setPages]   = useState(1)
+  const isNews = eventType === 'news'
+
+  const [events,    setEvents]    = useState<EventItem[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [page,      setPage]      = useState(1)
+  const [total,     setTotal]     = useState(0)
+  const [pages,     setPages]     = useState(1)
+  const [sentiment, setSentiment] = useState('all')
+  const [source,    setSource]    = useState('all')
+  const [startDate, setStartDate] = useState('')
+  const [endDate,   setEndDate]   = useState('')
+  const [sources,   setSources]   = useState<string[]>([])
   const router = useRouter()
 
-  useEffect(() => { setPage(1) }, [eventType, ticker])
+  // Fetch distinct news sources once on mount
+  useEffect(() => {
+    if (!isNews) return
+    fetch('/api/signals?distinct=source')
+      .then((r) => r.json())
+      .then((d) => setSources(d.sources ?? []))
+  }, [isNews])
+
+  useEffect(() => { setPage(1) }, [eventType, ticker, sentiment, source, startDate, endDate])
 
   useEffect(() => {
     setLoading(true)
     const params = new URLSearchParams({ type: eventType, page: String(page), limit: '30' })
-    if (ticker) params.set('ticker', ticker)
+    if (ticker)                      params.set('ticker', ticker)
+    if (isNews && sentiment !== 'all') params.set('sentiment', sentiment)
+    if (isNews && source !== 'all')    params.set('source', source)
+    if (isNews && startDate)           params.set('start_date', startDate)
+    if (isNews && endDate)             params.set('end_date', endDate)
     fetch(`/api/signals?${params}`)
       .then((r) => r.json())
       .then((d) => { setEvents(d.events ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
       .finally(() => setLoading(false))
-  }, [eventType, ticker, page])
+  }, [eventType, ticker, sentiment, source, startDate, endDate, page, isNews])
 
   const pageStart = (page - 1) * 30 + 1
   const pageEnd   = Math.min(page * 30, total)
+  const countLabel = loading ? 'Loading…' : total === 0 ? 'No events found' : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} events`
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <span style={{ color: '#7b8498', fontSize: '13px' }}>
-          {loading ? 'Loading…' : total === 0 ? 'No events found' : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} events`}
-        </span>
-      </div>
+      {isNews && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          <select value={sentiment} onChange={(e) => setSentiment(e.target.value)} style={dropdownStyle}>
+            <option value="all">All Sentiments</option>
+            <option value="bullish">Bullish</option>
+            <option value="neutral">Neutral</option>
+            <option value="bearish">Bearish</option>
+          </select>
+
+          <select value={source} onChange={(e) => setSource(e.target.value)} style={dropdownStyle}>
+            <option value="all">All Sources</option>
+            {sources.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#7b8498', fontSize: '12px' }}>From</span>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+              style={{ ...dropdownStyle, padding: '7px 10px', colorScheme: 'dark', minWidth: '130px' }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#7b8498', fontSize: '12px' }}>To</span>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+              style={{ ...dropdownStyle, padding: '7px 10px', colorScheme: 'dark', minWidth: '130px' }} />
+          </div>
+
+          <span style={{ color: '#7b8498', fontSize: '13px', marginLeft: 'auto' }}>{countLabel}</span>
+        </div>
+      )}
+
+      {!isNews && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <span style={{ color: '#7b8498', fontSize: '13px' }}>{countLabel}</span>
+        </div>
+      )}
 
       <div style={{ background: '#0d1117', border: '1px solid #1e2530', borderRadius: '12px', overflow: 'hidden' }}>
         {loading && Array.from({ length: 8 }).map((_, i) => (

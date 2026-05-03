@@ -6,73 +6,89 @@ const supabase = createClient(
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function GET() {
-  // MAX signal_month where conviction_score > 0
-  const { data: latest, error: latestErr } = await supabase
-    .from('insider_signals_monthly')
-    .select('signal_month')
-    .gt('conviction_score', 0)
-    .order('signal_month', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+const SELECT = 'id, ticker, insider_name, insider_cik, role, is_director, officer_title, transaction_date, shares, total_value, filed_date, source_url'
 
-  if (latestErr) return NextResponse.json({ error: latestErr.message }, { status: 500 })
-  if (!latest)   return NextResponse.json({ data: [], signal_month: null })
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const daysParam = searchParams.get('days') ?? '90'
+  const role      = searchParams.get('role') ?? 'all'
 
-  const signalMonth = latest.signal_month as string  // e.g. "2026-03-01"
+  const cutoff = daysParam !== 'all'
+    ? new Date(Date.now() - parseInt(daysParam, 10) * 86400000).toISOString().split('T')[0]
+    : null
 
-  // All signals for that month, sorted by conviction_score DESC
-  const { data: signals, error: sigErr } = await supabase
-    .from('insider_signals_monthly')
-    .select('ticker, conviction_score, signal_direction, signal_month, hold_days')
-    .eq('signal_month', signalMonth)
-    .order('conviction_score', { ascending: false })
+  // 1. OPPORTUNISTIC CIKs — used as confirmed gate and inferred exclusion
+  const { data: clsRows, error: clsErr } = await supabase
+    .from('insider_classifications')
+    .select('insider_cik')
+    .eq('classification', 'OPPORTUNISTIC')
+  if (clsErr) return NextResponse.json({ error: clsErr.message }, { status: 500 })
+  const opportunisticCiks = new Set(
+    (clsRows ?? []).map((r: any) => r.insider_cik as string).filter(Boolean)
+  )
 
-  if (sigErr) return NextResponse.json({ error: sigErr.message }, { status: 500 })
-  if (!signals || signals.length === 0) return NextResponse.json({ data: [], signal_month: signalMonth })
-
-  const tickers = signals.map((s: any) => s.ticker)
-
-  // Compute end of month using signalMonth directly — no string construction
-  const endDate = new Date(signalMonth)
-  endDate.setMonth(endDate.getMonth() + 1)
-  const nextMonth = endDate.toISOString().slice(0, 10)
-
-  // All buy transactions for those tickers in that month
-  const { data: txRows, error: txErr } = await supabase
+  // 2a. Confirmed: purchases by confirmed OPPORTUNISTIC insiders
+  let confirmedQ = supabase
     .from('insider_transactions')
-    .select('ticker, insider_name, officer_title, role, total_value')
-    .in('ticker', tickers)
-    .eq('transaction_direction', 'buy')
-    .gte('transaction_date', signalMonth)
-    .lt('transaction_date', nextMonth)
-    .order('total_value', { ascending: false })
+    .select(SELECT)
+    .eq('transaction_code', 'P')
+    .in('insider_cik', [...opportunisticCiks])
+    .order('transaction_date', { ascending: false })
+    .limit(50)
 
-  if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
+  if (cutoff)              confirmedQ = confirmedQ.gte('transaction_date', cutoff)
+  if (role === 'ceo')      confirmedQ = confirmedQ.ilike('officer_title', '%Chief Executive%')
+  if (role === 'cfo')      confirmedQ = confirmedQ.ilike('officer_title', '%Chief Financial%')
+  if (role === 'director') confirmedQ = confirmedQ.eq('is_director', true)
+  if (role === '10pct')    confirmedQ = confirmedQ.ilike('officer_title', '%10%')
 
-  // Per ticker: lead insider = highest total_value buy; total buy value = sum
-  type TxRow = { ticker: string; insider_name: string | null; officer_title: string | null; role: string | null; total_value: number | null }
-  const leadMap   = new Map<string, TxRow>()
-  const totalMap  = new Map<string, number>()
+  // 2b. Inferred: $1M+ purchases by CEO/CFO/10% owners not already confirmed OPPORTUNISTIC.
+  // Director role filter has no inferred results by definition, so skip that query.
+  const includeInferred = role !== 'director'
+  let inferredQ = supabase
+    .from('insider_transactions')
+    .select(SELECT)
+    .eq('transaction_code', 'P')
+    .gte('total_value', 1_000_000)
+    .or('officer_title.ilike.%Chief Executive%,officer_title.ilike.%Chief Financial%,officer_title.ilike.%10%')
+    .order('transaction_date', { ascending: false })
+    .limit(100)
 
-  for (const tx of (txRows ?? []) as TxRow[]) {
-    if (!leadMap.has(tx.ticker)) leadMap.set(tx.ticker, tx)
-    totalMap.set(tx.ticker, (totalMap.get(tx.ticker) ?? 0) + (tx.total_value ?? 0))
+  if (cutoff)           inferredQ = inferredQ.gte('transaction_date', cutoff)
+  if (role === 'ceo')   inferredQ = inferredQ.ilike('officer_title', '%Chief Executive%')
+  if (role === 'cfo')   inferredQ = inferredQ.ilike('officer_title', '%Chief Financial%')
+  if (role === '10pct') inferredQ = inferredQ.ilike('officer_title', '%10%')
+
+  const [confirmedRes, inferredRes] = await Promise.all([
+    opportunisticCiks.size > 0 ? confirmedQ : Promise.resolve({ data: [], error: null }),
+    includeInferred ? inferredQ : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (confirmedRes.error) return NextResponse.json({ error: confirmedRes.error.message }, { status: 500 })
+  if (inferredRes.error)  return NextResponse.json({ error: inferredRes.error.message },  { status: 500 })
+
+  const today = Date.now()
+
+  function enrich(tx: any, is_inferred: boolean) {
+    const filed = tx.filed_date ? new Date(tx.filed_date).getTime() : null
+    return {
+      ...tx,
+      is_inferred,
+      days_since_filing: filed ? Math.floor((today - filed) / 86400000) : null,
+    }
   }
 
-  const data = signals.map((s: any) => {
-    const lead = leadMap.get(s.ticker)
-    return {
-      ticker:            s.ticker,
-      conviction_score:  s.conviction_score,
-      signal_direction:  s.signal_direction,
-      signal_month:      s.signal_month,
-      hold_days:         s.hold_days ?? null,
-      lead_insider_name: lead?.insider_name ?? null,
-      lead_insider_role: lead?.officer_title || lead?.role || null,
-      total_buy_value:   totalMap.get(s.ticker) ?? null,
-    }
-  })
+  const confirmed = (confirmedRes.data ?? []).map((tx: any) => enrich(tx, false))
 
-  return NextResponse.json({ data, signal_month: signalMonth })
+  // Exclude any inferred row whose CIK is already confirmed OPPORTUNISTIC
+  const inferred = (inferredRes.data ?? [])
+    .filter((tx: any) => !opportunisticCiks.has(tx.insider_cik))
+    .map((tx: any) => enrich(tx, true))
+
+  // Merge, sort by transaction_date DESC, top 20
+  const data = [...confirmed, ...inferred]
+    .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
+    .slice(0, 20)
+
+  return NextResponse.json({ data })
 }

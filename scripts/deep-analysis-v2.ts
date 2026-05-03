@@ -195,7 +195,7 @@ type RichTrade = {
   // drawdown
   max_drawdown_30d: number | null; days_to_min_30d: number | null; recovered_by_90d: boolean | null
   // metadata
-  sector: string; role_classified: string
+  sector: string; role_classified: string; classification: string
 }
 
 // ─── CSV output columns (ordered) ─────────────────────────────────────────────
@@ -204,7 +204,7 @@ const OUT_COLS: (keyof RichTrade)[] = [
   'id', 'ticker', 'insider_name', 'insider_cik', 'officer_title', 'role',
   'transaction_date', 'transaction_code', 'transaction_direction',
   'shares', 'price_per_share', 'total_value', 'accession_number', 'filed_date',
-  'sector', 'role_classified',
+  'sector', 'role_classified', 'classification',
   'price_entry', 'price_30d', 'price_60d', 'price_90d', 'price_120d', 'price_150d', 'price_180d',
   'return_30d', 'return_60d', 'return_90d', 'return_120d', 'return_150d', 'return_180d',
   'signal_correct_30d', 'signal_correct_90d', 'signal_correct_180d',
@@ -380,7 +380,34 @@ function printAnalysis(trades: RichTrade[]) {
     )
   }
 
-  // ── 5. BY DOLLAR SIZE ────────────────────────────────────────────────────
+  // ── 5. BY CLASSIFICATION ─────────────────────────────────────────────────
+
+  console.log('\n' + DASH)
+  console.log('── BY CLASSIFICATION (OPPORTUNISTIC / ROUTINE / UNCLASSIFIABLE) ────────────────')
+  console.log(DASH)
+  console.log(
+    `  ${'Classification'.padEnd(18)} ${'n'.padStart(4)}  ${'Share'.padStart(6)}  ` +
+    `${'90d Hit'.padStart(7)}  ${'90d α-mean'.padStart(11)}  ${'90d α-med'.padStart(10)}  ` +
+    `${'180d Hit'.padStart(8)}  ${'180d α-mean'.padStart(12)}  ${'180d α-med'.padStart(11)}`
+  )
+  console.log('  ' + '─'.repeat(96))
+
+  const byClass: Record<string, RichTrade[]> = {}
+  for (const t of trades) (byClass[t.classification] ??= []).push(t)
+
+  for (const cls of ['OPPORTUNISTIC', 'ROUTINE', 'UNCLASSIFIABLE']) {
+    const g = byClass[cls]
+    if (!g) continue
+    const s    = groupStats(g)
+    const share = (g.length / trades.length * 100).toFixed(1) + '%'
+    console.log(
+      `  ${cls.padEnd(18)} ${String(s.n).padStart(4)}  ${share.padStart(6)}  ` +
+      `${fmtHit(s.hitRate90).padStart(7)}  ${fmtPct(s.meanAlpha90).padStart(11)}  ${fmtPct(s.medAlpha90).padStart(10)}  ` +
+      `${fmtHit(s.hitRate180).padStart(8)}  ${fmtPct(s.meanAlpha180).padStart(12)}  ${fmtPct(s.medAlpha180).padStart(11)}`
+    )
+  }
+
+  // ── 6. BY DOLLAR SIZE ────────────────────────────────────────────────────
 
   console.log('\n' + DASH)
   console.log('── BY DOLLAR SIZE ───────────────────────────────────────────────────────────')
@@ -513,6 +540,24 @@ async function main() {
     console.log(`Sector data loaded for ${Object.keys(sectorMap).length} tickers`)
   } catch (err: any) {
     console.warn(`Sector fetch failed (continuing without): ${err.message}`)
+  }
+
+  // ── Fetch classification map from Supabase ────────────────────────────────
+
+  const allCiks = Array.from(new Set(inputRows.map(r => r['insider_cik']).filter(Boolean)))
+  const classificationMap: Record<string, string> = {}
+
+  try {
+    const { data: clsRows } = await supabase
+      .from('insider_classifications')
+      .select('insider_cik, classification')
+      .in('insider_cik', allCiks)
+    for (const c of clsRows ?? []) {
+      classificationMap[(c as any).insider_cik] = (c as any).classification
+    }
+    console.log(`Classification data loaded for ${Object.keys(classificationMap).length} insiders`)
+  } catch (err: any) {
+    console.warn(`Classification fetch failed (continuing without): ${err.message}`)
   }
 
   // ── Compute SPY date range ────────────────────────────────────────────────
@@ -665,6 +710,7 @@ async function main() {
         // metadata
         sector:          sectorMap[ticker] ?? 'Unknown',
         role_classified: classifyRole(row['role'] ?? '', row['officer_title'] ?? ''),
+        classification:  classificationMap[row['insider_cik']] ?? 'UNCLASSIFIABLE',
       })
     }
   }

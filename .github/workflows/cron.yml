@@ -3,10 +3,21 @@ name: EDGAR Ingestion Pipeline
 on:
   schedule:
     - cron: '0 11 * * *'
+    - cron: '0 16 * * *'
   workflow_dispatch:
 
 jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * *'
+    steps:
+      - name: Monitor positions
+        run: |
+          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/trading/monitor" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
   ingest:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 11 * * *'
     runs-on: ubuntu-latest
 
     steps:
