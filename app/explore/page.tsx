@@ -67,16 +67,23 @@ function formatMarketCap(num: number): string {
 // ─── component ────────────────────────────────────────────────────────────────
 
 export default function ExplorePage() {
-  const [tickers, setTickers] = useState<Ticker[]>([])
-  const [loading, setLoading] = useState(true)
-  const [total,   setTotal]   = useState(0)
-  const [pages,   setPages]   = useState(1)
-  const [page,    setPage]    = useState(1)
-  const [sector,  setSector]  = useState('All Sectors')
-  const [sortBy,  setSortBy]  = useState<SortKey>('market_cap')
-  const [search,  setSearch]  = useState('')
+  const [tickers,        setTickers]        = useState<Ticker[]>([])
+  const [loading,        setLoading]        = useState(true)
+  const [total,          setTotal]          = useState(0)
+  const [pages,          setPages]          = useState(1)
+  const [page,           setPage]           = useState(1)
+  const [sector,         setSector]         = useState('All Sectors')
+  const [sortBy,         setSortBy]         = useState<SortKey>('market_cap')
+  const [search,         setSearch]         = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const router   = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Debounce search input; reset page when it changes
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1) }, 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   // ── data fetching ──────────────────────────────────────────────────────────
 
@@ -84,6 +91,7 @@ export default function ExplorePage() {
     setLoading(true)
     const params = new URLSearchParams({ sort: sortBy, page: String(page) })
     if (sector !== 'All Sectors') params.set('sector', sector)
+    if (debouncedSearch)          params.set('search', debouncedSearch)
 
     fetch(`/api/tickers?${params}`)
       .then((r) => r.json())
@@ -93,16 +101,17 @@ export default function ExplorePage() {
         setPages(d.pages ?? 1)
         setLoading(false)
       })
-  }, [sector, sortBy, page])
+  }, [sector, sortBy, page, debouncedSearch])
 
-  // Reset to page 1 when filters change (page itself is a dep so no double-fire)
+  // Reset to page 1 when filters change
   function changeSector(val: string) { setSector(val); setPage(1) }
   function changeSort(val: SortKey)  { setSortBy(val); setPage(1) }
 
-  // ── search (client-side filter on visible 30) ──────────────────────────────
+  // ── search ─────────────────────────────────────────────────────────────────
 
   const searchVal = search.trim().toUpperCase()
 
+  // Local filter for instant feedback while debounce is pending
   const filtered = search.trim()
     ? tickers.filter((t) => {
         const q = search.toLowerCase()
@@ -115,7 +124,7 @@ export default function ExplorePage() {
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter' || !searchVal) return
     const exact = filtered.find((t) => t.symbol === searchVal)
-    if (exact)              { router.push(`/t/${exact.symbol}`);    return }
+    if (exact)               { router.push(`/t/${exact.symbol}`);     return }
     if (filtered.length === 1) { router.push(`/t/${filtered[0].symbol}`); return }
     router.push(`/t/${searchVal}`)
   }

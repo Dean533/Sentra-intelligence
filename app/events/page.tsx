@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 // ─── shared types ─────────────────────────────────────────────────────────────
@@ -335,16 +335,18 @@ function holdingsPctOf(row: InsiderRow): number | null {
   return (s / before) * 100
 }
 
-function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string } | null {
+function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string; capped: boolean } | null {
   const s     = row.shares
   const after = row.shares_owned_after
   if (s == null || after == null) return null
   const isBuy = row.transaction_code?.toUpperCase() === 'P'
   const denom = isBuy ? after - s : after + s
+  // denom <= 0 means shares_owned_after <= shares (bought more than previously held, or bad data)
   if (denom <= 0) return null
-  const raw = (s / denom) * 100
-  const pct = Math.min(raw, 999)
-  return { pct: isBuy ? pct : -pct, color: isBuy ? '#3fb950' : '#f85149' }
+  const raw    = (s / denom) * 100
+  const capped = raw > 500
+  const pct    = Math.min(raw, 500)
+  return { pct: isBuy ? pct : -pct, color: isBuy ? '#3fb950' : '#f85149', capped }
 }
 
 function InsiderActivityTable({ ticker }: { ticker?: string }) {
@@ -454,7 +456,13 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
         </td>
         <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
           {delta
-            ? <span style={{ color: delta.color }}>{delta.pct >= 0 ? '+' : ''}{delta.pct.toFixed(1)}%</span>
+            ? <span style={{ color: delta.color }}>
+                {delta.capped
+                  ? (delta.pct >= 0 ? '>+500%' : '>-500%')
+                  : Math.abs(delta.pct) < 0.05
+                    ? (delta.pct >= 0 ? '<+0.1%' : '<-0.1%')
+                    : `${delta.pct >= 0 ? '+' : ''}${delta.pct.toFixed(1)}%`}
+              </span>
             : <span style={{ color: '#3a4a60' }}>—</span>
           }
         </td>
@@ -608,15 +616,53 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
 
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
-export default function EventsPage() {
-  const [activeTab,    setActiveTab]    = useState<Tab>('insider')
-  const [tickerInput,  setTickerInput]  = useState('')
-  const [tickerFilter, setTickerFilter] = useState('')
+type TickerSuggestion = { symbol: string; name: string }
 
+export default function EventsPage() {
+  const [activeTab,     setActiveTab]     = useState<Tab>('insider')
+  const [tickerInput,   setTickerInput]   = useState('')
+  const [tickerFilter,  setTickerFilter]  = useState('')
+  const [suggestions,   setSuggestions]   = useState<TickerSuggestion[]>([])
+  const [showDropdown,  setShowDropdown]  = useState(false)
+  const tickerBoxRef = useRef<HTMLDivElement>(null)
+
+  // Resolve input → filter: if input matches a suggestion symbol exactly, use it;
+  // otherwise debounce and uppercase as-is for direct ticker entry.
   useEffect(() => {
-    const t = setTimeout(() => setTickerFilter(tickerInput.toUpperCase().trim()), 300)
+    const raw = tickerInput.trim()
+    if (!raw) { setTickerFilter(''); setSuggestions([]); return }
+
+    const t = setTimeout(async () => {
+      // Fetch suggestions from tickers API
+      const res = await fetch(`/api/tickers?search=${encodeURIComponent(raw)}&lite=1&page=1`)
+      const data = await res.json()
+      const hits: TickerSuggestion[] = (data.tickers ?? []).map((t: any) => ({ symbol: t.symbol, name: t.name }))
+      setSuggestions(hits)
+      setShowDropdown(hits.length > 0)
+
+      // Auto-resolve: if exactly one match or input is an exact symbol match, use that symbol
+      const exactSymbol = hits.find((h) => h.symbol === raw.toUpperCase())
+      if (exactSymbol) {
+        setTickerFilter(exactSymbol.symbol)
+      } else if (hits.length === 1) {
+        setTickerFilter(hits[0].symbol)
+      } else {
+        setTickerFilter(raw.toUpperCase())
+      }
+    }, 300)
     return () => clearTimeout(t)
   }, [tickerInput])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (tickerBoxRef.current && !tickerBoxRef.current.contains(e.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
 
   return (
     <div style={{ padding: '48px 40px 80px', maxWidth: '1000px', margin: '0 auto' }}>
@@ -656,36 +702,69 @@ export default function EventsPage() {
       </div>
 
       {/* ticker search — below tab bar, full width */}
-      <div style={{ position: 'relative', marginBottom: '24px' }}>
+      <div ref={tickerBoxRef} style={{ position: 'relative', marginBottom: '24px' }}>
         <span style={{
           position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)',
           color: '#3a4a60', fontSize: '15px', pointerEvents: 'none',
+          zIndex: 1,
         }}>⌕</span>
         <input
           type="text"
-          placeholder="Filter by ticker…"
+          placeholder="Filter by ticker or company name…"
           value={tickerInput}
-          onChange={(e) => setTickerInput(e.target.value)}
+          onChange={(e) => { setTickerInput(e.target.value); setShowDropdown(true) }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = '#2a3a50'; if (suggestions.length > 0) setShowDropdown(true) }}
+          onBlur={(e)  => (e.currentTarget.style.borderColor = '#1e2530')}
           style={{
             width: '100%', boxSizing: 'border-box',
             padding: '12px 40px 12px 38px',
             background: '#0d1117', border: '1px solid #1e2530',
-            borderRadius: '8px', color: '#c9d1d9',
+            borderRadius: showDropdown && suggestions.length > 0 ? '8px 8px 0 0' : '8px',
+            color: '#c9d1d9',
             fontSize: '15px', outline: 'none',
             fontFamily: 'inherit',
           }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = '#2a3a50')}
-          onBlur={(e)  => (e.currentTarget.style.borderColor = '#1e2530')}
         />
         {tickerInput && (
           <button
-            onClick={() => setTickerInput('')}
+            onClick={() => { setTickerInput(''); setSuggestions([]); setShowDropdown(false) }}
             style={{
               position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)',
               background: 'none', border: 'none', color: '#3a4a60', cursor: 'pointer',
               fontSize: '18px', padding: '0', lineHeight: 1,
             }}
           >×</button>
+        )}
+        {showDropdown && suggestions.length > 0 && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0,
+            background: '#0d1117', border: '1px solid #2a3a50', borderTop: 'none',
+            borderRadius: '0 0 8px 8px', zIndex: 50,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            maxHeight: '240px', overflowY: 'auto',
+          }}>
+            {suggestions.map((s) => (
+              <div
+                key={s.symbol}
+                onMouseDown={() => {
+                  setTickerInput(s.symbol)
+                  setTickerFilter(s.symbol)
+                  setSuggestions([])
+                  setShowDropdown(false)
+                }}
+                style={{
+                  padding: '10px 14px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  borderBottom: '1px solid #1a2235',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(158,203,255,0.06)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <span style={{ color: '#9ecbff', fontWeight: 700, fontSize: '13px', minWidth: '52px' }}>{s.symbol}</span>
+                <span style={{ color: '#7b8498', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

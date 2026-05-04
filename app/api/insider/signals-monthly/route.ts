@@ -67,22 +67,32 @@ export async function GET(req: Request) {
   const deny = authorizeCron(req)
   if (deny) return deny
 
-  // Compute the prior calendar month's date range
+  // Compute the target month's date range.
+  // ?month=YYYY-MM overrides the default (prior calendar month).
+  const monthParam = searchParams.get('month')
   const now = new Date()
-  const firstOfThisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-  const firstOfLastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
-  const signalMonth = firstOfLastMonth.toISOString().split('T')[0]  // e.g. "2026-03-01"
-  const rangeFrom   = firstOfLastMonth.toISOString().split('T')[0]
-  const rangeTo     = new Date(firstOfThisMonth.getTime() - 1).toISOString().split('T')[0]
-  const classifiedYear = now.getUTCFullYear()
+  let firstOfTargetMonth: Date
+  if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+    const [y, m] = monthParam.split('-').map(Number)
+    firstOfTargetMonth = new Date(Date.UTC(y, m - 1, 1))
+  } else {
+    firstOfTargetMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+  }
+  const firstOfMonthAfter = new Date(Date.UTC(firstOfTargetMonth.getUTCFullYear(), firstOfTargetMonth.getUTCMonth() + 1, 1))
+  const signalMonth = firstOfTargetMonth.toISOString().split('T')[0]  // e.g. "2026-03-01"
+  const rangeFrom   = signalMonth
+  const rangeTo     = new Date(firstOfMonthAfter.getTime() - 1).toISOString().split('T')[0]
+  const classifiedYear = firstOfMonthAfter.getUTCFullYear()
 
   // Fetch all tickers
   const { data: tickerRows, error: tickerErr } = await supabase
     .from('tickers')
-    .select('symbol')
+    .select('symbol, sector')
 
   if (tickerErr) return NextResponse.json({ error: tickerErr.message }, { status: 500 })
   const tickers = (tickerRows ?? []).map((r: any) => r.symbol as string)
+  const sectorMap: Record<string, string | null> = {}
+  for (const r of tickerRows ?? []) sectorMap[(r as any).symbol] = (r as any).sector ?? null
 
   // Bulk-fetch classifications for current year AND prior year in one query.
   // Prior year acts as fallback when the annual classify job hasn't run yet (Jan/Feb gap).
@@ -302,7 +312,7 @@ export async function GET(req: Request) {
           is_opportunistic:          isOpportunistic,
           is_inferred_opportunistic: isInferred,
           is_local:                  (tx as any).is_local ?? null,
-          sector:                    null,     // not fetched at this stage
+          sector:                    sectorMap[ticker] ?? null,
           cluster_count:             opportunisticBuys,
           cluster_total_value:       buyValue,
           insider_median_value:      null,     // no history in cron context

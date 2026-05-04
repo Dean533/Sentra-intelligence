@@ -191,8 +191,8 @@ export async function GET(req: Request) {
 
     // Role
     if (role && role !== 'all' && role !== 'other') {
-      if (role === 'ceo')      q = q.ilike('officer_title', '%Chief Executive%')
-      if (role === 'cfo')      q = q.ilike('officer_title', '%Chief Financial%')
+      if (role === 'ceo')      q = q.or('officer_title.ilike.%Chief Executive%,officer_title.ilike.%CEO%,role.ilike.%Chief Executive%,role.ilike.%CEO%')
+      if (role === 'cfo')      q = q.or('officer_title.ilike.%Chief Financial%,officer_title.ilike.%CFO%,role.ilike.%Chief Financial%,role.ilike.%CFO%')
       if (role === 'director') q = q.eq('is_director', true)
       if (role === '10pct')    q = q.ilike('officer_title', '%10%')
     }

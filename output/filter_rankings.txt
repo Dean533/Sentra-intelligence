@@ -1,0 +1,832 @@
+==============================================================================================================
+  UNCLASSIFIABLE INSIDER BACKTEST -- Filter Rankings by Confidence-Weighted Score
+  Score = avg_alpha_180d * ln(n)  |  min n = 5  |  820 combinations ranked
+  Source: output/unclassifiable_backtest.csv  |  Run: 2026-05-04
+==============================================================================================================
+
+  Baseline (all trades, no filter): n=2320  avg=+2.1%  hit=52%  score=16.18
+
+ Rank  Role                Sector                      Size     DD          n   Hit180    Avg180a      Score
+  ----------------------------------------------------------------------------------------------------------
+    1  10% Owner           Consumer Cyclical           $100K+   any        30      77%     +43.4%     147.48
+    2  10% Owner           Consumer Cyclical           $250K+   any        30      77%     +43.4%     147.48
+    3  10% Owner           Consumer Cyclical           $500K+   any        29      76%     +43.7%     147.29
+    4  10% Owner           Consumer Cyclical           $1M+     any        28      75%     +44.1%     147.11
+    5  10% Owner           Consumer Cyclical           $5M+     any        13      62%     +55.0%     140.97
+    6  all                 Consumer Cyclical           $25M+    any         6      50%     +53.2%      95.29
+    7  10% Owner           Industrials                 $5M+     any         9      89%     +41.7%      91.57
+    8  all                 Industrials                 $25M+    DD<5%       6      67%     +49.2%      88.21
+    9  all                 Industrials                 $5M+     DD<2%      11      91%     +36.7%      88.05
+   10  Director            Communication Services      $250K+   DD<2%       5      60%     +54.1%      87.11
+   11  10% Owner           Industrials                 $5M+     DD<5%       7     100%     +42.8%      83.26
+   12  10% Owner           Industrials                 $5M+     DD<2%       7     100%     +42.8%      83.26
+   13  10% Owner           Consumer Cyclical           $100K+   DD<5%       7      71%     +40.6%      79.04
+   14  10% Owner           Consumer Cyclical           $250K+   DD<5%       7      71%     +40.6%      79.04
+   15  10% Owner           Consumer Cyclical           $500K+   DD<5%       7      71%     +40.6%      79.04
+   16  10% Owner           Consumer Cyclical           $1M+     DD<5%       7      71%     +40.6%      79.04
+   17  Director            Communication Services      $100K+   DD<2%       6      50%     +43.4%      77.83
+   18  CEO                 Financial Services          $500K+   DD<2%      10      80%     +33.5%      77.18
+   19  CEO                 Financial Services          $500K+   any        18      67%     +26.6%      76.90
+   20  all                 Consumer Cyclical           $5M+     any        28      54%     +22.7%      75.62
+   21  CEO                 Technology                  $250K+   DD<5%      16      69%     +26.6%      73.76
+   22  CEO                 Technology                  $500K+   DD<5%      12      67%     +29.4%      72.94
+   23  all                 Communication Services      $500K+   DD<2%      33      91%     +20.4%      71.37
+   24  all                 Technology                  $250K+   DD<5%      91      64%     +15.6%      70.57
+   25  all                 Industrials                 $500K+   DD<2%      62      66%     +16.8%      69.25
+   26  all                 Industrials                 $5M+     DD<5%      14      71%     +25.5%      67.30
+   27  Other/EVP           Technology                  $250K+   any         7      86%     +34.6%      67.25
+   28  CEO                 Industrials                 $100K+   DD<2%      16      69%     +24.2%      67.14
+   29  Director            all                         $250K+   DD<2%     308      75%     +11.4%      65.13
+   30  all                 Communication Services      $250K+   DD<2%      40      88%     +17.5%      64.69
+   31  CEO                 Financial Services          $250K+   DD<2%      12      67%     +26.0%      64.60
+   32  all                 Industrials                 $5M+     any        21      62%     +21.1%      64.27
+   33  Director            Communication Services      $500K+   DD<5%       8      50%     +30.6%      63.73
+   34  Other/EVP           Technology                  $100K+   any        10      80%     +27.6%      63.45
+   35  all                 Industrials                 $1M+     DD<2%      37      65%     +17.5%      63.14
+   36  all                 Industrials                 $250K+   DD<2%      89      66%     +14.0%      62.82
+   37  CEO                 Financial Services          $100K+   DD<2%      16      63%     +22.7%      62.81
+   38  CEO                 Technology                  $250K+   any        22      64%     +20.2%      62.51
+   39  CEO                 Technology                  $250K+   DD<2%      10      60%     +27.1%      62.37
+   40  CEO                 Technology                  $500K+   DD<2%      10      60%     +27.1%      62.37
+   41  all                 all                         $250K+   DD<2%     606      68%      +9.7%      62.25
+   42  all                 all                         $500K+   DD<2%     426      69%     +10.3%      62.18
+   43  CEO                 Technology                  $1M+     DD<5%       8      50%     +29.5%      61.43
+   44  CEO                 Financial Services          $1M+     any        12      58%     +24.7%      61.31
+   45  all                 Industrials                 $100K+   DD<2%     131      66%     +12.5%      61.06
+   46  10% Owner           all                         $25M+    any        18      33%     +21.1%      60.96
+   47  CEO                 Financial Services          $500K+   DD<5%      13      69%     +23.6%      60.43
+   48  all                 Communication Services      $100K+   DD<2%      42      83%     +16.1%      60.30
+   49  all                 Communication Services      $1M+     DD<2%      26     100%     +18.4%      59.93
+   50  Director            Technology                  $250K+   DD<5%      56      61%     +14.9%      59.86
+   51  CEO                 Technology                  $500K+   any        17      59%     +21.0%      59.58
+   52  CEO                 all                         $500K+   DD<2%      84      58%     +13.4%      59.42
+   53  Director            Industrials                 $500K+   DD<2%      27      67%     +18.0%      59.39
+   54  CEO                 Financial Services          $100K+   DD<5%      29      52%     +17.6%      59.16
+   55  CEO                 Financial Services          $1M+     DD<2%       6      83%     +33.0%      59.10
+   56  Other/EVP           Technology                  $250K+   DD<5%       6      83%     +32.6%      58.41
+   57  Other/EVP           Technology                  $500K+   any         6      83%     +32.6%      58.41
+   58  Other/EVP           Technology                  $500K+   DD<5%       6      83%     +32.6%      58.41
+   59  Director            Industrials                 $250K+   DD<2%      47      68%     +15.0%      57.94
+   60  all                 Technology                  $250K+   DD<2%      48      67%     +14.9%      57.82
+   61  all                 Consumer Cyclical           $1M+     any        78      63%     +13.2%      57.63
+   62  CEO                 all                         $1M+     DD<2%      52      56%     +14.6%      57.54
+   63  CEO                 all                         $250K+   DD<2%      92      59%     +12.7%      57.36
+   64  Director            Communication Services      $250K+   DD<5%      10      50%     +24.6%      56.54
+   65  all                 Consumer Cyclical           $500K+   DD<2%      38      66%     +15.5%      56.45
+   66  all                 Consumer Cyclical           $1M+     DD<2%      25      64%     +17.4%      56.06
+   67  10% Owner           all                         $25M+    DD<2%       6      50%     +31.2%      55.84
+   68  Director            all                         $100K+   DD<2%     502      67%      +9.0%      55.78
+   69  all                 Technology                  $100K+   DD<5%     141      60%     +11.2%      55.46
+   70  Director            Financial Services          $250K+   DD<2%      42      76%     +14.8%      55.31
+   71  all                 Industrials                 $25M+    any        12      50%     +22.1%      54.93
+   72  Director            all                         $500K+   DD<2%     190      77%     +10.4%      54.42
+   73  CEO                 Technology                  $1M+     any        12      50%     +21.8%      54.08
+   74  all                 Consumer Cyclical           $1M+     DD<5%      32      66%     +15.6%      54.07
+   75  all                 Communication Services      $500K+   DD<5%      61      85%     +13.1%      53.98
+   76  all                 Technology                  $100K+   DD<2%      81      64%     +12.3%      53.91
+   77  CEO                 all                         $100K+   DD<2%     114      55%     +11.3%      53.68
+   78  all                 Healthcare                  $250K+   DD<2%      56      82%     +13.3%      53.56
+   79  10% Owner           all                         $5M+     any        77      49%     +12.3%      53.42
+   80  all                 all                         $100K+   DD<2%     906      63%      +7.8%      53.41
+   81  all                 all                         $1M+     DD<2%     292      70%      +9.4%      53.24
+   82  Director            all                         $250K+   DD<5%     507      68%      +8.5%      52.89
+   83  CFO                 all                         $500K+   DD<2%      15      80%     +19.4%      52.50
+   84  CEO                 Industrials                 $100K+   DD<5%      23      61%     +16.7%      52.33
+   85  all                 Financial Services          $250K+   DD<2%      80      64%     +11.9%      52.00
+   86  all                 Communication Services      $250K+   DD<5%      69      84%     +12.3%      51.97
+   87  Other/EVP           Technology                  $100K+   DD<5%       7      71%     +26.7%      51.92
+   88  all                 all                         $25M+    DD<2%      31      68%     +14.8%      50.96
+   89  10% Owner           all                         $1M+     DD<2%      42      67%     +13.6%      50.88
+   90  CFO                 all                         $500K+   DD<5%      21      76%     +16.6%      50.57
+   91  all                 Consumer Cyclical           $500K+   DD<5%      51      65%     +12.8%      50.43
+   92  10% Owner           all                         $500K+   DD<2%      45      67%     +13.2%      50.36
+   93  Director            Technology                  $100K+   DD<5%      80      59%     +11.5%      50.33
+   94  all                 all                         $500K+   DD<5%     664      65%      +7.7%      50.30
+   95  all                 Technology                  $500K+   DD<5%      66      64%     +12.0%      50.23
+   96  all                 all                         $250K+   DD<5%     970      64%      +7.3%      50.11
+   97  CEO                 all                         $500K+   DD<5%     111      56%     +10.5%      49.26
+   98  Director            Industrials                 $100K+   DD<2%      80      64%     +11.2%      49.25
+   99  all                 Consumer Cyclical           $500K+   any       114      63%     +10.3%      48.99
+  100  10% Owner           all                         $25M+    DD<5%       8      50%     +23.5%      48.94
+  101  all                 Industrials                 $500K+   DD<5%     101      60%     +10.6%      48.69
+  102  Director            Financial Services          $100K+   DD<2%      72      72%     +11.3%      48.38
+  103  CEO                 Healthcare                  $500K+   DD<2%       6     100%     +26.9%      48.17
+  104  CEO                 Industrials                 $500K+   DD<2%      12      58%     +19.3%      47.87
+  105  CEO                 Industrials                 $1M+     DD<2%      12      58%     +19.3%      47.87
+  106  10% Owner           Industrials                 $500K+   DD<5%      18      67%     +16.5%      47.69
+  107  CEO                 Industrials                 $250K+   DD<2%      13      62%     +18.6%      47.66
+  108  Director            all                         $1M+     DD<2%     123      80%      +9.9%      47.60
+  109  Director            Financial Services          $250K+   DD<5%      61      66%     +11.4%      46.80
+  110  all                 Technology                  $500K+   DD<2%      34      68%     +13.3%      46.75
+  111  all                 Healthcare                  $100K+   DD<2%      88      69%     +10.4%      46.66
+  112  10% Owner           all                         $100K+   DD<2%      52      65%     +11.8%      46.61
+  113  President           Consumer Cyclical           $100K+   any         8      88%     +22.4%      46.59
+  114  all                 Communication Services      $100K+   DD<5%      73      81%     +10.9%      46.57
+  115  Director            Utilities                   $250K+   DD<2%      30      93%     +13.6%      46.41
+  116  CEO                 all                         $1M+     DD<5%      70      53%     +10.9%      46.28
+  117  CEO                 Healthcare                  $250K+   DD<2%       7     100%     +23.8%      46.25
+  118  CEO                 all                         $250K+   DD<5%     134      56%      +9.4%      46.18
+  119  Director            Utilities                   $100K+   DD<2%      52      81%     +11.6%      46.01
+  120  all                 Financial Services          $250K+   DD<5%     128      59%      +9.5%      45.89
+  121  10% Owner           all                         $250K+   DD<2%      49      63%     +11.7%      45.72
+  122  all                 Technology                  $250K+   any       144      55%      +9.2%      45.64
+  123  all                 Consumer Cyclical           $250K+   DD<2%      56      66%     +11.3%      45.63
+  124  CEO                 all                         $100K+   DD<5%     177      54%      +8.8%      45.48
+  125  Director            all                         $5M+     DD<2%      43      84%     +12.0%      45.30
+  126  CEO                 Technology                  $1M+     DD<2%       7      43%     +23.3%      45.30
+  127  all                 Healthcare                  $250K+   DD<5%      91      73%     +10.0%      45.24
+  128  Director            Utilities                   $250K+   DD<5%      62      87%     +10.9%      45.17
+  129  all                 Communication Services      $1M+     DD<5%      51      90%     +11.4%      44.77
+  130  Director            all                         $500K+   DD<5%     304      70%      +7.8%      44.54
+  131  CFO                 all                         $500K+   any        31      71%     +12.9%      44.33
+  132  Director            all                         $100K+   DD<5%     814      63%      +6.6%      44.32
+  133  all                 Consumer Cyclical           $250K+   DD<5%      79      66%     +10.1%      44.00
+  134  CEO                 Healthcare                  $500K+   DD<5%      10      70%     +19.0%      43.86
+  135  all                 Financial Services          $100K+   DD<2%     126      62%      +9.0%      43.76
+  136  CEO                 Consumer Cyclical           $1M+     DD<5%      10      80%     +18.9%      43.42
+  137  all                 Industrials                 $1M+     DD<5%      57      58%     +10.7%      43.11
+  138  all                 Consumer Cyclical           $100K+   DD<5%     115      63%      +9.1%      43.00
+  139  all                 Financial Services          $100K+   DD<5%     195      58%      +8.2%      42.98
+  140  all                 all                         $25M+    DD<5%      47      62%     +11.1%      42.81
+  141  CEO                 Healthcare                  $250K+   DD<5%      11      73%     +17.8%      42.63
+  142  Insider (other)     Technology                  $100K+   DD<2%      10      90%     +18.5%      42.53
+  143  10% Owner           Industrials                 $1M+     DD<5%      15      60%     +15.7%      42.53
+  144  Director            Technology                  $250K+   DD<2%      27      67%     +12.9%      42.41
+  145  Director            Communication Services      $100K+   DD<5%      12      42%     +17.0%      42.36
+  146  all                 all                         $1M+     DD<5%     439      65%      +6.9%      42.28
+  147  10% Owner           Industrials                 $500K+   DD<2%      15      67%     +15.6%      42.27
+  148  CEO                 all                         $5M+     DD<5%      10      80%     +18.4%      42.25
+  149  all                 Industrials                 $100K+   DD<5%     225      60%      +7.8%      42.21
+  150  Director            Healthcare                  $250K+   DD<2%      32      81%     +12.2%      42.16
+  151  all                 Industrials                 $250K+   DD<5%     147      61%      +8.4%      42.14
+  152  all                 Real Estate                 $5M+     DD<5%       8     100%     +20.2%      42.00
+  153  all                 Real Estate                 $5M+     DD<2%       8     100%     +20.2%      42.00
+  154  Director            Real Estate                 $5M+     DD<5%       8     100%     +20.2%      42.00
+  155  Director            Real Estate                 $5M+     DD<2%       8     100%     +20.2%      42.00
+  156  CEO                 Financial Services          $1M+     DD<5%       8      63%     +20.1%      41.82
+  157  Director            Industrials                 $1M+     DD<2%      10      70%     +18.1%      41.79
+  158  all                 Consumer Cyclical           $100K+   any       225      61%      +7.7%      41.77
+  159  Director            Financial Services          $100K+   DD<5%     101      64%      +9.0%      41.74
+  160  all                 all                         $5M+     DD<2%     112      75%      +8.7%      41.24
+  161  10% Owner           Industrials                 $100K+   DD<5%      21      62%     +13.5%      41.03
+  162  10% Owner           Industrials                 $250K+   DD<5%      21      62%     +13.5%      41.03
+  163  CEO                 Financial Services          $250K+   DD<5%      19      53%     +13.9%      40.94
+  164  all                 all                         $100K+   DD<5%    1453      59%      +5.6%      40.79
+  165  CEO                 Financial Services          $250K+   any        29      45%     +12.1%      40.59
+  166  Director            all                         $1M+     DD<5%     176      72%      +7.8%      40.46
+  167  all                 Healthcare                  $500K+   DD<2%      37      78%     +11.2%      40.32
+  168  Director            Technology                  $100K+   DD<2%      43      65%     +10.7%      40.19
+  169  Other/EVP           Healthcare                  $250K+   DD<5%       9      78%     +18.2%      40.07
+  170  CEO                 Technology                  $100K+   DD<2%      16      50%     +14.3%      39.55
+  171  Other/EVP           Healthcare                  $250K+   DD<2%       7      86%     +20.2%      39.24
+  172  Director            Healthcare                  $250K+   DD<5%      52      75%      +9.8%      38.90
+  173  Director            Utilities                   $250K+   any        67      84%      +9.2%      38.88
+  174  Director            Healthcare                  $100K+   DD<2%      51      69%      +9.8%      38.71
+  175  all                 Consumer Cyclical           $100K+   DD<2%      79      61%      +8.8%      38.59
+  176  10% Owner           Industrials                 $1M+     DD<2%      13      62%     +15.0%      38.36
+  177  Director            Utilities                   $100K+   DD<5%      92      74%      +8.4%      37.84
+  178  CFO                 Consumer Cyclical           $500K+   any         5      80%     +23.5%      37.83
+  179  10% Owner           all                         $500K+   any       149      46%      +7.5%      37.48
+  180  10% Owner           all                         $500K+   DD<5%      78      59%      +8.6%      37.28
+  181  all                 Technology                  $1M+     DD<2%      18      61%     +12.9%      37.27
+  182  Other/EVP           Healthcare                  $500K+   any         7      71%     +19.1%      37.26
+  183  Other/EVP           Healthcare                  $500K+   DD<5%       7      71%     +19.1%      37.26
+  184  Director            Technology                  $250K+   any        93      51%      +8.2%      37.20
+  185  all                 Utilities                   $250K+   DD<2%      48      79%      +9.6%      37.20
+  186  Insider (other)     Communication Services      $250K+   DD<5%      34     100%     +10.5%      37.17
+  187  all                 all                         $25M+    any        71      51%      +8.7%      37.16
+  188  all                 Consumer Cyclical           $250K+   any       156      62%      +7.3%      37.00
+  189  10% Owner           all                         $100K+   any       171      49%      +7.2%      36.99
+  190  Other/EVP           Healthcare                  $100K+   DD<5%      16      63%     +13.3%      36.93
+  191  CEO                 Communication Services      $1M+     DD<5%       6      83%     +20.6%      36.83
+  192  all                 Healthcare                  $100K+   DD<5%     143      64%      +7.4%      36.79
+  193  all                 Utilities                   $100K+   DD<2%      74      70%      +8.5%      36.78
+  194  10% Owner           all                         $250K+   any       159      47%      +7.2%      36.53
+  195  all                 Real Estate                 $1M+     DD<2%      21      90%     +12.0%      36.50
+  196  Insider (other)     Communication Services      $100K+   DD<5%      35     100%     +10.2%      36.44
+  197  all                 Financial Services          $500K+   DD<2%      62      66%      +8.8%      36.40
+  198  all                 Utilities                   $250K+   DD<5%      89      76%      +8.1%      36.32
+  199  all                 Healthcare                  $500K+   DD<5%      62      69%      +8.8%      36.22
+  200  Director            Consumer Defensive          $1M+     DD<5%      30     100%     +10.6%      36.16
+  201  Insider (other)     Technology                  $100K+   DD<5%      14      79%     +13.6%      36.02
+  202  Director            Real Estate                 $1M+     DD<2%      20      90%     +12.0%      35.91
+  203  Director            Consumer Defensive          $1M+     any        37      92%      +9.9%      35.88
+  204  Other/EVP           Healthcare                  $100K+   DD<2%      14      64%     +13.6%      35.85
+  205  Other/EVP           Healthcare                  $500K+   DD<2%       5      80%     +22.2%      35.75
+  206  CEO                 Consumer Cyclical           $250K+   DD<5%      17      71%     +12.6%      35.69
+  207  10% Owner           all                         $100K+   DD<5%      86      59%      +8.0%      35.58
+  208  all                 Financial Services          $500K+   DD<5%      94      61%      +7.8%      35.57
+  209  Insider (other)     Communication Services      $500K+   DD<5%      29     100%     +10.5%      35.47
+  210  Insider (other)     Communication Services      $1M+     DD<5%      29     100%     +10.5%      35.47
+  211  10% Owner           Industrials                 $100K+   DD<2%      18      61%     +12.2%      35.36
+  212  10% Owner           Industrials                 $250K+   DD<2%      18      61%     +12.2%      35.36
+  213  10% Owner           all                         $1M+     any       140      44%      +7.2%      35.35
+  214  Director            all                         $5M+     DD<5%      61      72%      +8.6%      35.33
+  215  Director            Industrials                 $500K+   DD<5%      49      59%      +9.0%      35.08
+  216  Director            all                         $25M+    DD<2%      16      75%     +12.6%      35.02
+  217  CEO                 all                         $500K+   any       160      51%      +6.9%      34.89
+  218  10% Owner           all                         $5M+     DD<2%      28      75%     +10.5%      34.86
+  219  CEO                 Technology                  $100K+   DD<5%      28      54%     +10.4%      34.70
+  220  10% Owner           all                         $250K+   DD<5%      83      58%      +7.8%      34.57
+  221  Director            Real Estate                 $250K+   DD<2%      30      83%     +10.1%      34.32
+  222  all                 Real Estate                 $250K+   DD<2%      34      82%      +9.7%      34.17
+  223  10% Owner           all                         $1M+     DD<5%      72      57%      +8.0%      34.07
+  224  Director            Industrials                 $250K+   DD<5%      84      61%      +7.7%      33.92
+  225  Other/EVP           Healthcare                  $250K+   any        10      70%     +14.6%      33.62
+  226  all                 Utilities                   $100K+   DD<5%     126      67%      +6.9%      33.17
+  227  all                 all                         $5M+     DD<5%     163      68%      +6.5%      33.16
+  228  CFO                 Communication Services      $250K+   any         5      80%     +20.6%      33.10
+  229  Director            Healthcare                  $100K+   DD<5%      88      66%      +7.4%      33.07
+  230  CEO                 all                         $1M+     any       101      51%      +7.1%      32.88
+  231  all                 Real Estate                 $1M+     DD<5%      25      84%     +10.2%      32.76
+  232  Director            Consumer Cyclical           $100K+   DD<5%      75      63%      +7.6%      32.75
+  233  all                 Real Estate                 $500K+   DD<2%      27      81%      +9.9%      32.70
+  234  Director            Real Estate                 $500K+   DD<2%      24      83%     +10.3%      32.69
+  235  CEO                 Healthcare                  $100K+   DD<2%      11      73%     +13.5%      32.45
+  236  all                 Technology                  $500K+   any       104      56%      +6.9%      32.21
+  237  CEO                 Healthcare                  $100K+   DD<5%      15      60%     +11.9%      32.14
+  238  Director            Real Estate                 $1M+     DD<5%      24      83%     +10.1%      32.10
+  239  CEO                 Consumer Cyclical           $1M+     DD<2%       8      75%     +15.4%      32.08
+  240  Director            Industrials                 $100K+   DD<5%     142      59%      +6.5%      31.99
+  241  CEO                 Consumer Cyclical           $100K+   DD<5%      19      68%     +10.7%      31.63
+  242  CFO                 Consumer Cyclical           $250K+   any         7      71%     +16.2%      31.52
+  243  CEO                 Financial Services          $100K+   any        57      37%      +7.8%      31.35
+  244  Director            Consumer Defensive          $500K+   DD<5%      36      94%      +8.7%      31.27
+  245  CEO                 Industrials                 $1M+     DD<5%      14      50%     +11.8%      31.15
+  246  all                 Utilities                   $250K+   any        98      73%      +6.8%      31.11
+  247  all                 Technology                  $100K+   any       224      51%      +5.7%      31.11
+  248  CEO                 Communication Services      $100K+   DD<2%       5      60%     +19.3%      31.10
+  249  CEO                 Communication Services      $250K+   DD<2%       5      60%     +19.3%      31.10
+  250  CEO                 Communication Services      $500K+   DD<2%       5      60%     +19.3%      31.10
+  251  CEO                 Industrials                 $250K+   DD<5%      17      53%     +11.0%      31.08
+  252  Director            Utilities                   $500K+   DD<5%      20      90%     +10.3%      30.88
+  253  Director            Consumer Defensive          $250K+   DD<5%      45      89%      +8.1%      30.80
+  254  Insider (other)     all                         $1M+     DD<5%      55      82%      +7.6%      30.65
+  255  CEO                 Consumer Cyclical           $500K+   DD<5%      16      69%     +11.0%      30.63
+  256  Director            Real Estate                 $100K+   DD<2%      47      77%      +7.9%      30.59
+  257  CEO                 Industrials                 $500K+   DD<5%      16      50%     +11.0%      30.52
+  258  all                 Real Estate                 $100K+   DD<2%      53      75%      +7.6%      30.37
+  259  Insider (other)     Communication Services      $100K+   DD<2%      19     100%     +10.3%      30.34
+  260  Insider (other)     Communication Services      $250K+   DD<2%      19     100%     +10.3%      30.34
+  261  all                 Real Estate                 $500K+   DD<5%      33      79%      +8.5%      29.79
+  262  CFO                 all                         $250K+   DD<2%      29      66%      +8.8%      29.74
+  263  all                 Technology                  $1M+     DD<5%      35      54%      +8.3%      29.60
+  264  CEO                 all                         $250K+   any       199      51%      +5.6%      29.56
+  265  Director            Real Estate                 $5M+     any        10      80%     +12.8%      29.55
+  266  Insider (other)     Consumer Cyclical           $250K+   any         5      80%     +18.3%      29.53
+  267  Director            Real Estate                 $500K+   DD<5%      30      80%      +8.7%      29.50
+  268  Insider (other)     all                         $5M+     DD<5%      28      79%      +8.8%      29.26
+  269  Director            Consumer Defensive          $500K+   DD<2%      26      96%      +9.0%      29.25
+  270  Insider (other)     all                         $100K+   DD<2%      52      77%      +7.4%      29.20
+  271  Insider (other)     Communication Services      $500K+   DD<2%      15     100%     +10.7%      29.04
+  272  Insider (other)     Communication Services      $1M+     DD<2%      15     100%     +10.7%      29.04
+  273  Director            Utilities                   $500K+   DD<2%      11      91%     +12.0%      28.89
+  274  all                 Utilities                   $500K+   DD<2%      21      81%      +9.5%      28.80
+  275  Director            Consumer Defensive          $500K+   any        46      85%      +7.5%      28.78
+  276  Director            Consumer Defensive          $1M+     DD<2%      23     100%      +9.1%      28.59
+  277  Insider (other)     all                         $500K+   DD<5%      63      81%      +6.9%      28.57
+  278  CEO                 all                         $5M+     DD<2%       7      71%     +14.5%      28.27
+  279  Director            Consumer Defensive          $250K+   any        60      82%      +6.9%      28.24
+  280  CEO                 Technology                  $100K+   any        38      53%      +7.8%      28.21
+  281  Director            Industrials                 $25M+    any         7      43%     +14.3%      27.92
+  282  all                 Financial Services          $1M+     DD<5%      70      57%      +6.5%      27.81
+  283  Director            Consumer Defensive          $5M+     any        18      89%      +9.5%      27.55
+  284  Insider (other)     Financial Services          $5M+     DD<5%      12      67%     +11.1%      27.49
+  285  CFO                 all                         $250K+   DD<5%      41      63%      +7.4%      27.42
+  286  Director            all                         $250K+   any       783      59%      +4.1%      27.07
+  287  Insider (other)     all                         $250K+   DD<5%      77      81%      +6.2%      26.99
+  288  Director            Consumer Cyclical           $250K+   DD<5%      44      68%      +7.1%      26.94
+  289  Director            Utilities                   $100K+   any       108      67%      +5.7%      26.71
+  290  CFO                 Communication Services      $100K+   any         6      67%     +14.8%      26.55
+  291  Director            Industrials                 $5M+     any         9      56%     +12.0%      26.43
+  292  Insider (other)     Communication Services      $5M+     DD<5%      11     100%     +11.0%      26.37
+  293  all                 Financial Services          $1M+     DD<2%      47      62%      +6.8%      26.31
+  294  all                 Utilities                   $500K+   DD<5%      34      79%      +7.4%      26.19
+  295  all                 Utilities                   $1M+     any        19      84%      +8.9%      26.15
+  296  all                 Financial Services          $5M+     DD<5%      30      70%      +7.7%      26.14
+  297  Director            Utilities                   $1M+     DD<2%       9      89%     +11.8%      25.93
+  298  Other/EVP           Healthcare                  $100K+   any        20      55%      +8.6%      25.83
+  299  Director            Healthcare                  $250K+   any        66      67%      +6.2%      25.81
+  300  Director            Utilities                   $500K+   any        23      87%      +8.2%      25.68
+  301  Other/EVP           Industrials                 $100K+   any        13      85%     +10.0%      25.61
+  302  Director            Technology                  $100K+   any       135      47%      +5.2%      25.51
+  303  CEO                 Industrials                 $100K+   any        32      56%      +7.4%      25.49
+  304  Other/EVP           Industrials                 $100K+   DD<2%       5      80%     +15.8%      25.35
+  305  Director            Consumer Defensive          $250K+   DD<2%      32      88%      +7.3%      25.28
+  306  Director            Industrials                 $250K+   any       133      56%      +5.2%      25.28
+  307  Director            Healthcare                  $500K+   DD<5%      30      77%      +7.4%      25.24
+  308  Director            Technology                  $500K+   DD<5%      40      60%      +6.8%      25.17
+  309  CEO                 Consumer Cyclical           $1M+     any        16      69%      +9.1%      25.15
+  310  Director            Real Estate                 $1M+     any        28      75%      +7.5%      25.06
+  311  CFO                 Industrials                 $100K+   DD<5%       7      86%     +12.8%      24.97
+  312  all                 Communication Services      $500K+   any        96      66%      +5.4%      24.87
+  313  all                 Utilities                   $1M+     DD<2%      14      79%      +9.4%      24.84
+  314  all                 all                         $500K+   any      1043      56%      +3.5%      24.67
+  315  all                 all                         $5M+     any       258      53%      +4.4%      24.58
+  316  all                 Communication Services      $250K+   any       117      65%      +5.2%      24.56
+  317  Director            Communication Services      $500K+   any        14      43%      +9.3%      24.54
+  318  Insider (other)     all                         $1M+     DD<2%      28      79%      +7.3%      24.49
+  319  Director            Consumer Defensive          $5M+     DD<5%      14     100%      +9.2%      24.40
+  320  all                 all                         $250K+   any      1538      55%      +3.3%      24.29
+  321  CEO                 Healthcare                  $500K+   any        16      50%      +8.7%      24.24
+  322  all                 Real Estate                 $250K+   DD<5%      45      73%      +6.3%      24.16
+  323  Director            Utilities                   $1M+     any        11      91%     +10.0%      24.09
+  324  Director            Utilities                   $1M+     DD<5%      11      91%     +10.0%      24.09
+  325  Director            Communication Services      $250K+   any        21      48%      +7.9%      23.98
+  326  all                 Utilities                   $100K+   any       153      61%      +4.8%      23.95
+  327  all                 Real Estate                 $5M+     any        11      73%     +10.0%      23.90
+  328  Director            Real Estate                 $500K+   any        36      75%      +6.7%      23.85
+  329  CEO                 Communication Services      $100K+   DD<5%       8      63%     +11.5%      23.82
+  330  CEO                 Communication Services      $250K+   DD<5%       8      63%     +11.5%      23.82
+  331  CEO                 Communication Services      $500K+   DD<5%       8      63%     +11.5%      23.82
+  332  all                 Utilities                   $500K+   any        40      78%      +6.4%      23.68
+  333  Director            Consumer Cyclical           $500K+   DD<5%      22      68%      +7.6%      23.53
+  334  Director            all                         $25M+    DD<5%      24      58%      +7.4%      23.48
+  335  all                 Utilities                   $1M+     DD<5%      17      82%      +8.3%      23.41
+  336  CEO                 Consumer Cyclical           $250K+   any        23      65%      +7.4%      23.27
+  337  CEO                 Healthcare                  $250K+   any        18      50%      +8.0%      23.21
+  338  Insider (other)     Communication Services      $250K+   any        56      77%      +5.8%      23.19
+  339  all                 Real Estate                 $1M+     any        31      74%      +6.7%      22.85
+  340  all                 Technology                  $5M+     DD<2%       6      33%     +12.7%      22.82
+  341  Other/EVP           Industrials                 $250K+   any         7      71%     +11.7%      22.71
+  342  Director            Consumer Cyclical           $100K+   any       132      61%      +4.6%      22.65
+  343  CEO                 Communication Services      $1M+     any         9      67%     +10.3%      22.65
+  344  Insider (other)     all                         $5M+     DD<2%      18      78%      +7.8%      22.61
+  345  10% Owner           Financial Services          $100K+   DD<5%      27      59%      +6.9%      22.58
+  346  Director            Real Estate                 $250K+   DD<5%      40      73%      +6.1%      22.50
+  347  Insider (other)     Financial Services          $5M+     any        16      63%      +8.1%      22.45
+  348  all                 Communication Services      $1M+     any        72      74%      +5.2%      22.43
+  349  all                 Real Estate                 $100K+   DD<5%      72      69%      +5.2%      22.43
+  350  all                 Technology                  $1M+     any        57      49%      +5.5%      22.41
+  351  Director            Industrials                 $1M+     DD<5%      19      58%      +7.6%      22.28
+  352  Insider (other)     Communication Services      $100K+   any        61      74%      +5.4%      22.21
+  353  Insider (other)     all                         $500K+   DD<2%      32      78%      +6.4%      22.18
+  354  Director            Consumer Cyclical           $500K+   DD<2%      16      69%      +8.0%      22.16
+  355  Director            Healthcare                  $1M+     DD<5%      12      75%      +8.8%      21.98
+  356  CEO                 all                         $100K+   any       272      47%      +3.9%      21.94
+  357  Insider (other)     all                         $25M+    any        14      71%      +8.3%      21.84
+  358  all                 Industrials                 $100K+   any       362      54%      +3.7%      21.70
+  359  Insider (other)     all                         $100K+   DD<5%     100      72%      +4.7%      21.63
+  360  CEO                 all                         $5M+     any        18      61%      +7.5%      21.62
+  361  CFO                 Industrials                 $500K+   any         5      80%     +13.3%      21.46
+  362  all                 Consumer Defensive          $5M+     DD<5%      20      90%      +7.2%      21.44
+  363  Insider (other)     all                         $25M+    DD<5%      13      69%      +8.3%      21.41
+  364  10% Owner           Financial Services          $500K+   DD<5%      22      55%      +6.9%      21.27
+  365  Director            Industrials                 $500K+   any        78      54%      +4.9%      21.24
+  366  all                 Healthcare                  $250K+   any       128      60%      +4.4%      21.21
+  367  all                 Consumer Defensive          $500K+   DD<2%      44      77%      +5.6%      21.14
+  368  CEO                 Consumer Cyclical           $250K+   DD<2%      14      64%      +8.0%      21.03
+  369  CEO                 Consumer Cyclical           $500K+   DD<2%      14      64%      +8.0%      21.03
+  370  Insider (other)     all                         $250K+   DD<2%      43      79%      +5.6%      20.94
+  371  all                 Other                       $250K+   any         8     100%     +10.0%      20.77
+  372  all                 Other                       $500K+   any         8     100%     +10.0%      20.77
+  373  all                 Industrials                 $250K+   any       229      55%      +3.8%      20.76
+  374  CEO                 Consumer Cyclical           $100K+   any        25      64%      +6.4%      20.68
+  375  all                 Other                       $250K+   DD<5%       7     100%     +10.6%      20.64
+  376  all                 Other                       $500K+   DD<5%       7     100%     +10.6%      20.64
+  377  Director            Real Estate                 $100K+   DD<5%      64      69%      +5.0%      20.64
+  378  10% Owner           all                         $5M+     DD<5%      44      66%      +5.4%      20.57
+  379  President           Healthcare                  $100K+   any         5     100%     +12.8%      20.53
+  380  Director            Healthcare                  $500K+   DD<2%      20      80%      +6.8%      20.46
+  381  all                 Consumer Defensive          $5M+     any        27      74%      +6.2%      20.45
+  382  Insider (other)     Communication Services      $1M+     any        40      83%      +5.5%      20.32
+  383  all                 Consumer Defensive          $1M+     DD<2%      34      82%      +5.7%      20.27
+  384  all                 Communication Services      $5M+     DD<2%      15     100%      +7.5%      20.27
+  385  all                 Financial Services          $250K+   any       235      48%      +3.7%      20.11
+  386  Insider (other)     Communication Services      $500K+   any        47      77%      +5.2%      20.06
+  387  Director            Financial Services          $250K+   any       120      53%      +4.2%      19.97
+  388  Director            Healthcare                  $100K+   any       117      56%      +4.2%      19.78
+  389  Insider (other)     Communication Services      $5M+     DD<2%       9     100%      +9.0%      19.76
+  390  Director            Consumer Defensive          $25M+    any         6      83%     +11.0%      19.72
+  391  Director            all                         $100K+   any      1270      54%      +2.8%      19.70
+  392  CFO                 Industrials                 $250K+   DD<5%       5      80%     +12.2%      19.66
+  393  Insider (other)     Financial Services          $25M+    any         7      57%     +10.1%      19.66
+  394  Other/EVP           Industrials                 $100K+   DD<5%       8      75%      +9.4%      19.52
+  395  10% Owner           Financial Services          $250K+   DD<5%      24      54%      +6.1%      19.51
+  396  Other/EVP           Industrials                 $250K+   DD<5%       5      60%     +12.1%      19.50
+  397  all                 Communication Services      $5M+     DD<5%      25      88%      +6.0%      19.45
+  398  Director            Industrials                 $100K+   any       236      53%      +3.5%      19.26
+  399  Director            Financial Services          $500K+   DD<2%      29      76%      +5.7%      19.26
+  400  Director            Consumer Defensive          $100K+   DD<2%      47      74%      +5.0%      19.17
+  401  Insider (other)     Financial Services          $250K+   DD<5%      15      60%      +7.1%      19.10
+  402  Insider (other)     Financial Services          $500K+   DD<5%      15      60%      +7.1%      19.10
+  403  Insider (other)     Financial Services          $1M+     DD<5%      15      60%      +7.1%      19.10
+  404  all                 all                         $1M+     any       682      55%      +2.9%      19.08
+  405  Insider (other)     Financial Services          $25M+    DD<5%       6      50%     +10.6%      18.92
+  406  Director            Consumer Cyclical           $1M+     DD<2%      11      64%      +7.9%      18.91
+  407  all                 Healthcare                  $1M+     DD<5%      32      59%      +5.5%      18.91
+  408  CFO                 Utilities                   $250K+   DD<2%       8      75%      +9.1%      18.87
+  409  all                 Consumer Defensive          $1M+     any        57      72%      +4.7%      18.86
+  410  all                 Industrials                 $500K+   any       156      52%      +3.7%      18.74
+  411  CEO                 Consumer Cyclical           $500K+   any        22      64%      +6.1%      18.73
+  412  all                 Consumer Defensive          $1M+     DD<5%      45      78%      +4.9%      18.49
+  413  President           Industrials                 $100K+   DD<5%      11      73%      +7.7%      18.41
+  414  all                 Communication Services      $100K+   any       129      60%      +3.8%      18.36
+  415  Insider (other)     Communication Services      $5M+     any        17      76%      +6.5%      18.34
+  416  Director            Consumer Cyclical           $250K+   DD<2%      32      69%      +5.2%      18.14
+  417  CEO                 Healthcare                  $100K+   any        22      45%      +5.8%      17.85
+  418  Director            Energy                      $1M+     DD<2%       8      50%      +8.5%      17.69
+  419  Director            Real Estate                 $250K+   any        50      68%      +4.5%      17.51
+  420  all                 Healthcare                  $100K+   any       201      54%      +3.3%      17.47
+  421  Director            all                         $500K+   any       465      60%      +2.8%      17.41
+  422  Director            Consumer Cyclical           $1M+     DD<5%      13      62%      +6.8%      17.35
+  423  CEO                 Consumer Cyclical           $100K+   DD<2%      15      60%      +6.4%      17.31
+  424  all                 Real Estate                 $500K+   any        46      67%      +4.5%      17.28
+  425  all                 Other                       $1M+     any         7     100%      +8.8%      17.20
+  426  all                 Financial Services          $500K+   any       153      49%      +3.4%      17.19
+  427  all                 Financial Services          $5M+     DD<2%      21      67%      +5.6%      17.07
+  428  Director            Consumer Defensive          $100K+   DD<5%      69      72%      +4.0%      17.03
+  429  all                 Communication Services      $25M+    DD<5%       5     100%     +10.6%      17.01
+  430  Insider (other)     Communication Services      $25M+    any         5     100%     +10.6%      17.01
+  431  Insider (other)     Communication Services      $25M+    DD<5%       5     100%     +10.6%      17.01
+  432  all                 Financial Services          $1M+     any       109      48%      +3.6%      16.84
+  433  President           Industrials                 $100K+   any        14      71%      +6.4%      16.83
+  434  President           Industrials                 $250K+   any         8      75%      +8.1%      16.79
+  435  all                 Other                       $1M+     DD<5%       6     100%      +9.4%      16.79
+  436  Director            Financial Services          $500K+   DD<5%      40      65%      +4.5%      16.78
+  437  President           Industrials                 $100K+   DD<2%       5      80%     +10.4%      16.69
+  438  Director            Energy                      $100K+   DD<2%      34      50%      +4.7%      16.64
+  439  all                 Other                       $5M+     any         6     100%      +9.2%      16.41
+  440  Director            Other                       $250K+   any         6     100%      +9.2%      16.41
+  441  Director            Other                       $500K+   any         6     100%      +9.2%      16.41
+  442  Director            Other                       $1M+     any         6     100%      +9.2%      16.41
+  443  Director            Other                       $5M+     any         6     100%      +9.2%      16.41
+  444  10% Owner           Financial Services          $1M+     DD<5%      21      52%      +5.4%      16.36
+  445  CEO                 Utilities                   $100K+   any        17      59%      +5.7%      16.26
+  446  all                 Consumer Defensive          $500K+   DD<5%      61      72%      +3.9%      16.18
+  447  all                 all                         $100K+   any      2320      52%      +2.1%      16.18
+  448  Insider (other)     Healthcare                  $250K+   DD<5%       5     100%      +9.9%      15.99
+  449  Insider (other)     Healthcare                  $500K+   DD<5%       5     100%      +9.9%      15.99
+  450  all                 Other                       $5M+     DD<5%       5     100%      +9.9%      15.87
+  451  Director            Other                       $250K+   DD<5%       5     100%      +9.9%      15.87
+  452  Director            Other                       $500K+   DD<5%       5     100%      +9.9%      15.87
+  453  Director            Other                       $1M+     DD<5%       5     100%      +9.9%      15.87
+  454  Director            Other                       $5M+     DD<5%       5     100%      +9.9%      15.87
+  455  CFO                 Utilities                   $500K+   any         5      80%      +9.7%      15.57
+  456  Director            Technology                  $500K+   DD<2%      17      71%      +5.4%      15.36
+  457  all                 Other                       $250K+   DD<2%       5     100%      +9.5%      15.36
+  458  all                 Other                       $500K+   DD<2%       5     100%      +9.5%      15.36
+  459  Director            Technology                  $500K+   any        67      52%      +3.6%      15.12
+  460  Director            Consumer Defensive          $5M+     DD<2%      10     100%      +6.6%      15.10
+  461  Director            Financial Services          $100K+   any       181      52%      +2.9%      15.03
+  462  Other/EVP           Healthcare                  $1M+     any         5      60%      +9.3%      14.97
+  463  Other/EVP           Healthcare                  $1M+     DD<5%       5      60%      +9.3%      14.97
+  464  Insider (other)     Financial Services          $1M+     any        21      57%      +4.9%      14.91
+  465  Insider (other)     all                         $25M+    DD<2%       8      63%      +7.1%      14.81
+  466  Director            Consumer Defensive          $100K+   any        87      69%      +3.3%      14.79
+  467  10% Owner           Financial Services          $5M+     DD<5%       9      67%      +6.7%      14.76
+  468  Director            Energy                      $500K+   DD<2%      10      50%      +6.4%      14.74
+  469  all                 Consumer Defensive          $5M+     DD<2%      15      93%      +5.4%      14.74
+  470  Director            Consumer Cyclical           $100K+   DD<2%      52      60%      +3.7%      14.67
+  471  CFO                 all                         $250K+   any        63      56%      +3.5%      14.62
+  472  CFO                 Industrials                 $100K+   any        13      69%      +5.7%      14.55
+  473  Insider (other)     Technology                  $100K+   any        22      68%      +4.7%      14.39
+  474  CFO                 all                         $1M+     any        12      75%      +5.7%      14.25
+  475  Insider (other)     Financial Services          $25M+    DD<2%       5      40%      +8.8%      14.22
+  476  all                 Other                       $100K+   any        11      73%      +5.9%      14.17
+  477  Director            Technology                  $1M+     DD<5%      22      55%      +4.5%      14.02
+  478  all                 Other                       $100K+   DD<5%      10      70%      +5.9%      13.67
+  479  Insider (other)     all                         $5M+     any        41      66%      +3.7%      13.63
+  480  Insider (other)     Financial Services          $100K+   DD<5%      19      58%      +4.6%      13.63
+  481  Director            Technology                  $1M+     DD<2%       9      67%      +6.2%      13.62
+  482  all                 Consumer Defensive          $500K+   any        82      63%      +3.1%      13.60
+  483  Insider (other)     Financial Services          $5M+     DD<2%       8      50%      +6.4%      13.28
+  484  all                 Financial Services          $100K+   any       358      46%      +2.2%      13.15
+  485  CFO                 Utilities                   $250K+   DD<5%      11      64%      +5.5%      13.13
+  486  CFO                 all                         $1M+     DD<5%       8      75%      +6.3%      13.08
+  487  CEO                 Communication Services      $100K+   any        13      54%      +5.1%      12.96
+  488  CEO                 Communication Services      $250K+   any        13      54%      +5.1%      12.96
+  489  CEO                 Communication Services      $500K+   any        13      54%      +5.1%      12.96
+  490  Insider (other)     all                         $1M+     any        87      69%      +2.9%      12.88
+  491  all                 Consumer Defensive          $250K+   DD<2%      61      66%      +3.1%      12.70
+  492  all                 Consumer Defensive          $250K+   DD<5%      90      64%      +2.7%      12.36
+  493  Other/EVP           all                         $500K+   DD<2%      50      56%      +3.1%      12.27
+  494  CFO                 Utilities                   $100K+   DD<2%      11      55%      +5.1%      12.12
+  495  Director            Healthcare                  $500K+   any        36      67%      +3.4%      12.05
+  496  Director            Energy                      $250K+   DD<2%      20      55%      +3.9%      11.82
+  497  all                 Real Estate                 $250K+   any        67      61%      +2.8%      11.82
+  498  all                 Consumer Defensive          $25M+    any         9      56%      +5.4%      11.78
+  499  Insider (other)     Financial Services          $500K+   any        25      52%      +3.7%      11.77
+  500  all                 Healthcare                  $1M+     DD<2%      16      69%      +4.2%      11.68
+  501  all                 Financial Services          $25M+    DD<5%      13      62%      +4.5%      11.60
+  502  CFO                 Consumer Cyclical           $100K+   any         8      63%      +5.6%      11.55
+  503  10% Owner           Financial Services          $100K+   DD<2%      13      62%      +4.5%      11.54
+  504  Director            Real Estate                 $100K+   any        87      61%      +2.6%      11.50
+  505  President           Industrials                 $250K+   DD<5%       6      67%      +6.3%      11.36
+  506  Director            Financial Services          $1M+     DD<2%      19      68%      +3.8%      11.26
+  507  10% Owner           Industrials                 $100K+   any        38      50%      +3.1%      11.25
+  508  President           Industrials                 $500K+   any         5      60%      +7.0%      11.25
+  509  CFO                 Utilities                   $250K+   any        12      58%      +4.5%      11.19
+  510  all                 Consumer Defensive          $25M+    DD<2%       5      80%      +6.9%      11.18
+  511  all                 Healthcare                  $500K+   any        88      57%      +2.5%      11.01
+  512  Director            Financial Services          $5M+     DD<2%       7      86%      +5.7%      11.01
+  513  Director            all                         $1M+     any       266      60%      +2.0%      10.93
+  514  CFO                 all                         $100K+   DD<2%      44      55%      +2.9%      10.89
+  515  Director            all                         $5M+     any        94      56%      +2.4%      10.70
+  516  all                 Consumer Defensive          $250K+   any       126      60%      +2.2%      10.65
+  517  Director            Financial Services          $1M+     DD<5%      24      58%      +3.3%      10.41
+  518  Insider (other)     all                         $500K+   any       116      65%      +2.1%       9.93
+  519  President           all                         $250K+   DD<5%      26      54%      +3.0%       9.92
+  520  Director            Other                       $100K+   any         9      67%      +4.5%       9.78
+  521  all                 Consumer Defensive          $25M+    DD<5%       6      67%      +5.4%       9.67
+  522  CFO                 all                         $1M+     DD<2%       7      71%      +4.9%       9.61
+  523  Director            Financial Services          $5M+     DD<5%       8      75%      +4.6%       9.51
+  524  10% Owner           Communication Services      $100K+   DD<2%       6     100%      +5.2%       9.35
+  525  10% Owner           Communication Services      $250K+   DD<2%       6     100%      +5.2%       9.35
+  526  10% Owner           Communication Services      $500K+   DD<2%       6     100%      +5.2%       9.35
+  527  10% Owner           Communication Services      $1M+     DD<2%       6     100%      +5.2%       9.35
+  528  10% Owner           Communication Services      $5M+     DD<2%       6     100%      +5.2%       9.35
+  529  10% Owner           Communication Services      $100K+   DD<5%      12      83%      +3.7%       9.13
+  530  10% Owner           Communication Services      $250K+   DD<5%      12      83%      +3.7%       9.13
+  531  10% Owner           Communication Services      $500K+   DD<5%      12      83%      +3.7%       9.13
+  532  10% Owner           Communication Services      $1M+     DD<5%      12      83%      +3.7%       9.13
+  533  10% Owner           Communication Services      $5M+     DD<5%      12      83%      +3.7%       9.13
+  534  Director            Communication Services      $100K+   any        26      38%      +2.8%       9.06
+  535  Director            Other                       $100K+   DD<5%       8      63%      +4.3%       8.94
+  536  all                 Other                       $100K+   DD<2%       8      63%      +4.1%       8.53
+  537  Insider (other)     all                         $250K+   any       138      64%      +1.7%       8.47
+  538  10% Owner           Financial Services          $5M+     DD<2%       5      60%      +5.3%       8.47
+  539  Director            all                         $25M+    any        36      50%      +2.3%       8.36
+  540  Other/EVP           all                         $250K+   DD<2%      66      55%      +1.9%       8.16
+  541  CFO                 Utilities                   $100K+   DD<5%      14      50%      +3.1%       8.15
+  542  CEO                 Utilities                   $100K+   DD<5%      14      50%      +3.0%       7.99
+  543  all                 Financial Services          $25M+    DD<2%      11      55%      +3.3%       7.84
+  544  Other/EVP           all                         $500K+   DD<5%      75      49%      +1.8%       7.77
+  545  Director            Industrials                 $1M+     any        39      51%      +2.0%       7.47
+  546  Other/EVP           all                         $100K+   DD<2%     105      50%      +1.6%       7.43
+  547  10% Owner           Communication Services      $100K+   any        14      71%      +2.8%       7.43
+  548  10% Owner           Communication Services      $250K+   any        14      71%      +2.8%       7.43
+  549  10% Owner           Communication Services      $500K+   any        14      71%      +2.8%       7.43
+  550  10% Owner           Communication Services      $1M+     any        14      71%      +2.8%       7.43
+  551  10% Owner           Communication Services      $5M+     any        14      71%      +2.8%       7.43
+  552  Director            Energy                      $1M+     DD<5%      10      40%      +3.2%       7.38
+  553  President           all                         $500K+   DD<2%      10      60%      +3.0%       6.99
+  554  all                 Industrials                 $1M+     any        97      48%      +1.5%       6.95
+  555  all                 Consumer Defensive          $100K+   DD<2%      99      57%      +1.5%       6.94
+  556  all                 Real Estate                 $100K+   any       111      57%      +1.5%       6.92
+  557  CEO                 Industrials                 $250K+   any        25      52%      +2.0%       6.55
+  558  10% Owner           Industrials                 $250K+   any        35      46%      +1.8%       6.48
+  559  10% Owner           Financial Services          $500K+   DD<2%       9      56%      +2.9%       6.45
+  560  10% Owner           Financial Services          $1M+     DD<2%       9      56%      +2.9%       6.45
+  561  Director            Healthcare                  $1M+     DD<2%       8      75%      +3.0%       6.30
+  562  CEO                 Industrials                 $1M+     any        21      52%      +2.1%       6.25
+  563  President           all                         $100K+   DD<5%      52      52%      +1.5%       5.99
+  564  CEO                 Basic Materials             $100K+   any        28      50%      +1.8%       5.96
+  565  CEO                 Basic Materials             $250K+   any        28      50%      +1.8%       5.96
+  566  all                 Financial Services          $5M+     any        51      49%      +1.5%       5.75
+  567  Director            Communication Services      $1M+     any         7      43%      +2.8%       5.45
+  568  CFO                 Industrials                 $250K+   any         9      56%      +2.4%       5.38
+  569  CEO                 Industrials                 $500K+   any        24      50%      +1.7%       5.36
+  570  Director            Technology                  $1M+     any        36      44%      +1.5%       5.33
+  571  Insider (other)     Financial Services          $250K+   DD<2%      11      45%      +2.2%       5.26
+  572  Insider (other)     Financial Services          $500K+   DD<2%      11      45%      +2.2%       5.26
+  573  Insider (other)     Financial Services          $1M+     DD<2%      11      45%      +2.2%       5.26
+  574  10% Owner           Industrials                 $500K+   any        30      43%      +1.5%       5.20
+  575  10% Owner           Consumer Defensive          $100K+   DD<2%       5      80%      +3.2%       5.16
+  576  10% Owner           Consumer Defensive          $250K+   DD<2%       5      80%      +3.2%       5.16
+  577  10% Owner           Consumer Defensive          $500K+   DD<2%       5      80%      +3.2%       5.16
+  578  10% Owner           Consumer Defensive          $1M+     DD<2%       5      80%      +3.2%       5.16
+  579  10% Owner           Consumer Defensive          $5M+     DD<2%       5      80%      +3.2%       5.16
+  580  Insider (other)     Technology                  $250K+   DD<2%       5      80%      +3.2%       5.12
+  581  President           all                         $500K+   DD<5%      12      50%      +2.0%       5.07
+  582  all                 Technology                  $5M+     any        26      38%      +1.5%       4.82
+  583  Insider (other)     Financial Services          $250K+   any        27      48%      +1.5%       4.80
+  584  10% Owner           Financial Services          $250K+   DD<2%      10      50%      +2.1%       4.79
+  585  CEO                 Consumer Cyclical           $5M+     any         9      67%      +2.1%       4.62
+  586  CFO                 all                         $100K+   DD<5%      65      52%      +1.0%       4.09
+  587  10% Owner           Consumer Defensive          $100K+   DD<5%       6      67%      +2.3%       4.09
+  588  10% Owner           Consumer Defensive          $250K+   DD<5%       6      67%      +2.3%       4.09
+  589  10% Owner           Consumer Defensive          $500K+   DD<5%       6      67%      +2.3%       4.09
+  590  10% Owner           Consumer Defensive          $1M+     DD<5%       6      67%      +2.3%       4.09
+  591  10% Owner           Consumer Defensive          $5M+     DD<5%       6      67%      +2.3%       4.09
+  592  CEO                 Utilities                   $250K+   any        12      50%      +1.6%       4.04
+  593  all                 Technology                  $5M+     DD<5%      15      27%      +1.4%       3.90
+  594  Director            Financial Services          $1M+     any        33      55%      +1.1%       3.89
+  595  all                 Healthcare                  $5M+     DD<2%       5      60%      +2.4%       3.80
+  596  Director            Financial Services          $5M+     any        12      58%      +1.5%       3.77
+  597  President           all                         $250K+   DD<2%      19      53%      +1.1%       3.22
+  598  all                 Communication Services      $5M+     any        36      67%      +0.8%       2.75
+  599  Insider (other)     Technology                  $250K+   DD<5%       7      71%      +1.2%       2.41
+  600  Director            Other                       $100K+   DD<2%       6      50%      +1.3%       2.34
+  601  CFO                 Utilities                   $100K+   any        18      39%      +0.7%       2.16
+  602  Director            Basic Materials             $500K+   DD<5%       6      67%      +1.1%       1.96
+  603  President           all                         $100K+   DD<2%      37      51%      +0.5%       1.88
+  604  President           Real Estate                 $100K+   any         5      40%      +1.1%       1.82
+  605  President           Consumer Defensive          $100K+   DD<5%       8      38%      +0.4%       0.86
+  606  all                 Technology                  $25M+    any        11      27%      +0.3%       0.74
+  607  Director            Healthcare                  $1M+     any        18      56%      +0.3%       0.74
+  608  10% Owner           Healthcare                  $100K+   DD<2%       5      40%      +0.4%       0.72
+  609  10% Owner           Healthcare                  $250K+   DD<2%       5      40%      +0.4%       0.72
+  610  10% Owner           Healthcare                  $500K+   DD<2%       5      40%      +0.4%       0.72
+  611  Director            Basic Materials             $100K+   DD<5%      20      45%      +0.2%       0.67
+  612  Insider (other)     all                         $100K+   any       178      57%      +0.1%       0.67
+  613  all                 Consumer Defensive          $100K+   DD<5%     154      53%      +0.1%       0.55
+  614  Insider (other)     Financial Services          $100K+   DD<2%      14      43%      +0.2%       0.52
+  615  10% Owner           Industrials                 $1M+     any        26      38%      +0.1%       0.42
+  616  CEO                 Utilities                   $250K+   DD<5%      11      45%      +0.1%       0.35
+  617  CFO                 Technology                  $100K+   DD<5%       6      67%      +0.2%       0.34
+  618  10% Owner           Financial Services          $100K+   any        52      42%      +0.0%       0.18
+  619  CFO                 Financial Services          $250K+   any         6      33%      +0.1%       0.14
+  620  Director            Energy                      $500K+   DD<5%      18      44%      +0.0%       0.01
+  621  all                 Healthcare                  $5M+     any        10      50%      -0.0%      -0.03
+  622  all                 Healthcare                  $5M+     DD<5%      10      50%      -0.0%      -0.03
+  623  Insider (other)     Healthcare                  $100K+   DD<5%       8      63%      -0.0%      -0.05
+  624  CEO                 Utilities                   $250K+   DD<2%       5      40%      -0.1%      -0.11
+  625  CEO                 Utilities                   $500K+   DD<2%       5      40%      -0.1%      -0.11
+  626  President           Consumer Defensive          $100K+   any        12      42%      -0.2%      -0.42
+  627  Other/EVP           all                         $250K+   DD<5%     102      49%      -0.1%      -0.45
+  628  Insider (other)     Financial Services          $100K+   any        34      44%      -0.1%      -0.48
+  629  all                 Financial Services          $25M+    any        19      47%      -0.2%      -0.72
+  630  CEO                 Utilities                   $500K+   any         9      44%      -0.4%      -0.87
+  631  10% Owner           Financial Services          $500K+   any        40      35%      -0.3%      -0.98
+  632  10% Owner           Consumer Defensive          $100K+   any         9      44%      -0.4%      -0.99
+  633  10% Owner           Consumer Defensive          $250K+   any         9      44%      -0.4%      -0.99
+  634  10% Owner           Consumer Defensive          $500K+   any         9      44%      -0.4%      -0.99
+  635  10% Owner           Consumer Defensive          $1M+     any         9      44%      -0.4%      -0.99
+  636  10% Owner           Consumer Defensive          $5M+     any         9      44%      -0.4%      -0.99
+  637  CEO                 Basic Materials             $500K+   any        23      43%      -0.4%      -1.37
+  638  President           all                         $100K+   any        83      51%      -0.3%      -1.44
+  639  Director            Basic Materials             $100K+   DD<2%      12      42%      -0.6%      -1.45
+  640  all                 Energy                      $500K+   DD<2%      45      51%      -0.5%      -1.83
+  641  Director            Financial Services          $500K+   any        63      52%      -0.5%      -2.18
+  642  all                 Energy                      $1M+     DD<2%      37      54%      -0.6%      -2.20
+  643  CEO                 Energy                      $100K+   DD<2%      12      33%      -0.9%      -2.25
+  644  Insider (other)     Industrials                 $500K+   DD<5%       7      57%      -1.3%      -2.45
+  645  10% Owner           Financial Services          $250K+   any        43      35%      -0.7%      -2.46
+  646  CEO                 Utilities                   $100K+   DD<2%       6      33%      -1.4%      -2.51
+  647  CEO                 Energy                      $500K+   DD<5%       8      38%      -1.3%      -2.61
+  648  Other/EVP           Consumer Defensive          $250K+   any        37      35%      -0.7%      -2.62
+  649  all                 Consumer Defensive          $100K+   any       203      50%      -0.5%      -2.79
+  650  Other/EVP           Consumer Defensive          $250K+   DD<5%      24      33%      -0.9%      -2.94
+  651  Director            Consumer Cyclical           $250K+   any        77      60%      -0.7%      -3.05
+  652  Other/EVP           all                         $100K+   DD<5%     159      46%      -0.6%      -3.12
+  653  all                 Technology                  $25M+    DD<5%       9      22%      -1.6%      -3.46
+  654  Director            Technology                  $25M+    DD<5%       9      22%      -1.6%      -3.46
+  655  Other/EVP           Financial Services          $250K+   any         5      60%      -2.2%      -3.50
+  656  President           Consumer Defensive          $250K+   any         6      33%      -2.1%      -3.83
+  657  Director            Technology                  $5M+     any        18      28%      -1.3%      -3.87
+  658  CEO                 Basic Materials             $1M+     any        16      38%      -1.4%      -3.99
+  659  CEO                 Healthcare                  $1M+     any         6      33%      -2.2%      -4.00
+  660  Other/EVP           Consumer Defensive          $500K+   any        19      32%      -1.5%      -4.27
+  661  all                 Energy                      $100K+   DD<2%      91      47%      -1.0%      -4.33
+  662  10% Owner           Financial Services          $1M+     any        39      33%      -1.3%      -4.61
+  663  all                 Energy                      $250K+   DD<2%      61      51%      -1.2%      -4.96
+  664  CEO                 Basic Materials             $100K+   DD<2%      14      43%      -1.9%      -5.12
+  665  CEO                 Basic Materials             $250K+   DD<2%      14      43%      -1.9%      -5.12
+  666  Other/EVP           Consumer Defensive          $250K+   DD<2%      15      27%      -1.9%      -5.23
+  667  all                 Consumer Cyclical           $5M+     DD<5%      11      64%      -2.2%      -5.30
+  668  President           all                         $250K+   any        47      49%      -1.4%      -5.51
+  669  CEO                 Utilities                   $500K+   DD<5%       8      38%      -2.7%      -5.58
+  670  all                 Basic Materials             $1M+     DD<2%      13      38%      -2.2%      -5.69
+  671  CEO                 Energy                      $250K+   DD<2%       9      33%      -2.6%      -5.72
+  672  Other/EVP           Consumer Defensive          $500K+   DD<5%      11      27%      -2.4%      -5.76
+  673  Other/EVP           Energy                      $500K+   DD<2%      27      59%      -1.8%      -5.84
+  674  Other/EVP           Consumer Defensive          $100K+   DD<2%      34      32%      -1.7%      -5.88
+  675  Director            Technology                  $25M+    any        10      20%      -2.6%      -5.94
+  676  Other/EVP           Energy                      $1M+     DD<2%      26      58%      -1.9%      -6.16
+  677  Director            Basic Materials             $100K+   any        32      41%      -1.8%      -6.27
+  678  Other/EVP           Financial Services          $100K+   DD<5%       6      33%      -3.5%      -6.32
+  679  Insider (other)     Technology                  $250K+   any        12      67%      -2.6%      -6.41
+  680  CEO                 Energy                      $500K+   any         9      33%      -3.0%      -6.59
+  681  all                 Energy                      $5M+     DD<2%      17      47%      -2.3%      -6.63
+  682  Other/EVP           Consumer Defensive          $500K+   DD<2%       8      25%      -3.2%      -6.74
+  683  all                 Basic Materials             $250K+   DD<2%      28      46%      -2.1%      -6.92
+  684  CFO                 all                         $100K+   any       106      48%      -1.5%      -7.20
+  685  President           Financial Services          $100K+   any         7      43%      -3.8%      -7.37
+  686  Insider (other)     Industrials                 $250K+   DD<5%       9      56%      -3.4%      -7.53
+  687  CEO                 Basic Materials             $1M+     DD<2%      10      30%      -3.3%      -7.66
+  688  Other/EVP           all                         $1M+     DD<2%      37      51%      -2.2%      -7.86
+  689  Other/EVP           Energy                      $5M+     DD<2%      14      50%      -3.2%      -8.51
+  690  President           Financial Services          $100K+   DD<5%       6      33%      -4.8%      -8.68
+  691  Director            Technology                  $5M+     DD<5%      11      18%      -3.6%      -8.68
+  692  all                 Basic Materials             $1M+     DD<5%      17      41%      -3.1%      -8.82
+  693  Other/EVP           Energy                      $100K+   DD<2%      35      57%      -2.5%      -8.87
+  694  Other/EVP           Consumer Defensive          $100K+   DD<5%      55      33%      -2.2%      -8.90
+  695  CEO                 Energy                      $500K+   DD<2%       7      29%      -4.6%      -8.98
+  696  Other/EVP           Consumer Defensive          $1M+     any         7      29%      -4.9%      -9.50
+  697  Insider (other)     Healthcare                  $250K+   any        16      63%      -3.4%      -9.55
+  698  Insider (other)     Healthcare                  $500K+   any        16      63%      -3.4%      -9.55
+  699  all                 Basic Materials             $100K+   DD<2%      34      44%      -2.7%      -9.67
+  700  all                 Healthcare                  $1M+     any        50      48%      -2.5%      -9.68
+  701  Director            Consumer Cyclical           $500K+   any        45      60%      -2.6%      -9.83
+  702  10% Owner           Financial Services          $5M+     any        21      33%      -3.2%      -9.89
+  703  all                 Consumer Cyclical           $5M+     DD<2%       6      67%      -5.5%      -9.93
+  704  Insider (other)     Healthcare                  $1M+     any        10      70%      -4.4%     -10.13
+  705  Other/EVP           Consumer Defensive          $100K+   any        75      32%      -2.4%     -10.16
+  706  CEO                 Basic Materials             $100K+   DD<5%      19      42%      -3.5%     -10.16
+  707  CEO                 Basic Materials             $250K+   DD<5%      19      42%      -3.5%     -10.16
+  708  Other/EVP           Energy                      $250K+   DD<2%      30      57%      -3.0%     -10.36
+  709  CFO                 Consumer Defensive          $250K+   any        10      50%      -4.6%     -10.65
+  710  CEO                 Energy                      $100K+   DD<5%      16      38%      -3.9%     -10.75
+  711  President           all                         $1M+     any         6      50%      -6.0%     -10.79
+  712  President           all                         $500K+   any        19      42%      -3.7%     -10.85
+  713  CEO                 Energy                      $250K+   DD<5%      11      36%      -4.8%     -11.48
+  714  all                 Energy                      $500K+   DD<5%      69      43%      -2.7%     -11.57
+  715  all                 Basic Materials             $500K+   any        52      35%      -3.0%     -11.78
+  716  10% Owner           Healthcare                  $1M+     DD<5%       8      25%      -5.8%     -12.11
+  717  Other/EVP           all                         $1M+     DD<5%      54      46%      -3.0%     -12.12
+  718  10% Owner           Healthcare                  $100K+   DD<5%      10      30%      -5.3%     -12.15
+  719  10% Owner           Healthcare                  $250K+   DD<5%      10      30%      -5.3%     -12.15
+  720  10% Owner           Healthcare                  $500K+   DD<5%      10      30%      -5.3%     -12.15
+  721  all                 Basic Materials             $100K+   any        92      39%      -2.7%     -12.38
+  722  Director            Basic Materials             $500K+   any        12      42%      -5.0%     -12.40
+  723  CFO                 Consumer Defensive          $250K+   DD<2%       7      43%      -6.4%     -12.46
+  724  all                 Basic Materials             $500K+   DD<2%      18      33%      -4.3%     -12.49
+  725  Director            Energy                      $100K+   DD<5%      63      46%      -3.1%     -12.68
+  726  Other/EVP           all                         $5M+     DD<2%      16      50%      -4.6%     -12.88
+  727  CEO                 Basic Materials             $1M+     DD<5%      13      31%      -5.1%     -12.96
+  728  Director            Basic Materials             $250K+   DD<2%       8      38%      -6.3%     -13.00
+  729  Other/EVP           Basic Materials             $100K+   DD<5%       7      57%      -6.9%     -13.44
+  730  all                 Energy                      $1M+     DD<5%      52      44%      -3.4%     -13.53
+  731  10% Owner           Basic Materials             $5M+     any         5       0%      -8.5%     -13.66
+  732  CEO                 Basic Materials             $500K+   DD<2%      12      33%      -5.6%     -13.82
+  733  all                 Energy                      $5M+     DD<5%      20      40%      -4.6%     -13.90
+  734  all                 Basic Materials             $250K+   DD<5%      39      44%      -3.8%     -13.98
+  735  Insider (other)     Industrials                 $1M+     any         6      33%      -7.9%     -14.16
+  736  CFO                 Financial Services          $100K+   any        12      33%      -5.7%     -14.17
+  737  CFO                 Consumer Defensive          $250K+   DD<5%       9      44%      -6.5%     -14.22
+  738  all                 Basic Materials             $100K+   DD<5%      51      43%      -3.6%     -14.22
+  739  all                 Communication Services      $25M+    any         8      63%      -6.9%     -14.28
+  740  all                 Basic Materials             $500K+   DD<5%      25      40%      -4.5%     -14.46
+  741  Insider (other)     Technology                  $500K+   any         6      67%      -8.1%     -14.55
+  742  Director            Basic Materials             $250K+   DD<5%      13      38%      -5.7%     -14.72
+  743  all                 Basic Materials             $250K+   any        73      38%      -3.5%     -14.95
+  744  Other/EVP           Financial Services          $100K+   any        11      36%      -6.4%     -15.27
+  745  CEO                 Basic Materials             $500K+   DD<5%      16      38%      -5.5%     -15.35
+  746  Other/EVP           Energy                      $500K+   DD<5%      41      46%      -4.1%     -15.40
+  747  Insider (other)     Industrials                 $100K+   DD<5%      13      38%      -6.1%     -15.62
+  748  CFO                 Financial Services          $100K+   DD<5%       7      29%      -8.0%     -15.65
+  749  Other/EVP           Energy                      $1M+     DD<5%      38      47%      -4.4%     -15.86
+  750  all                 Basic Materials             $1M+     any        31      29%      -4.6%     -15.94
+  751  Insider (other)     Healthcare                  $100K+   any        19      53%      -5.5%     -16.26
+  752  Other/EVP           Consumer Defensive          $1M+     DD<5%       5       0%     -10.1%     -16.28
+  753  Director            Energy                      $500K+   any        39      38%      -4.5%     -16.33
+  754  Other/EVP           Energy                      $5M+     DD<5%      17      41%      -5.8%     -16.37
+  755  Insider (other)     Industrials                 $500K+   any        10      40%      -7.4%     -16.93
+  756  10% Owner           Basic Materials             $100K+   any         9       0%      -7.8%     -17.06
+  757  10% Owner           Basic Materials             $250K+   any         9       0%      -7.8%     -17.06
+  758  10% Owner           Basic Materials             $500K+   any         9       0%      -7.8%     -17.06
+  759  10% Owner           Basic Materials             $1M+     any         9       0%      -7.8%     -17.06
+  760  CEO                 Real Estate                 $250K+   any         7      14%      -9.0%     -17.53
+  761  Other/EVP           all                         $100K+   any       236      43%      -3.3%     -18.20
+  762  Other/EVP           all                         $500K+   any       102      42%      -4.0%     -18.36
+  763  Insider (other)     Consumer Cyclical           $100K+   any        11      36%      -7.7%     -18.36
+  764  Director            Consumer Cyclical           $5M+     any         5      20%     -11.5%     -18.55
+  765  President           Communication Services      $100K+   any         6      33%     -10.7%     -19.17
+  766  President           Communication Services      $250K+   any         6      33%     -10.7%     -19.17
+  767  Other/EVP           all                         $5M+     DD<5%      20      40%      -6.6%     -19.75
+  768  CFO                 Technology                  $250K+   any         5      40%     -12.3%     -19.79
+  769  Insider (other)     Industrials                 $250K+   any        12      42%      -8.0%     -19.79
+  770  Director            Energy                      $250K+   DD<5%      35      40%      -5.6%     -20.04
+  771  Director            Basic Materials             $250K+   any        21      33%      -6.6%     -20.13
+  772  CFO                 Consumer Defensive          $100K+   DD<2%       8      38%      -9.8%     -20.43
+  773  CEO                 Energy                      $250K+   any        18      33%      -7.2%     -20.69
+  774  CEO                 Real Estate                 $100K+   any         8      13%     -10.0%     -20.82
+  775  Other/EVP           Energy                      $250K+   DD<5%      45      44%      -5.6%     -21.35
+  776  CFO                 Energy                      $100K+   any        13      54%      -8.6%     -21.99
+  777  all                 Basic Materials             $5M+     any         7       0%     -11.4%     -22.12
+  778  CFO                 Technology                  $100K+   any        12      42%      -8.9%     -22.19
+  779  CFO                 Consumer Defensive          $100K+   DD<5%      11      36%      -9.3%     -22.21
+  780  CEO                 Real Estate                 $500K+   any         6       0%     -13.0%     -23.27
+  781  President           Energy                      $100K+   DD<5%       7      29%     -12.0%     -23.44
+  782  Insider (other)     Basic Materials             $100K+   any         5      40%     -14.8%     -23.75
+  783  10% Owner           Healthcare                  $100K+   any        14      21%      -9.0%     -23.88
+  784  10% Owner           Healthcare                  $250K+   any        14      21%      -9.0%     -23.88
+  785  10% Owner           Financial Services          $25M+    any         8      13%     -11.7%     -24.24
+  786  10% Owner           Healthcare                  $500K+   any        13      23%      -9.5%     -24.37
+  787  Insider (other)     Industrials                 $100K+   any        16      31%      -9.0%     -24.94
+  788  Other/EVP           all                         $250K+   any       147      44%      -5.1%     -25.20
+  789  10% Owner           Healthcare                  $1M+     any        11      18%     -10.7%     -25.59
+  790  Other/EVP           Energy                      $100K+   DD<5%      52      44%      -6.5%     -25.73
+  791  all                 Energy                      $250K+   DD<5%      95      41%      -5.7%     -25.94
+  792  Other/EVP           Basic Materials             $250K+   any         8      50%     -12.6%     -26.22
+  793  Director            Energy                      $1M+     any        22      27%      -8.7%     -26.80
+  794  all                 Energy                      $100K+   DD<5%     148      43%      -5.5%     -27.37
+  795  Director            Energy                      $250K+   any        69      41%      -6.7%     -28.31
+  796  Other/EVP           Basic Materials             $100K+   any        13      38%     -11.1%     -28.36
+  797  Other/EVP           Energy                      $100K+   any        72      43%      -6.8%     -29.18
+  798  CFO                 Consumer Defensive          $100K+   any        13      38%     -11.4%     -29.20
+  799  Director            Consumer Cyclical           $1M+     any        26      50%      -9.3%     -30.16
+  800  all                 Energy                      $500K+   any       104      38%      -6.6%     -30.42
+  801  President           Energy                      $100K+   DD<2%       6      17%     -17.4%     -31.26
+  802  Other/EVP           all                         $1M+     any        70      41%      -7.6%     -32.21
+  803  President           Energy                      $250K+   any         8      25%     -15.7%     -32.64
+  804  Other/EVP           Energy                      $500K+   any        50      40%      -8.4%     -32.77
+  805  CFO                 Energy                      $100K+   DD<5%       8      38%     -15.9%     -33.06
+  806  Director            Energy                      $100K+   any       120      39%      -7.0%     -33.38
+  807  Other/EVP           Energy                      $1M+     any        46      41%      -8.8%     -33.55
+  808  Other/EVP           Energy                      $5M+     any        23      35%     -11.2%     -35.18
+  809  Director            Energy                      $5M+     any         8      13%     -17.2%     -35.79
+  810  Other/EVP           all                         $5M+     any        28      32%     -11.1%     -37.09
+  811  Other/EVP           Energy                      $250K+   any        58      40%      -9.2%     -37.16
+  812  CEO                 Energy                      $100K+   any        27      30%     -11.7%     -38.47
+  813  all                 Energy                      $250K+   any       157      39%      -7.9%     -39.75
+  814  all                 Energy                      $1M+     any        74      35%      -9.5%     -40.99
+  815  all                 Energy                      $5M+     any        31      29%     -12.8%     -43.84
+  816  all                 Energy                      $100K+   any       251      39%      -8.2%     -45.35
+  817  President           Energy                      $100K+   any        16      25%     -19.2%     -53.34
+  818  Other/EVP           Consumer Cyclical           $500K+   any         7      14%     -43.4%     -84.52
+  819  Other/EVP           Consumer Cyclical           $100K+   any        11      18%     -43.5%    -104.21
+  820  Other/EVP           Consumer Cyclical           $250K+   any        10      10%     -52.5%    -120.84
+
+==============================================================================================================
