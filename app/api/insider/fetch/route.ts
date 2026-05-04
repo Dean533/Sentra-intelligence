@@ -10,7 +10,7 @@ const SELECT_COLS =
   'id, ticker, insider_name, insider_cik, role, is_director, is_officer, officer_title, ' +
   'transaction_date, transaction_code, transaction_direction, ' +
   'shares, price_per_share, total_value, shares_owned_after, purchase_pct_market_cap, ' +
-  'filed_date, source_url'
+  'filed_date, source_url, sentra_score'
 
 // Attach conviction_score from insider_signals_monthly, matched by ticker + transaction month.
 async function attachScores(rows: any[]): Promise<any[]> {
@@ -131,6 +131,8 @@ export async function GET(req: Request) {
   const holdingsMin    = holdingsMinRaw ? parseFloat(holdingsMinRaw) : null
   const minValueRaw    = searchParams.get('min_value')
   const minValue       = minValueRaw ? parseInt(minValueRaw, 10) : null
+  const minScoreRaw    = searchParams.get('min_score')
+  const minScore       = minScoreRaw ? parseInt(minScoreRaw, 10) : null
   const limit          = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)))
   const page           = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
   const offset         = (page - 1) * limit
@@ -318,6 +320,9 @@ export async function GET(req: Request) {
 
     // Minimum trade value
     if (minValue !== null) q = q.gte('total_value', minValue)
+
+    // Minimum sentra score
+    if (minScore !== null) q = q.gte('sentra_score', minScore)
 
     // Date range — when cluster mode is active and no explicit startDate, use
     // clusterFrom as the lower bound so the batch query doesn't pull all-time history.

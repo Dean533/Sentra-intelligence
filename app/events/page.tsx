@@ -116,6 +116,7 @@ type InsiderRow = {
   source_url: string | null
   classification: string | null
   conviction_score: number | null
+  sentra_score: number | null
 }
 
 // ─── EVENTS FEED (SEC Filings + News) ────────────────────────────────────────
@@ -371,9 +372,10 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
   const [endDate,     setEndDate]     = useState('')
   const [holdingsPct, setHoldingsPct] = useState('any')
   const [clusterMin,  setClusterMin]  = useState('none')
+  const [scoreFilter, setScoreFilter] = useState('all')
   const router = useRouter()
 
-  useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct])
+  useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter])
 
   useEffect(() => {
     setLoading(true)
@@ -386,11 +388,12 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
     if (clusterMin !== 'none')  params.set('cluster_min', clusterMin)
     if (holdingsPct !== 'any')  params.set('holdings_min', holdingsPct)
     if (valueFilter !== 'all')  params.set('min_value', valueFilter)
+    if (scoreFilter !== 'all')  params.set('min_score', scoreFilter)
     fetch(`/api/insider/fetch?${params}`)
       .then((r) => r.json())
       .then((d) => { setRows(d.rows ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
       .finally(() => setLoading(false))
-  }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, page])
+  }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter, page])
 
   const filteredRows = rows
 
@@ -470,8 +473,10 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
             : <span style={{ color: '#3a4a60' }}>—</span>
           }
         </td>
-        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: scoreColor(row.conviction_score) }}>
-          {row.conviction_score != null ? row.conviction_score : <span style={{ color: '#3a4a60' }}>—</span>}
+        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: cls === 'ROUTINE' ? '#3a4a60' : scoreColor(row.sentra_score) }}>
+          {cls === 'ROUTINE'
+            ? <span style={{ color: '#3a4a60' }}>N/A</span>
+            : row.sentra_score != null ? row.sentra_score : <span style={{ color: '#3a4a60' }}>—</span>}
         </td>
         <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 600, color: txColor, fontVariantNumeric: 'tabular-nums' }}>
           {fmtCurrency(row.total_value)}
@@ -513,6 +518,15 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
           <option value="1000000">$1M+</option>
           <option value="5000000">$5M+</option>
           <option value="10000000">$10M+</option>
+        </select>
+
+        <select value={scoreFilter} onChange={(e) => setScoreFilter(e.target.value)} style={dropdownStyle}>
+          <option value="all">All Scores</option>
+          <option value="50">50+</option>
+          <option value="60">60+</option>
+          <option value="70">70+</option>
+          <option value="80">80+</option>
+          <option value="90">90+</option>
         </select>
       </div>
 
