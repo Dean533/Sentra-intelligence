@@ -365,7 +365,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
   const [clusterMin,  setClusterMin]  = useState('none')
   const router = useRouter()
 
-  useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, startDate, endDate, clusterMin, holdingsPct])
+  useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct])
 
   useEffect(() => {
     setLoading(true)
@@ -375,22 +375,18 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
     if (roleFilter !== 'all') params.set('role', roleFilter)
     if (startDate)            params.set('start_date', startDate)
     if (endDate)              params.set('end_date', endDate)
-    if (clusterMin !== 'none') params.set('cluster_min', clusterMin)
-    if (holdingsPct !== 'any') params.set('holdings_min', holdingsPct)
+    if (clusterMin !== 'none')  params.set('cluster_min', clusterMin)
+    if (holdingsPct !== 'any')  params.set('holdings_min', holdingsPct)
+    if (valueFilter !== 'all')  params.set('min_value', valueFilter)
     fetch(`/api/insider/fetch?${params}`)
       .then((r) => r.json())
       .then((d) => { setRows(d.rows ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
       .finally(() => setLoading(false))
-  }, [ticker, dirFilter, clsFilter, roleFilter, startDate, endDate, clusterMin, holdingsPct, page])
+  }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, page])
 
-  // 'other' role and value filter remain client-side (negation / local threshold)
-  const filteredRows = rows.filter((row) => {
-    if (roleFilter === 'other' && !matchesRole(row, 'other')) return false
-    if (valueFilter !== 'all'  && (row.total_value ?? 0) < parseInt(valueFilter)) return false
-    return true
-  })
+  const filteredRows = rows
 
-  const hasClientFilter = roleFilter === 'other' || valueFilter !== 'all'
+  const hasClientFilter = false
   const pageStart       = (page - 1) * 50 + 1
   const pageEnd         = Math.min(page * 50, total)
   const countLabel      = dirFilter === 'buys' ? 'purchases' : dirFilter === 'sells' ? 'sales' : 'transactions'
