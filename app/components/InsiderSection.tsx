@@ -24,7 +24,7 @@ type Trade = {
   total_value: number | null
   shares: number | null
   price_per_share: number | null
-  is_opportunistic: boolean
+  classification: string
 }
 
 type ConvictionData = {
@@ -194,7 +194,8 @@ function TradeRow({ trade, marketCap }: { trade: Trade; marketCap: number | null
   const isBuy       = trade.transaction_direction === 'buy' || trade.transaction_code === 'P'
   const dirColor    = isBuy ? '#3fb950' : '#f85149'
   const dirLabel    = isBuy ? 'BUY' : 'SELL'
-  const accentColor = trade.is_opportunistic ? (isBuy ? '#3fb950' : '#f85149') : 'transparent'
+  const isOpp       = trade.classification === 'OPPORTUNISTIC'
+  const accentColor = isOpp ? (isBuy ? '#3fb950' : '#f85149') : 'transparent'
 
   const pctOfMktCap =
     trade.total_value != null && marketCap != null && marketCap > 0
@@ -205,7 +206,7 @@ function TradeRow({ trade, marketCap }: { trade: Trade; marketCap: number | null
     <div style={{
       padding: '14px 0 14px 16px',
       borderLeft: `2px solid ${accentColor}`,
-      marginLeft: trade.is_opportunistic ? '0' : '2px',
+      marginLeft: isOpp ? '0' : '2px',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>

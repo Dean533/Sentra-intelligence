@@ -28,7 +28,7 @@ type Trade = {
   shares: number | null
   price_per_share: number | null
   insider_cik: string | null
-  is_opportunistic: boolean
+  classification: string
 }
 
 type TickerMeta = {
@@ -93,7 +93,7 @@ function buildVerdictProse(signal: Signal, ticker: string, trades: Trade[]): str
   const sells = signal.opportunistic_sell_count
 
   // Find the largest opportunistic trade to name-drop
-  const oppTrades = trades.filter((t) => t.is_opportunistic)
+  const oppTrades = trades.filter((t) => t.classification === 'OPPORTUNISTIC')
   const topTrade  = oppTrades.sort((a, b) => (b.total_value ?? 0) - (a.total_value ?? 0))[0] ?? null
 
   let sentence1 = ''
@@ -120,8 +120,8 @@ function buildVerdictProse(signal: Signal, ticker: string, trades: Trade[]): str
 
 // ─── Classification badge ─────────────────────────────────────────────────────
 
-function ClassBadge({ isOpportunistic }: { isOpportunistic: boolean }) {
-  if (isOpportunistic) {
+function ClassBadge({ classification }: { classification: string }) {
+  if (classification === 'OPPORTUNISTIC') {
     return (
       <span style={{
         fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px',
@@ -130,6 +130,18 @@ function ClassBadge({ isOpportunistic }: { isOpportunistic: boolean }) {
         border: '1px solid rgba(63,185,80,0.25)',
       }}>
         OPPORTUNISTIC
+      </span>
+    )
+  }
+  if (classification === 'UNCLASSIFIABLE') {
+    return (
+      <span style={{
+        fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
+        padding: '2px 7px', borderRadius: '4px',
+        background: 'rgba(158,203,255,0.08)', color: '#9ecbff',
+        border: '1px solid rgba(158,203,255,0.15)',
+      }}>
+        UNCLASSIFIABLE
       </span>
     )
   }
@@ -378,7 +390,7 @@ export default function InsiderAnalysisPage() {
                           {trade.price_per_share != null ? `$${trade.price_per_share.toFixed(2)}` : '—'}
                         </td>
                         <td style={{ padding: '10px 12px' }}>
-                          <ClassBadge isOpportunistic={trade.is_opportunistic} />
+                          <ClassBadge classification={trade.classification} />
                         </td>
                       </tr>
                     )
