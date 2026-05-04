@@ -115,6 +115,7 @@ type InsiderRow = {
   shares_owned_after: number | null
   source_url: string | null
   classification: string | null
+  conviction_score: number | null
 }
 
 // ─── EVENTS FEED (SEC Filings + News) ────────────────────────────────────────
@@ -335,6 +336,13 @@ function holdingsPctOf(row: InsiderRow): number | null {
   return (s / before) * 100
 }
 
+function scoreColor(s: number | null): string {
+  if (s == null) return '#3a4a60'
+  if (s >= 70)   return '#3fb950'
+  if (s >= 50)   return '#d29922'
+  return '#7b8498'
+}
+
 function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string; capped: boolean } | null {
   const s     = row.shares
   const after = row.shares_owned_after
@@ -391,7 +399,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
   const pageEnd         = Math.min(page * 50, total)
   const countLabel      = dirFilter === 'buys' ? 'purchases' : dirFilter === 'sells' ? 'sales' : 'transactions'
 
-  const COLS = ['Ticker', 'Insider Name', 'Role', 'Date', 'Type', 'Price', 'Shares', 'Δ Hold', 'Value']
+  const COLS = ['Ticker', 'Insider Name', 'Role', 'Date', 'Type', 'Price', 'Shares', 'Δ Hold', 'Score', 'Value']
 
   // In cluster mode, group by ticker (sorted by each group's most recent trade) then flatten.
   const displayRows: InsiderRow[] = (() => {
@@ -461,6 +469,9 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
               </span>
             : <span style={{ color: '#3a4a60' }}>—</span>
           }
+        </td>
+        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: scoreColor(row.conviction_score) }}>
+          {row.conviction_score != null ? row.conviction_score : <span style={{ color: '#3a4a60' }}>—</span>}
         </td>
         <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 600, color: txColor, fontVariantNumeric: 'tabular-nums' }}>
           {fmtCurrency(row.total_value)}
@@ -574,7 +585,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
           <tbody>
             {loading && Array.from({ length: 8 }).map((_, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #141920' }}>
-                {Array.from({ length: 9 }).map((_, j) => (
+                {Array.from({ length: 10 }).map((_, j) => (
                   <td key={j} style={{ padding: '11px 10px' }}>
                     <div style={{ height: '13px', borderRadius: '4px', background: '#1a1f2a', width: j === 1 ? '140px' : '64px', animation: 'pulse 1.5s ease-in-out infinite' }} />
                   </td>
@@ -584,7 +595,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
 
             {!loading && filteredRows.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ padding: '56px 24px', textAlign: 'center' }}>
+                <td colSpan={10} style={{ padding: '56px 24px', textAlign: 'center' }}>
                   <div style={{ color: '#3a4a60', fontSize: '12px', letterSpacing: '2px', marginBottom: '8px' }}>NO DATA</div>
                   <div style={{ color: '#7b8498', fontSize: '14px' }}>No {countLabel} match these filters.</div>
                 </td>
@@ -661,7 +672,7 @@ export default function EventsPage() {
   }, [])
 
   return (
-    <div style={{ padding: '48px 40px 80px', maxWidth: '1000px', margin: '0 auto' }}>
+    <div style={{ padding: '48px 40px 80px', maxWidth: '1400px', margin: '0 auto' }}>
 
       {/* heading */}
       <p style={{ color: '#7b8498', fontSize: '12px', letterSpacing: '2px', margin: '0 0 10px' }}>

@@ -15,16 +15,17 @@ const TAKE_PROFIT_PCT  =  0.25
 
 type SignalRow = { ticker: string; conviction_score: number; signal_direction: string; is_inferred_opportunistic: boolean | null }
 type OrderResult = {
-  ticker:           string
-  tier:             number
-  skipped?:         true
-  reason?:          string
-  qty?:             number
-  entry_price?:     number
-  stop_loss?:       number
-  take_profit?:     number
+  ticker:            string
+  tier:              number
+  source?:           'signals_monthly' | 'insider_transactions'
+  skipped?:          true
+  reason?:           string
+  qty?:              number
+  entry_price?:      number
+  stop_loss?:        number
+  take_profit?:      number
   conviction_score?: number
-  alpaca_order_id?: string
+  alpaca_order_id?:  string
 }
 
 async function processSignals(
@@ -79,6 +80,65 @@ async function processSignals(
     }
 
     results.push({ ticker, tier, qty, entry_price: price, stop_loss: stopLoss, take_profit: takeProfit, conviction_score: signal.conviction_score, alpaca_order_id: order.id })
+  }
+
+  return results
+}
+
+type InsiderTxRow = { ticker: string; sentra_score: number; transaction_date: string }
+
+async function processInsiderTrades(
+  trades:     InsiderTxRow[],
+  prices:     Record<string, number>,
+  allocation: number,
+): Promise<OrderResult[]> {
+  const results: OrderResult[] = []
+
+  for (const trade of trades) {
+    const ticker     = trade.ticker
+    const price      = prices[ticker]
+    if (price == null) {
+      results.push({ ticker, tier: 1, source: 'insider_transactions', skipped: true, reason: 'no price data' })
+      continue
+    }
+
+    const qty        = Math.floor(allocation / price)
+    const stopLoss   = Math.round(price * (1 - STOP_LOSS_PCT) * 100) / 100
+    const takeProfit = Math.round(price * (1 + TAKE_PROFIT_PCT) * 100) / 100
+
+    if (qty <= 0) {
+      results.push({ ticker, tier: 1, source: 'insider_transactions', skipped: true, reason: `price too high for allocation ($${price} > $${allocation.toFixed(0)})` })
+      continue
+    }
+
+    let order: any
+    try {
+      order = await placeOrder(ticker, qty, 'buy', price, stopLoss, takeProfit)
+    } catch (e: any) {
+      results.push({ ticker, tier: 1, source: 'insider_transactions', skipped: true, reason: e.message })
+      continue
+    }
+
+    const signalMonth = trade.transaction_date.slice(0, 7) + '-01'
+    const { error: insertErr } = await supabase
+      .from('paper_trades')
+      .insert({
+        ticker,
+        entry_price:      price,
+        shares:           qty,
+        conviction_score: trade.sentra_score,
+        signal_month:     signalMonth,
+        alpaca_order_id:  order.id,
+        tier:             1,
+        status:           'open',
+      })
+
+    if (insertErr) {
+      console.error(`[execute] paper_trades insert failed for ${ticker} (insider_transactions):`, insertErr.message)
+    }
+
+    console.log(`[execute] ${ticker}: placed from insider_transactions (sentra_score=${trade.sentra_score})`)
+    results.push({ ticker, tier: 1, source: 'insider_transactions', qty, entry_price: price, stop_loss: stopLoss, take_profit: takeProfit, conviction_score: trade.sentra_score, alpaca_order_id: order.id })
   }
 
   return results
@@ -188,6 +248,51 @@ async function runExecute(req: Request): Promise<NextResponse> {
 
   const alreadyHeld = classificationVerified.length - eligible.length
 
+  // ── 2b. Fetch high-score insider_transactions trades from the last 7 days ────
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const todayStr     = new Date().toISOString().split('T')[0]
+
+  const { data: rawItRows } = await supabase
+    .from('insider_transactions')
+    .select('ticker, sentra_score, transaction_date')
+    .eq('transaction_code', 'P')
+    .gte('sentra_score', 70)
+    .gte('transaction_date', sevenDaysAgo)
+    .order('sentra_score', { ascending: false })
+
+  // Deduplicate by ticker — highest sentra_score row wins (already sorted desc)
+  const itSeenTickers = new Set<string>()
+  const itDeduped = (rawItRows ?? []).filter((r: any) => {
+    const t = (r.ticker as string).toUpperCase()
+    if (itSeenTickers.has(t)) return false
+    itSeenTickers.add(t)
+    return true
+  }) as InsiderTxRow[]
+
+  // Remove tickers already held on Alpaca
+  const itNotHeld = itDeduped.filter(r => !heldTickers.has(r.ticker.toUpperCase()))
+
+  // Remove tickers already being traded via signals_monthly this run
+  const signalsMonthlyTickers = new Set(eligible.map(s => s.ticker.toUpperCase()))
+  const itNotOverlap = itNotHeld.filter(r => !signalsMonthlyTickers.has(r.ticker.toUpperCase()))
+
+  // Remove tickers already in paper_trades today (avoid re-firing on repeated cron calls)
+  let itEligible: InsiderTxRow[] = itNotOverlap
+  if (itNotOverlap.length > 0) {
+    const { data: tradedToday } = await supabase
+      .from('paper_trades')
+      .select('ticker')
+      .in('ticker', itNotOverlap.map(r => r.ticker))
+      .gte('created_at', todayStr)
+    const alreadyTradedToday = new Set((tradedToday ?? []).map((r: any) => (r.ticker as string).toUpperCase()))
+    itEligible = itNotOverlap.filter(r => !alreadyTradedToday.has(r.ticker.toUpperCase()))
+  }
+
+  console.log(
+    `[execute] insider_transactions high-score: ${rawItRows?.length ?? 0} raw, ` +
+    `${itDeduped.length} unique tickers, ${itEligible.length} eligible after filters`
+  )
+
   // ── 3. Reattach stops for already-held signal positions ───────────────────
   type StopReattachResult = { ticker: string; action: string; stop_price?: number; order_id?: string; error?: string }
   const stopReattachResults: StopReattachResult[] = []
@@ -271,8 +376,11 @@ async function runExecute(req: Request): Promise<NextResponse> {
     })
   }
 
-  // ── 6. Fetch prices for all confirmed tickers in one call ─────────────────
-  const allTickers = confirmed.map(s => s.ticker)
+  // ── 6. Fetch prices for all tickers (signals_monthly + insider_transactions) ─
+  const allTickers = [
+    ...confirmed.map(s => s.ticker),
+    ...itEligible.map(r => r.ticker),
+  ]
   let prices: Record<string, number>
   try {
     prices = await getLatestPrices(allTickers)
@@ -280,15 +388,21 @@ async function runExecute(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: `Alpaca getLatestPrices failed: ${e.message}` }, { status: 502 })
   }
 
-  // ── 7. Process both tiers ─────────────────────────────────────────────────
+  // ── 7. Process signals_monthly tiers + insider_transactions trades ─────────
   const tier1Allocation = tier1.length > 0 ? TIER1_BUDGET / tier1.length : 0
+  const itAllocation    = itEligible.length > 0 ? TIER1_BUDGET / itEligible.length : 0
 
-  const [tier1Results, tier2Results] = await Promise.all([
+  const [tier1Results, tier2Results, itResults] = await Promise.all([
     processSignals(tier1, prices, tier1Allocation, 1, signalMonth),
     processSignals(tier2, prices, TIER2_ALLOCATION, 2, signalMonth),
+    processInsiderTrades(itEligible, prices, itAllocation),
   ])
 
-  const allResults = [...tier1Results, ...tier2Results]
+  const allResults = [
+    ...tier1Results.map(r => ({ ...r, source: 'signals_monthly' as const })),
+    ...tier2Results.map(r => ({ ...r, source: 'signals_monthly' as const })),
+    ...itResults,
+  ]
 
   return NextResponse.json({
     signal_month:        signalMonth,
@@ -296,16 +410,22 @@ async function runExecute(req: Request): Promise<NextResponse> {
     unverified_skipped:  unverifiedCount,
     stop_reattach:       stopReattachResults,
     tier1: {
-      signals:       tier1.length,
+      signals:         tier1.length,
       allocation_each: tier1Allocation,
-      orders_placed: tier1Results.filter(r => !r.skipped).length,
-      skipped:       tier1Results.filter(r => r.skipped).length,
+      orders_placed:   tier1Results.filter(r => !r.skipped).length,
+      skipped:         tier1Results.filter(r => r.skipped).length,
     },
     tier2: {
-      signals:       tier2.length,
+      signals:         tier2.length,
       allocation_each: TIER2_ALLOCATION,
-      orders_placed: tier2Results.filter(r => !r.skipped).length,
-      skipped:       tier2Results.filter(r => r.skipped).length,
+      orders_placed:   tier2Results.filter(r => !r.skipped).length,
+      skipped:         tier2Results.filter(r => r.skipped).length,
+    },
+    insider_transactions: {
+      signals:         itEligible.length,
+      allocation_each: itAllocation,
+      orders_placed:   itResults.filter(r => !r.skipped).length,
+      skipped:         itResults.filter(r => r.skipped).length,
     },
     results: allResults,
   })
