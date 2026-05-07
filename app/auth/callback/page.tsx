@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase-browser'
+import { getSupabase } from '@/lib/supabase-browser'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -14,7 +14,7 @@ export default function AuthCallbackPage() {
       router.replace('/watchlist')
       return
     }
-    supabase.auth.exchangeCodeForSession(code)
+    getSupabase().auth.exchangeCodeForSession(code)
       .then(({ error }) => {
         if (error) setError(error.message)
         else router.replace('/watchlist')

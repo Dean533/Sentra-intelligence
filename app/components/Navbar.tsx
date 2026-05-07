@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase-browser'
+import { getSupabase } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
 
 const NAV_LINKS = [
@@ -23,8 +23,8 @@ export default function Navbar() {
 
   // Sync auth state
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    getSupabase().auth.getUser().then(({ data: { user } }) => setUser(user))
+    const { data: { subscription } } = getSupabase().auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
     return () => subscription.unsubscribe()
@@ -40,7 +40,7 @@ export default function Navbar() {
   }, [showMenu])
 
   async function signOut() {
-    await supabase.auth.signOut()
+    await getSupabase().auth.signOut()
     setShowMenu(false)
     router.push('/login')
   }

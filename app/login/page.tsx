@@ -1,10 +1,10 @@
 'use client'
 
-import { supabase } from '@/lib/supabase-browser'
+import { getSupabase } from '@/lib/supabase-browser'
 
 export default function LoginPage() {
   async function signInWithGoogle() {
-    await supabase.auth.signInWithOAuth({
+    await getSupabase().auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: 'https://www.sentraintelligence.com/auth/callback',

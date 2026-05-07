@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase-browser'
+import { getSupabase } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -220,7 +220,7 @@ export default function PortfolioPage() {
 
   // ── Auth check ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    getSupabase().auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.replace('/login'); return }
       setUser(user)
       setAuthReady(true)
@@ -231,7 +231,7 @@ export default function PortfolioPage() {
   useEffect(() => {
     if (!authReady || !user) return
     setDbLoading(true)
-    supabase
+    getSupabase()
       .from('watchlists')
       .select('name, description, tickers')
       .eq('user_id', user.id)
@@ -246,7 +246,7 @@ export default function PortfolioPage() {
   async function save(p: Portfolio) {
     setPortfolio(p)
     if (!user) return
-    await supabase.from('watchlists').upsert(
+    await getSupabase().from('watchlists').upsert(
       { user_id: user.id, name: p.name, description: p.description, tickers: p.tickers, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' }
     )
