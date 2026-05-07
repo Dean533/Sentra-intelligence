@@ -1,21 +1,33 @@
 'use client'
 
-// Supabase watchlists table (run once in Supabase SQL editor):
-//
+// Supabase watchlists table (run once):
 //   CREATE TABLE watchlists (
-//     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-//     user_id     UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
-//     name        TEXT NOT NULL,
-//     description TEXT DEFAULT '',
-//     tickers     TEXT[] DEFAULT '{}',
-//     created_at  TIMESTAMPTZ DEFAULT NOW(),
-//     updated_at  TIMESTAMPTZ DEFAULT NOW()
+//     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+//     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+//     name TEXT NOT NULL, description TEXT DEFAULT '',
+//     tickers TEXT[] DEFAULT '{}',
+//     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
 //   );
 //   ALTER TABLE watchlists ENABLE ROW LEVEL SECURITY;
 //   CREATE POLICY "own watchlist" ON watchlists FOR ALL
 //     USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+//
+// Supabase portfolio_trades table (run once):
+//   CREATE TABLE portfolio_trades (
+//     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+//     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+//     ticker TEXT NOT NULL,
+//     shares NUMERIC NOT NULL,
+//     cost_per_share NUMERIC NOT NULL,
+//     trade_date DATE NOT NULL,
+//     direction TEXT DEFAULT 'buy',
+//     created_at TIMESTAMPTZ DEFAULT NOW()
+//   );
+//   ALTER TABLE portfolio_trades ENABLE ROW LEVEL SECURITY;
+//   CREATE POLICY "own trades" ON portfolio_trades FOR ALL
+//     USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase-browser'
@@ -46,6 +58,19 @@ type InsiderRow = {
   classification: string | null; sentra_score: number | null
 }
 
+type PortfolioTrade = {
+  id: string; ticker: string
+  shares: number; cost_per_share: number
+  trade_date: string; direction: 'buy' | 'sell'
+}
+
+type Position = {
+  totalShares: number; avgCost: number; totalCostBasis: number
+  marketValue: number | null
+  gainDollar: number | null; gainPct: number | null
+  dayChangeDollar: number | null
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtVolume(n: number | null): string {
@@ -71,6 +96,14 @@ function fmtCurrency(val: number | null): string {
   return `$${val.toLocaleString()}`
 }
 
+function fmtDollar(n: number | null, forceSign = false): string {
+  if (n == null) return '—'
+  const sign = forceSign && n > 0 ? '+' : ''
+  if (Math.abs(n) >= 1e6) return `${sign}$${(n / 1e6).toFixed(2)}M`
+  if (Math.abs(n) >= 1e3) return `${sign}$${(Math.abs(n) / 1e3).toFixed(1)}K${n < 0 ? '' : ''}`
+  return `${sign}$${n.toFixed(2)}`
+}
+
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
@@ -90,6 +123,11 @@ function scoreColor(s: number | null): string {
   return '#7b8498'
 }
 
+function gainColor(n: number | null): string {
+  if (n == null) return '#7b8498'
+  return n >= 0 ? '#3fb950' : '#f85149'
+}
+
 function txColor(code: string | null): string {
   if (!code) return '#7b8498'
   if (code.toUpperCase() === 'P') return '#3fb950'
@@ -106,6 +144,25 @@ function txLabel(code: string | null): string {
 
 function changeColor(pct: number | null): string {
   return pct == null ? '#7b8498' : pct >= 0 ? '#3fb950' : '#f85149'
+}
+
+function computePosition(ticker: string, trades: PortfolioTrade[], row: TickerRow): Position | null {
+  const t = trades.filter((tr) => tr.ticker === ticker)
+  if (t.length === 0) return null
+  let netShares = 0, costBasis = 0
+  for (const tr of t) {
+    if (tr.direction === 'buy') { netShares += tr.shares; costBasis += tr.shares * tr.cost_per_share }
+    else                        { netShares -= tr.shares; costBasis -= tr.shares * tr.cost_per_share }
+  }
+  if (netShares <= 0) return null
+  const avgCost = costBasis / netShares
+  const marketValue = row.price != null ? netShares * row.price : null
+  const gainDollar = marketValue != null ? marketValue - costBasis : null
+  const gainPct = costBasis > 0 && gainDollar != null ? (gainDollar / costBasis) * 100 : null
+  const dayChangeDollar = row.price != null && row.changePercent != null
+    ? netShares * row.price * (row.changePercent / 100)
+    : null
+  return { totalShares: netShares, avgCost, totalCostBasis: costBasis, marketValue, gainDollar, gainPct, dayChangeDollar }
 }
 
 const CLS_BADGE: Record<string, { color: string; bg: string; border: string }> = {
@@ -140,56 +197,50 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: '12px 14px', borderBottom: '1px solid #111620', verticalAlign: 'middle',
 }
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: '11px', color: '#4a5568',
+  letterSpacing: '0.5px', marginBottom: '5px', textTransform: 'uppercase',
+}
 
 // ─── Creation screen ──────────────────────────────────────────────────────────
 
 function CreateScreen({ onCreate }: { onCreate: (p: Portfolio) => void }) {
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
-
   function handleCreate() {
     const trimmed = name.trim()
     if (!trimmed) return
     onCreate({ name: trimmed, description: desc.trim(), tickers: [] })
   }
-
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0a0d12', color: '#e6edf3',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
+    <div style={{ minHeight: '100vh', background: '#0a0d12', color: '#e6edf3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: '420px', padding: '0 24px' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '8px', letterSpacing: '-0.5px' }}>
-          Create Your Portfolio
-        </h1>
-        <p style={{ fontSize: '13px', color: '#4a5568', marginBottom: '32px' }}>
-          Track insider signals for the tickers you care about.
-        </p>
+        <h1 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '8px', letterSpacing: '-0.5px' }}>Create Your Portfolio</h1>
+        <p style={{ fontSize: '13px', color: '#4a5568', marginBottom: '32px' }}>Track insider signals for the tickers you care about.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#7b8498', marginBottom: '6px' }}>
-              Portfolio name
-            </label>
-            <input value={name} onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
-              placeholder="Dean's Portfolio" autoFocus style={inputStyle} />
+            <label style={{ display: 'block', fontSize: '12px', color: '#7b8498', marginBottom: '6px' }}>Portfolio name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }} placeholder="Dean's Portfolio" autoFocus style={inputStyle} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#7b8498', marginBottom: '6px' }}>
-              Description <span style={{ color: '#3a4a60' }}>(optional)</span>
-            </label>
-            <input value={desc} onChange={(e) => setDesc(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
-              placeholder="Tracking tech insider signals" style={inputStyle} />
+            <label style={{ display: 'block', fontSize: '12px', color: '#7b8498', marginBottom: '6px' }}>Description <span style={{ color: '#3a4a60' }}>(optional)</span></label>
+            <input value={desc} onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }} placeholder="Tracking tech insider signals" style={inputStyle} />
           </div>
         </div>
-        <button onClick={handleCreate} disabled={!name.trim()}
-          style={{ ...btnPrimary, width: '100%', opacity: name.trim() ? 1 : 0.4, cursor: name.trim() ? 'pointer' : 'not-allowed' }}>
+        <button onClick={handleCreate} disabled={!name.trim()} style={{ ...btnPrimary, width: '100%', opacity: name.trim() ? 1 : 0.4, cursor: name.trim() ? 'pointer' : 'not-allowed' }}>
           Create Portfolio
         </button>
       </div>
     </div>
   )
+}
+
+// ─── Inline trade form ────────────────────────────────────────────────────────
+
+type TradeForm = { shares: string; cost: string; date: string; direction: 'buy' | 'sell' }
+
+function emptyTradeForm(): TradeForm {
+  return { shares: '', cost: '', date: new Date().toISOString().slice(0, 10), direction: 'buy' }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -218,6 +269,12 @@ export default function PortfolioPage() {
   const [insiderTrades, setInsiderTrades] = useState<InsiderRow[]>([])
   const [loadingTrades, setLoadingTrades] = useState(false)
 
+  // Trade tracking state
+  const [trades,        setTrades]        = useState<PortfolioTrade[]>([])
+  const [openTradeForm, setOpenTradeForm] = useState<string | null>(null)
+  const [tradeForm,     setTradeForm]     = useState<TradeForm>(emptyTradeForm)
+  const [savingTrade,   setSavingTrade]   = useState(false)
+
   // ── Auth check ──────────────────────────────────────────────────────────────
   useEffect(() => {
     getSupabase().auth.getUser().then(({ data: { user } }) => {
@@ -242,7 +299,17 @@ export default function PortfolioPage() {
       })
   }, [authReady, user])
 
-  // ── Persist to Supabase ─────────────────────────────────────────────────────
+  // ── Load portfolio trades ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!authReady || !user) return
+    getSupabase()
+      .from('portfolio_trades')
+      .select('id, ticker, shares, cost_per_share, trade_date, direction')
+      .eq('user_id', user.id)
+      .then(({ data }) => setTrades((data ?? []) as PortfolioTrade[]))
+  }, [authReady, user])
+
+  // ── Persist portfolio to Supabase ───────────────────────────────────────────
   async function save(p: Portfolio) {
     setPortfolio(p)
     if (!user) return
@@ -275,8 +342,29 @@ export default function PortfolioPage() {
       .finally(() => setLoadingTrades(false))
   }, [portfolio?.tickers.join(','), dirFilter])
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Trade form handlers ─────────────────────────────────────────────────────
+  function openForm(ticker: string) {
+    setOpenTradeForm(openTradeForm === ticker ? null : ticker)
+    setTradeForm(emptyTradeForm())
+  }
 
+  async function saveTrade(ticker: string) {
+    const shares = parseFloat(tradeForm.shares)
+    const cost   = parseFloat(tradeForm.cost)
+    if (!shares || !cost || !tradeForm.date || !user) return
+    setSavingTrade(true)
+    const { data: newTrade, error } = await getSupabase()
+      .from('portfolio_trades')
+      .insert({ user_id: user.id, ticker, shares, cost_per_share: cost, trade_date: tradeForm.date, direction: tradeForm.direction })
+      .select('id, ticker, shares, cost_per_share, trade_date, direction')
+      .single()
+    if (!error && newTrade) setTrades((prev) => [...prev, newTrade as PortfolioTrade])
+    setSavingTrade(false)
+    setOpenTradeForm(null)
+    setTradeForm(emptyTradeForm())
+  }
+
+  // ── Portfolio handlers ──────────────────────────────────────────────────────
   function startEdit() { setEditName(portfolio!.name); setEditDesc(portfolio!.description); setEditing(true) }
   function saveEdit() {
     if (!editName.trim()) return
@@ -305,29 +393,30 @@ export default function PortfolioPage() {
   }
 
   // ── Guards ──────────────────────────────────────────────────────────────────
-  if (!authReady || dbLoading) {
-    return <div style={{ minHeight: '100vh', background: '#0a0d12' }} />
-  }
-  if (!portfolio) {
-    return <CreateScreen onCreate={save} />
-  }
+  if (!authReady || dbLoading) return <div style={{ minHeight: '100vh', background: '#0a0d12' }} />
+  if (!portfolio)              return <CreateScreen onCreate={save} />
+
+  // ── Derived trade data ──────────────────────────────────────────────────────
+  const anyTrades   = trades.length > 0
+  const colCount    = anyTrades ? 13 : 11
+  const positions   = data.map((row) => computePosition(row.ticker, trades, row))
+  const totalMktVal = positions.reduce((s, p) => s + (p?.marketValue ?? 0), 0)
+  const totalCostB  = positions.reduce((s, p) => s + (p?.totalCostBasis ?? 0), 0)
+  const totalGain   = totalMktVal - totalCostB
+  const totalGainPc = totalCostB > 0 ? (totalGain / totalCostB) * 100 : 0
+  const totalDayChg = positions.reduce((s, p) => s + (p?.dayChangeDollar ?? 0), 0)
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#0a0d12', color: '#e6edf3', fontFamily: 'inherit' }}>
-      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '80px 40px 100px' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '80px 40px 100px' }}>
 
         {/* Header */}
         <div style={{ marginBottom: '32px' }}>
           {editing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '440px' }}>
-              <input value={editName} onChange={(e) => setEditName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }}
-                placeholder="Portfolio name" autoFocus
-                style={{ ...inputStyle, fontSize: '18px', fontWeight: 700 }} />
-              <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }}
-                placeholder="Description (optional)" style={inputStyle} />
+              <input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }} placeholder="Portfolio name" autoFocus style={{ ...inputStyle, fontSize: '18px', fontWeight: 700 }} />
+              <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }} placeholder="Description (optional)" style={inputStyle} />
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button onClick={saveEdit} style={btnPrimary}>Save</button>
                 <button onClick={() => setEditing(false)} style={btnSecondary}>Cancel</button>
@@ -336,12 +425,8 @@ export default function PortfolioPage() {
           ) : (
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
               <div>
-                <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.5px' }}>
-                  {portfolio.name}
-                </h1>
-                {portfolio.description && (
-                  <p style={{ fontSize: '13px', color: '#4a5568', margin: 0 }}>{portfolio.description}</p>
-                )}
+                <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.5px' }}>{portfolio.name}</h1>
+                {portfolio.description && <p style={{ fontSize: '13px', color: '#4a5568', margin: 0 }}>{portfolio.description}</p>}
               </div>
               <button onClick={startEdit} style={{ ...btnSecondary, flexShrink: 0 }}>Edit</button>
             </div>
@@ -370,9 +455,7 @@ export default function PortfolioPage() {
             {portfolio.tickers.map((t) => (
               <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#0d1117', border: '1px solid #1e2530', borderRadius: '6px', padding: '4px 10px', fontSize: '13px', fontWeight: 600, color: '#c9d1d9' }}>
                 {t}
-                <button onClick={() => removeTicker(t)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a5568', fontSize: '15px', lineHeight: 1, padding: 0 }}
-                  aria-label={`Remove ${t}`}>×</button>
+                <button onClick={() => removeTicker(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a5568', fontSize: '15px', lineHeight: 1, padding: 0 }} aria-label={`Remove ${t}`}>×</button>
               </div>
             ))}
           </div>
@@ -388,46 +471,239 @@ export default function PortfolioPage() {
 
         {loading && <div style={{ color: '#4a5568', fontSize: '13px', marginBottom: '24px' }}>Loading...</div>}
 
-        {/* Ticker table */}
+        {/* ── Ticker table ── */}
         {!loading && data.length > 0 && (
           <div style={{ marginBottom: '48px', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
                 <tr>
-                  {['Ticker', 'Company', 'Price', 'Change %', 'Volume', 'Mkt Cap', 'P/E', '52W High', '52W Low', 'Insider Score'].map((h) => (
-                    <th key={h} style={thStyle}>{h}</th>
-                  ))}
+                  <th style={thStyle}>Ticker</th>
+                  <th style={thStyle}>Company</th>
+                  <th style={thStyle}>Price</th>
+                  <th style={thStyle}>Change %</th>
+                  {anyTrades ? (
+                    <>
+                      <th style={thStyle}>Shares</th>
+                      <th style={thStyle}>Avg Cost</th>
+                      <th style={thStyle}>Total Cost</th>
+                      <th style={thStyle}>Mkt Value</th>
+                      <th style={thStyle}>Gain $</th>
+                      <th style={thStyle}>Gain %</th>
+                      <th style={thStyle}>Day Chg $</th>
+                    </>
+                  ) : (
+                    <>
+                      <th style={thStyle}>Volume</th>
+                      <th style={thStyle}>Mkt Cap</th>
+                      <th style={thStyle}>P/E</th>
+                      <th style={thStyle}>52W High</th>
+                      <th style={thStyle}>52W Low</th>
+                    </>
+                  )}
+                  <th style={thStyle}>Score</th>
+                  <th style={{ ...thStyle, width: '72px' }}></th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((row, i) => (
-                  <tr key={row.ticker} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
-                    <td style={tdStyle}>
-                      <Link href={`/t/${row.ticker}`} style={{ color: '#58a6ff', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>{row.ticker}</Link>
+                {data.map((row, i) => {
+                  const pos      = positions[i]
+                  const isOpen   = openTradeForm === row.ticker
+                  const gc       = gainColor(pos?.gainDollar ?? null)
+                  const dc       = gainColor(pos?.dayChangeDollar ?? null)
+
+                  return (
+                    <Fragment key={row.ticker}>
+                      {/* Data row */}
+                      <tr style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
+                        <td style={tdStyle}>
+                          <Link href={`/t/${row.ticker}`} style={{ color: '#58a6ff', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>{row.ticker}</Link>
+                        </td>
+                        <td style={{ ...tdStyle, color: '#c9d1d9', maxWidth: '160px' }}>
+                          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name ?? '—'}</span>
+                        </td>
+                        <td style={{ ...tdStyle, color: '#e6edf3', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          {row.price != null ? `$${row.price.toFixed(2)}` : '—'}
+                        </td>
+                        <td style={{ ...tdStyle, color: changeColor(row.changePercent), fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          {row.changePercent != null ? `${row.changePercent >= 0 ? '+' : ''}${row.changePercent.toFixed(2)}%` : '—'}
+                        </td>
+
+                        {anyTrades ? (
+                          <>
+                            <td style={{ ...tdStyle, color: '#c9d1d9', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              {pos ? pos.totalShares.toLocaleString() : '—'}
+                            </td>
+                            <td style={{ ...tdStyle, color: '#c9d1d9', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              {pos ? `$${pos.avgCost.toFixed(2)}` : '—'}
+                            </td>
+                            <td style={{ ...tdStyle, color: '#c9d1d9', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              {pos ? fmtDollar(pos.totalCostBasis) : '—'}
+                            </td>
+                            <td style={{ ...tdStyle, color: '#e6edf3', fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              {pos?.marketValue != null ? fmtDollar(pos.marketValue) : '—'}
+                            </td>
+                            <td style={{ ...tdStyle, color: gc, fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              {pos?.gainDollar != null ? fmtDollar(pos.gainDollar, true) : '—'}
+                            </td>
+                            <td style={{ ...tdStyle, color: gc, fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              {pos?.gainPct != null ? `${pos.gainPct >= 0 ? '+' : ''}${pos.gainPct.toFixed(2)}%` : '—'}
+                            </td>
+                            <td style={{ ...tdStyle, color: dc, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              {pos?.dayChangeDollar != null ? fmtDollar(pos.dayChangeDollar, true) : '—'}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{fmtVolume(row.volume)}</td>
+                            <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{fmtMarketCap(row.marketCap)}</td>
+                            <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{row.pe != null ? row.pe.toFixed(1) : '—'}</td>
+                            <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{row.week52High != null ? `$${row.week52High.toFixed(2)}` : '—'}</td>
+                            <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{row.week52Low != null ? `$${row.week52Low.toFixed(2)}` : '—'}</td>
+                          </>
+                        )}
+
+                        <td style={{ ...tdStyle, fontWeight: 700, color: scoreColor(row.score) }}>{row.score ?? '—'}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', padding: '12px 10px' }}>
+                          <button
+                            onClick={() => openForm(row.ticker)}
+                            style={{
+                              background: isOpen ? 'rgba(88,166,255,0.1)' : 'transparent',
+                              border: `1px solid ${isOpen ? '#2a4a70' : '#1e2530'}`,
+                              borderRadius: '6px', padding: '4px 10px',
+                              color: isOpen ? '#58a6ff' : '#4a5568',
+                              fontSize: '12px', fontWeight: 600,
+                              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {isOpen ? '✕' : '+ Trade'}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Inline trade form */}
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={colCount} style={{ padding: 0, background: '#080b10' }}>
+                            <div style={{
+                              display: 'flex', gap: '16px', alignItems: 'flex-end',
+                              padding: '16px 14px',
+                              borderTop: '1px solid #1a2d4a',
+                              borderBottom: '1px solid #1a1f2a',
+                            }}>
+                              {/* Buy / Sell */}
+                              <div>
+                                <label style={labelStyle}>Type</label>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  {(['buy', 'sell'] as const).map((dir) => {
+                                    const active = tradeForm.direction === dir
+                                    const ac = dir === 'buy' ? '#3fb950' : '#f85149'
+                                    return (
+                                      <button key={dir} onClick={() => setTradeForm((f) => ({ ...f, direction: dir }))}
+                                        style={{
+                                          padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 600,
+                                          cursor: 'pointer', fontFamily: 'inherit',
+                                          border: `1px solid ${active ? ac + '60' : '#1e2530'}`,
+                                          background: active ? `${ac}18` : 'transparent',
+                                          color: active ? ac : '#4a5568',
+                                        }}>
+                                        {dir === 'buy' ? 'Buy' : 'Sell'}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Shares */}
+                              <div>
+                                <label style={labelStyle}>Shares</label>
+                                <input
+                                  type="number" min="0" step="any"
+                                  value={tradeForm.shares}
+                                  onChange={(e) => setTradeForm((f) => ({ ...f, shares: e.target.value }))}
+                                  placeholder="100"
+                                  style={{ ...inputStyle, width: '110px' }}
+                                />
+                              </div>
+
+                              {/* Cost per share */}
+                              <div>
+                                <label style={labelStyle}>Cost / Share ($)</label>
+                                <input
+                                  type="number" min="0" step="any"
+                                  value={tradeForm.cost}
+                                  onChange={(e) => setTradeForm((f) => ({ ...f, cost: e.target.value }))}
+                                  placeholder="0.00"
+                                  style={{ ...inputStyle, width: '120px' }}
+                                />
+                              </div>
+
+                              {/* Date */}
+                              <div>
+                                <label style={labelStyle}>Date</label>
+                                <input
+                                  type="date"
+                                  value={tradeForm.date}
+                                  onChange={(e) => setTradeForm((f) => ({ ...f, date: e.target.value }))}
+                                  style={{ ...inputStyle, width: '150px', colorScheme: 'dark' }}
+                                />
+                              </div>
+
+                              {/* Total preview */}
+                              {tradeForm.shares && tradeForm.cost && (
+                                <div style={{ paddingBottom: '2px' }}>
+                                  <label style={labelStyle}>Total</label>
+                                  <span style={{ fontSize: '14px', color: '#c9d1d9', fontVariantNumeric: 'tabular-nums' }}>
+                                    {fmtDollar(parseFloat(tradeForm.shares) * parseFloat(tradeForm.cost))}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Save */}
+                              <button
+                                onClick={() => saveTrade(row.ticker)}
+                                disabled={savingTrade || !tradeForm.shares || !tradeForm.cost || !tradeForm.date}
+                                style={{
+                                  ...btnPrimary, padding: '9px 20px',
+                                  opacity: savingTrade || !tradeForm.shares || !tradeForm.cost ? 0.4 : 1,
+                                  cursor: savingTrade || !tradeForm.shares || !tradeForm.cost ? 'not-allowed' : 'pointer',
+                                }}>
+                                {savingTrade ? 'Saving…' : 'Save'}
+                              </button>
+
+                              {/* Cancel */}
+                              <button onClick={() => setOpenTradeForm(null)} style={{ ...btnSecondary, padding: '9px 16px' }}>
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+
+                {/* Summary row */}
+                {anyTrades && positions.some(Boolean) && (
+                  <tr style={{ background: 'rgba(255,255,255,0.025)', borderTop: '1px solid #1a2333' }}>
+                    <td colSpan={4} style={{ ...tdStyle, color: '#4a5568', fontSize: '11px', letterSpacing: '1px', fontWeight: 600, textTransform: 'uppercase' }}>
+                      Total
                     </td>
-                    <td style={{ ...tdStyle, color: '#c9d1d9', maxWidth: '160px' }}>
-                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name ?? '—'}</span>
-                    </td>
-                    <td style={{ ...tdStyle, color: '#e6edf3', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {row.price != null ? `$${row.price.toFixed(2)}` : '—'}
-                    </td>
-                    <td style={{ ...tdStyle, color: changeColor(row.changePercent), fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {row.changePercent != null ? `${row.changePercent >= 0 ? '+' : ''}${row.changePercent.toFixed(2)}%` : '—'}
-                    </td>
-                    <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{fmtVolume(row.volume)}</td>
-                    <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{fmtMarketCap(row.marketCap)}</td>
-                    <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{row.pe != null ? row.pe.toFixed(1) : '—'}</td>
-                    <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{row.week52High != null ? `$${row.week52High.toFixed(2)}` : '—'}</td>
-                    <td style={{ ...tdStyle, color: '#7b8498', whiteSpace: 'nowrap' }}>{row.week52Low != null ? `$${row.week52Low.toFixed(2)}` : '—'}</td>
-                    <td style={{ ...tdStyle, fontWeight: 700, color: scoreColor(row.score) }}>{row.score ?? '—'}</td>
+                    <td style={{ ...tdStyle, color: '#7b8498' }}>—</td>
+                    <td style={{ ...tdStyle, color: '#7b8498' }}>—</td>
+                    <td style={{ ...tdStyle, color: '#c9d1d9', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(totalCostB)}</td>
+                    <td style={{ ...tdStyle, color: '#e6edf3', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(totalMktVal)}</td>
+                    <td style={{ ...tdStyle, color: gainColor(totalGain), fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(totalGain, true)}</td>
+                    <td style={{ ...tdStyle, color: gainColor(totalGain), fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{`${totalGainPc >= 0 ? '+' : ''}${totalGainPc.toFixed(2)}%`}</td>
+                    <td style={{ ...tdStyle, color: gainColor(totalDayChg), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(totalDayChg, true)}</td>
+                    <td colSpan={2} style={tdStyle}></td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* Feed section */}
+        {/* ── Feed section ── */}
         {!loading && portfolio.tickers.length > 0 && (
           <div>
             <div style={{ display: 'flex', borderBottom: '1px solid #1a1f2a', marginBottom: '20px' }}>
@@ -435,14 +711,7 @@ export default function PortfolioPage() {
                 const active = activeSection === sec
                 return (
                   <button key={sec} onClick={() => setActiveSection(sec)}
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      padding: '10px 4px', marginRight: '28px',
-                      fontSize: '14px', fontWeight: active ? 600 : 400,
-                      color: active ? '#e6edf3' : '#7b8498',
-                      borderBottom: `2px solid ${active ? '#58a6ff' : 'transparent'}`,
-                      transition: 'color 0.15s', fontFamily: 'inherit',
-                    }}>
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 4px', marginRight: '28px', fontSize: '14px', fontWeight: active ? 600 : 400, color: active ? '#e6edf3' : '#7b8498', borderBottom: `2px solid ${active ? '#58a6ff' : 'transparent'}`, transition: 'color 0.15s', fontFamily: 'inherit' }}>
                     {sec === 'news' ? 'Recent News' : 'Recent Insider Trades'}
                   </button>
                 )
@@ -455,9 +724,7 @@ export default function PortfolioPage() {
                 : <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {news.map((item, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '10px 0', borderBottom: '1px solid #111620' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px', color: '#58a6ff', background: '#0d1f30', border: '1px solid #1a3a50', borderRadius: '3px', padding: '2px 6px', flexShrink: 0 }}>
-                          {item.ticker}
-                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px', color: '#58a6ff', background: '#0d1f30', border: '1px solid #1a3a50', borderRadius: '3px', padding: '2px 6px', flexShrink: 0 }}>{item.ticker}</span>
                         {item.url
                           ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: '#c9d1d9', textDecoration: 'none', fontSize: '13px', flex: 1, lineHeight: '1.4' }}>{item.title}</a>
                           : <span style={{ color: '#c9d1d9', fontSize: '13px', flex: 1 }}>{item.title}</span>}

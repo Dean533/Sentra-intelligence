@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { getSupabase } from '@/lib/supabase-browser'
+import { LiquidButton } from '@/components/ui/liquid-glass-button'
 import type { User } from '@supabase/supabase-js'
 
 const NAV_LINKS = [
@@ -133,12 +134,9 @@ export default function Navbar() {
             )}
           </>
         ) : (
-          <Link href="/login"
-            style={{ fontSize: '13px', color: '#7b8498', textDecoration: 'none', padding: '6px 14px', border: '1px solid #1e2530', borderRadius: '8px', transition: 'color 0.15s, border-color 0.15s' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = '#c9d1d9'; e.currentTarget.style.borderColor = '#3a4a5a' }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = '#7b8498'; e.currentTarget.style.borderColor = '#1e2530' }}>
-            Sign In →
-          </Link>
+          <LiquidButton size="sm" onClick={() => router.push('/login')} className="text-[#c9d1d9]">
+            Sign In
+          </LiquidButton>
         )}
       </div>
     </nav>
