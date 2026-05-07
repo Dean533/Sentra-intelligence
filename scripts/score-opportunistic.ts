@@ -78,7 +78,8 @@ function lookupOpportunisticScore(
     val >= f.min_value
   )
 
-  return match?.sentra_score ?? 1
+  const base = match?.sentra_score ?? 1
+  return Math.min(Math.round(base * 1.25), 100)
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────

@@ -121,6 +121,10 @@ function passesHoldingsFilter(row: any, min: number): boolean {
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const ticker         = searchParams.get('ticker')?.toUpperCase() ?? null
+  const tickersParam   = searchParams.get('tickers') ?? ''
+  const tickersList    = tickersParam
+    ? tickersParam.split(',').map((t) => t.trim().toUpperCase()).filter(Boolean)
+    : []
   const direction      = searchParams.get('direction') ?? 'all'
   const classification = searchParams.get('classification') ?? null
   const role           = searchParams.get('role') ?? null
@@ -266,6 +270,7 @@ export async function GET(req: Request) {
       .from('insider_transactions')
       .select(SELECT_COLS, withCount ? { count: 'exact' } : {})
       .order('transaction_date', { ascending: false })
+      .lte('transaction_date', '2027-01-01')
 
     // Direction
     if (direction === 'buys')       q = q.eq('transaction_code', 'P')
@@ -282,6 +287,8 @@ export async function GET(req: Request) {
       }
     } else if (ticker) {
       q = q.eq('ticker', ticker)
+    } else if (tickersList.length > 0) {
+      q = q.in('ticker', tickersList)
     }
 
     // Classification

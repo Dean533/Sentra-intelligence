@@ -344,6 +344,14 @@ function scoreColor(s: number | null): string {
   return '#7b8498'
 }
 
+function scoreLabel(s: number): string {
+  if (s >= 85) return 'Very Strong Signal'
+  if (s >= 70) return 'Strong Signal'
+  if (s >= 51) return 'Moderate Signal'
+  if (s >= 31) return 'Weak Signal'
+  return 'No Signal'
+}
+
 function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string; capped: boolean } | null {
   const s     = row.shares
   const after = row.shares_owned_after
@@ -370,9 +378,10 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
   const [valueFilter, setValueFilter] = useState('all')
   const [startDate,   setStartDate]   = useState('')
   const [endDate,     setEndDate]     = useState('')
-  const [holdingsPct, setHoldingsPct] = useState('any')
-  const [clusterMin,  setClusterMin]  = useState('none')
-  const [scoreFilter, setScoreFilter] = useState('all')
+  const [holdingsPct,    setHoldingsPct]    = useState('any')
+  const [clusterMin,     setClusterMin]     = useState('none')
+  const [scoreFilter,    setScoreFilter]    = useState('all')
+  const [showScoreInfo,  setShowScoreInfo]  = useState(false)
   const router = useRouter()
 
   useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter])
@@ -473,10 +482,20 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
             : <span style={{ color: '#3a4a60' }}>—</span>
           }
         </td>
-        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: cls === 'ROUTINE' ? '#3a4a60' : scoreColor(row.sentra_score) }}>
-          {cls === 'ROUTINE'
+        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !isBuy ? '#3a4a60' : cls === 'ROUTINE' ? scoreColor(0) : scoreColor(row.sentra_score) }}>
+          {!isBuy
             ? <span style={{ color: '#3a4a60' }}>N/A</span>
-            : row.sentra_score != null ? row.sentra_score : <span style={{ color: '#3a4a60' }}>—</span>}
+            : cls === 'ROUTINE'
+              ? <span className="score-badge">
+                  0
+                  <span className="score-tooltip">{scoreLabel(0)}</span>
+                </span>
+              : row.sentra_score != null
+                ? <span className="score-badge">
+                    {row.sentra_score}
+                    <span className="score-tooltip">{scoreLabel(row.sentra_score)}</span>
+                  </span>
+                : <span style={{ color: '#3a4a60' }}>—</span>}
         </td>
         <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 600, color: txColor, fontVariantNumeric: 'tabular-nums' }}>
           {fmtCurrency(row.total_value)}
@@ -528,7 +547,91 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
           <option value="80">80+</option>
           <option value="90">90+</option>
         </select>
+
+        <button
+          onClick={() => setShowScoreInfo(true)}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#3a4a60', fontSize: '16px', lineHeight: 1,
+            padding: '4px', borderRadius: '50%',
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = '#7b8498')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = '#3a4a60')}
+          title="How scores work"
+        >ⓘ</button>
       </div>
+
+      {showScoreInfo && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '24px',
+          }}
+          onClick={() => setShowScoreInfo(false)}
+        >
+          <div
+            style={{
+              background: '#0d1117', border: '1px solid #1e2530',
+              borderRadius: '16px', padding: '32px', maxWidth: '460px', width: '100%',
+              position: 'relative',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowScoreInfo(false)}
+              style={{
+                position: 'absolute', top: '16px', right: '16px',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: '#3a4a60', fontSize: '20px', lineHeight: 1, padding: '4px',
+                transition: 'color 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#c9d1d9')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#3a4a60')}
+            >×</button>
+
+            <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#e6edf3', margin: '0 0 20px' }}>
+              How Sentra Scores Work
+            </h3>
+
+            <p style={{ fontSize: '13px', color: '#7b8498', lineHeight: 1.6, margin: '0 0 20px' }}>
+              Scores are based on empirical backtests of 2,800+ insider trades. Opportunistic
+              insiders receive a 1.25× classification bonus over the base lookup score.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '20px' }}>
+              {([
+                { range: '85–100', label: 'Very Strong', color: '#3fb950', desc: 'Top tier combination, highest historical alpha' },
+                { range: '70–84',  label: 'Strong',      color: '#3fb950', desc: 'High conviction, qualifies for paper trading' },
+                { range: '51–69',  label: 'Moderate',    color: '#d29922', desc: 'Meaningful pattern, worth watching' },
+                { range: '0–30',   label: 'No Signal',   color: '#7b8498', desc: 'Small trade or weak combination' },
+              ] as const).map(({ range, label, color, desc }, i, arr) => (
+                <div key={range} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '12px',
+                  padding: '10px 0',
+                  borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                }}>
+                  <span style={{ fontSize: '12px', color, fontWeight: 700, minWidth: '48px', paddingTop: '1px' }}>{range}</span>
+                  <div>
+                    <span style={{ fontSize: '13px', color, fontWeight: 600 }}>{label}</span>
+                    <span style={{ fontSize: '12px', color: '#555', marginLeft: '6px' }}>— {desc}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p style={{ fontSize: '12px', color: '#555', lineHeight: 1.6, margin: '0 0 8px' }}>
+              Routine insiders show <span style={{ color: '#3a4a60', fontWeight: 600 }}>N/A</span> — their
+              trades follow predictable calendar patterns and a different methodology applies.
+            </p>
+            <p style={{ fontSize: '11px', color: '#3a4a60', margin: 0 }}>
+              Based on Cohen, Malloy &amp; Pomorski (2012) Harvard/MIT research on insider trading patterns.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* filter row 2 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
@@ -593,7 +696,17 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #1e2530' }}>
-              {COLS.map((h) => <th key={h} style={thStyle}>{h.toUpperCase()}</th>)}
+              {COLS.map((h) => (
+                <th key={h} style={thStyle}>
+                  {h === 'Score'
+                    ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                        SCORE
+                        <a href="/about" style={{ color: '#555', textDecoration: 'none', fontSize: '10px', lineHeight: 1 }}>*</a>
+                      </span>
+                    : h.toUpperCase()
+                  }
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -794,7 +907,52 @@ export default function EventsPage() {
       {activeTab === 'sec'     && <EventsFeed eventType={TAB_EVENT_TYPE.sec}  ticker={tickerFilter || undefined} />}
       {activeTab === 'news'    && <EventsFeed eventType={TAB_EVENT_TYPE.news} ticker={tickerFilter || undefined} />}
 
-      <style>{`@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.9} }`}</style>
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.9} }
+        .score-badge {
+          position: relative;
+          display: inline-block;
+          border-bottom: 1px dotted currentColor;
+          cursor: default;
+        }
+        .score-badge .score-tooltip {
+          display: none;
+          position: absolute;
+          bottom: calc(100% + 8px);
+          left: 50%;
+          transform: translateX(-50%);
+          background: #1a1f2a;
+          border: 1px solid #2a3a50;
+          color: #c9d1d9;
+          font-size: 11px;
+          font-weight: 500;
+          padding: 4px 8px;
+          border-radius: 6px;
+          white-space: nowrap;
+          z-index: 100;
+          pointer-events: none;
+        }
+        .score-badge .score-tooltip::after {
+          content: '';
+          position: absolute;
+          top: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          border: 5px solid transparent;
+          border-top-color: #2a3a50;
+        }
+        .score-badge .score-tooltip::before {
+          content: '';
+          position: absolute;
+          top: calc(100% - 1px);
+          left: 50%;
+          transform: translateX(-50%);
+          border: 5px solid transparent;
+          border-top-color: #1a1f2a;
+          z-index: 1;
+        }
+        .score-badge:hover .score-tooltip { display: block; }
+      `}</style>
     </div>
   )
 }

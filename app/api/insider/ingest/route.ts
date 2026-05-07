@@ -341,10 +341,14 @@ async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, stri
     return results.length >= XML_FETCH_CAP
   }
 
-  const firstRes = await fetch(`${base}&from=0&size=${PAGE_SIZE}`, { headers: SEC_HEADERS })
+  const firstUrl = `${base}&from=0&size=${PAGE_SIZE}`
+  console.log(`[EDGAR] GET ${firstUrl}`)
+  const firstRes = await fetch(firstUrl, { headers: SEC_HEADERS })
+  const rawText  = await firstRes.text()
+  console.log(`[EDGAR] status=${firstRes.status} body_preview=${rawText.slice(0, 200)}`)
   if (!firstRes.ok) throw new Error(`EDGAR search failed: ${firstRes.status}`)
 
-  const firstJson = await firstRes.json()
+  const firstJson = JSON.parse(rawText)
   const total: number = firstJson?.hits?.total?.value ?? 0
   const capped = extractHits(firstJson)
 

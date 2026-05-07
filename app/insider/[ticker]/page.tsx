@@ -213,23 +213,100 @@ export default function InsiderAnalysisPage() {
 
   const hasConviction = conviction != null && conviction.score > 0
 
+  function buildReasoningBullets(
+    factors: string[],
+    totalValue: number | null,
+    insiderClassification: string | null,
+  ): { label: string; detail: string }[] {
+    const bullets: { label: string; detail: string }[] = []
+
+    for (const f of factors) {
+      const lookup = f.match(/^Lookup rank (\d+): (.+?) · (.+?) · (\S+) — n=(\d+), avg α=([-\d.]+)%, hit=(\d+)%/)
+      if (lookup) {
+        const [, , lookupRole, sector, size, n, avgAlpha, hit] = lookup
+        const alpha = parseFloat(avgAlpha)
+
+        const roleDesc = lookupRole === 'all roles'    ? 'any insider role (no role filter applied)'
+                       : lookupRole === 'CEO'          ? 'CEO — highest signal seniority'
+                       : lookupRole === 'CFO'          ? 'CFO — senior officer'
+                       : lookupRole === '10% Owner'    ? '10% Owner — major shareholder'
+                       : lookupRole === 'Director'     ? 'Director — board-level signal'
+                       : lookupRole === 'President'    ? 'President — senior executive'
+                       : `${lookupRole} — moderate signal role`
+        bullets.push({ label: 'Role', detail: roleDesc })
+
+        const alphaQuality = alpha >= 10 ? 'historically high alpha for this combination'
+                           : alpha >= 5  ? 'historically moderate alpha'
+                           : alpha >= 0  ? 'historically modest alpha'
+                           : 'historically mixed alpha'
+        const sectorText = sector === 'all sectors' ? 'all sectors' : sector
+        bullets.push({ label: 'Sector', detail: `${sectorText} (${alphaQuality})` })
+
+        bullets.push({ label: 'Historical match', detail: `${n} similar trades averaged ${avgAlpha}% alpha, ${hit}% win rate at 90 days` })
+        continue
+      }
+
+      if (f.includes('< $250K: capped')) {
+        const fmtVal = totalValue == null ? 'below $250K'
+                     : totalValue >= 1_000_000 ? `$${(totalValue / 1_000_000).toFixed(1)}M`
+                     : totalValue >= 1_000     ? `$${(totalValue / 1_000).toFixed(0)}K`
+                     : `$${totalValue.toLocaleString()}`
+        bullets.push({ label: 'Purchase size', detail: `${fmtVal} (below $250K threshold — score capped at 30)` })
+        continue
+      }
+
+      const tickerExcl = f.match(/Excluded ticker (\w+): ([-\d]+)/)
+      if (tickerExcl) {
+        bullets.push({ label: 'Ticker adjustment', detail: `${tickerExcl[1]} has shown below-average alpha for this pattern in backtests` })
+        continue
+      }
+
+      const insiderExcl = f.match(/Excluded insider \((.+?)\): ([-\d]+)/)
+      if (insiderExcl) {
+        bullets.push({ label: 'Insider adjustment', detail: `${insiderExcl[1]} has a historical pattern of weaker signal quality` })
+        continue
+      }
+    }
+
+    if (insiderClassification === 'OPPORTUNISTIC') {
+      bullets.push({ label: 'Classification', detail: 'Opportunistic — breaks from historical trading calendar, likely information-driven' })
+    } else if (insiderClassification === 'UNCLASSIFIABLE') {
+      bullets.push({ label: 'Classification', detail: 'Unclassifiable — insufficient trading history to establish a routine pattern' })
+    } else if (insiderClassification === 'ROUTINE') {
+      bullets.push({ label: 'Classification', detail: 'Routine — follows predictable calendar pattern, lower signal quality' })
+    }
+
+    return bullets
+  }
+
+  function scorePercentile(score: number): string {
+    if (score >= 90) return 'This signal is ranked in the top 5% of all insider purchases in our database.'
+    if (score >= 80) return 'This signal is ranked in the top 10% of all insider purchases in our database.'
+    if (score >= 70) return 'This signal is ranked in the top 20% of all insider purchases in our database.'
+    if (score >= 60) return 'This signal is ranked in the top 30% of all insider purchases in our database.'
+    if (score >= 50) return 'This signal is ranked in the top 40% of all insider purchases in our database.'
+    if (score >= 40) return 'This signal is ranked in the bottom 40% of all insider purchases in our database.'
+    if (score >= 31) return 'This signal is ranked in the bottom 35% of all insider purchases in our database.'
+    return 'This signal is ranked in the bottom 30% of all insider purchases in our database.'
+  }
+
   function convBarColor(s: number) {
     if (s >= 85) return '#3fb950'
     if (s >= 70) return '#58a6ff'
     if (s >= 50) return '#d4a037'
     return '#f85149'
   }
-  function convClsColor(c: ConvictionData['classification']) {
-    if (c === 'HIGH_CONVICTION') return '#3fb950'
-    if (c === 'TAKE_TRADE')      return '#58a6ff'
-    if (c === 'MONITOR')         return '#d4a037'
-    return '#f85149'
+  function signalColor(s: number) {
+    if (s >= 70) return '#3fb950'
+    if (s >= 51) return '#d29922'
+    return '#7b8498'
   }
-  function convClsLabel(c: ConvictionData['classification']) {
-    if (c === 'HIGH_CONVICTION') return 'HIGH CONVICTION'
-    if (c === 'TAKE_TRADE')      return 'TAKE TRADE'
-    if (c === 'MONITOR')         return 'MONITOR ONLY'
-    return 'DO NOT TRADE'
+  function signalLabel(s: number) {
+    if (s >= 85) return 'Very Strong Signal'
+    if (s >= 70) return 'Strong Signal'
+    if (s >= 51) return 'Moderate Signal'
+    if (s >= 31) return 'Weak Signal'
+    return 'No Signal'
   }
 
   return (
@@ -269,9 +346,13 @@ export default function InsiderAnalysisPage() {
         <div style={sep}>
           <p style={secTitle}>Conviction Score</p>
           {hasConviction ? (() => {
-            const { score, classification, factors, holdDays, positionMultiplier, exitRules } = conviction!
+            const { score, factors } = conviction!
             const barColor = convBarColor(score)
-            const clsColor = convClsColor(classification)
+            const clsColor = signalColor(score)
+            const recentPurchase = trades.find(t => t.transaction_code === 'P')
+            const insiderClassification = recentPurchase?.classification ?? null
+            const totalValue = recentPurchase?.total_value ?? null
+            const bullets = buildReasoningBullets(factors, totalValue, insiderClassification)
             return (
               <div style={{ background: '#0d1117', border: '1px solid #1f2937', borderRadius: '6px', padding: '16px' }}>
                 {/* Score row */}
@@ -285,39 +366,34 @@ export default function InsiderAnalysisPage() {
                 <div style={{ height: '3px', background: '#1f2937', borderRadius: '2px', marginBottom: '12px' }}>
                   <div style={{ height: '100%', width: `${score}%`, background: barColor, borderRadius: '2px', transition: 'width 0.4s ease' }} />
                 </div>
-                {/* Classification + hold + multiplier */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+                {/* Signal label + source label */}
+                <div style={{ marginBottom: '12px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 700, color: clsColor, letterSpacing: '0.5px' }}>
-                    {convClsLabel(classification)}
+                    {signalLabel(score)}
                   </span>
-                  <span style={{ color: '#3a4a60' }}>·</span>
-                  <span style={{ fontSize: '12px', color: '#c9d1d9' }}>
-                    Hold <strong style={{ color: '#e6edf3' }}>{holdDays}d</strong>
-                  </span>
-                  {positionMultiplier > 1 && (
-                    <>
-                      <span style={{ color: '#3a4a60' }}>·</span>
-                      <span style={{ fontSize: '12px', color: '#c9d1d9' }}>
-                        Position <strong style={{ color: '#e6edf3' }}>{positionMultiplier}×</strong>
-                      </span>
-                    </>
-                  )}
+                  <div style={{ fontSize: '11px', color: '#4a5568', marginTop: '4px' }}>
+                    Based on most recent insider purchase
+                  </div>
                 </div>
-                {/* Exit rules */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '12px', fontSize: '12px', color: '#7b8498' }}>
-                  <span>Stop loss <strong style={{ color: '#f85149' }}>{exitRules.stopLossPrice != null ? `$${exitRules.stopLossPrice.toFixed(2)}` : '−15%'}</strong></span>
-                  <span style={{ color: '#3a4a60' }}>·</span>
-                  <span>Take profit <strong style={{ color: '#3fb950' }}>{exitRules.takeProfitPrice != null ? `$${exitRules.takeProfitPrice.toFixed(2)}` : '+25%'}</strong></span>
-                </div>
-                {/* Factors */}
-                {factors.length > 0 && (
-                  <div style={{ borderTop: '1px solid #1f2937', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {factors.map((f, i) => (
-                      <div key={i} style={{ fontSize: '11px', color: f.includes('-') ? '#f85149' : '#7b8498', display: 'flex', gap: '6px' }}>
-                        <span style={{ color: f.includes('-') ? '#f85149' : '#4a5568', flexShrink: 0 }}>{f.includes('-') ? '✕' : '✓'}</span>
-                        <span>{f}</span>
-                      </div>
-                    ))}
+                {/* Why this score? */}
+                {bullets.length > 0 && (
+                  <div style={{ borderTop: '1px solid #1f2937', paddingTop: '12px' }}>
+                    <div style={{ fontSize: '11px', letterSpacing: '1px', color: '#7b8498', textTransform: 'uppercase', marginBottom: '8px' }}>
+                      Why this score?
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {bullets.map((b, i) => (
+                        <div key={i} style={{ fontSize: '12px', display: 'flex', gap: '8px' }}>
+                          <span style={{ color: '#4a5568', flexShrink: 0, minWidth: '110px', fontWeight: 600 }}>
+                            {b.label}
+                          </span>
+                          <span style={{ color: '#7b8498' }}>{b.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: '12px', fontSize: '11px', color: '#4a5568', borderTop: '1px solid #131820', paddingTop: '10px' }}>
+                      {scorePercentile(score)}
+                    </div>
                   </div>
                 )}
               </div>

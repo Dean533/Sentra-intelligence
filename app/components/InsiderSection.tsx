@@ -83,18 +83,18 @@ function signalStrengthLabel(v: number): string {
 
 // ─── Conviction score helpers ─────────────────────────────────────────────────
 
-function classificationLabel(c: ConvictionData['classification']): string {
-  if (c === 'HIGH_CONVICTION') return 'HIGH CONVICTION'
-  if (c === 'TAKE_TRADE')      return 'TAKE TRADE'
-  if (c === 'MONITOR')         return 'MONITOR ONLY'
-  return 'DO NOT TRADE'
+function signalLabel(score: number): string {
+  if (score >= 85) return 'Very Strong Signal'
+  if (score >= 70) return 'Strong Signal'
+  if (score >= 51) return 'Moderate Signal'
+  if (score >= 31) return 'Weak Signal'
+  return 'No Signal'
 }
 
-function classificationColor(c: ConvictionData['classification']): string {
-  if (c === 'HIGH_CONVICTION') return '#3fb950'
-  if (c === 'TAKE_TRADE')      return '#58a6ff'
-  if (c === 'MONITOR')         return '#d4a037'
-  return '#f85149'
+function signalColor(score: number): string {
+  if (score >= 70) return '#3fb950'
+  if (score >= 51) return '#d29922'
+  return '#7b8498'
 }
 
 function scoreBarColor(score: number): string {
@@ -107,10 +107,10 @@ function scoreBarColor(score: number): string {
 // ─── Conviction score panel ───────────────────────────────────────────────────
 
 function ConvictionPanel({ conviction }: { conviction: ConvictionData }) {
-  const { score, classification, factors, holdDays, positionMultiplier, exitRules } = conviction
-  const clsColor = classificationColor(classification)
+  const { score, factors, holdDays, positionMultiplier } = conviction
+  const clsColor = signalColor(score)
   const barColor  = scoreBarColor(score)
-  console.log('[ConvictionPanel] rendering', { score, classification, holdDays, factors })
+  console.log('[ConvictionPanel] rendering', { score, holdDays, factors })
 
   return (
     <div style={{
@@ -135,10 +135,10 @@ function ConvictionPanel({ conviction }: { conviction: ConvictionData }) {
         <div style={{ height: '100%', width: `${score}%`, background: barColor, borderRadius: '2px', transition: 'width 0.4s ease' }} />
       </div>
 
-      {/* Classification + hold + multiplier */}
+      {/* Signal label + hold + multiplier */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
         <span style={{ fontSize: '13px', fontWeight: 700, color: clsColor, letterSpacing: '0.5px' }}>
-          {classificationLabel(classification)}
+          {signalLabel(score)}
         </span>
         <span style={{ color: '#3a4a60' }}>·</span>
         <span style={{ fontSize: '12px', color: '#c9d1d9' }}>
@@ -152,23 +152,6 @@ function ConvictionPanel({ conviction }: { conviction: ConvictionData }) {
             </span>
           </>
         )}
-      </div>
-
-      {/* Exit rules */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '12px', fontSize: '12px', color: '#7b8498' }}>
-        <span>
-          Stop loss{' '}
-          <strong style={{ color: '#f85149' }}>
-            {exitRules.stopLossPrice != null ? `$${exitRules.stopLossPrice.toFixed(2)}` : '−10%'}
-          </strong>
-        </span>
-        <span style={{ color: '#3a4a60' }}>·</span>
-        <span>
-          Take profit{' '}
-          <strong style={{ color: '#3fb950' }}>
-            {exitRules.takeProfitPrice != null ? `$${exitRules.takeProfitPrice.toFixed(2)}` : '+25%'}
-          </strong>
-        </span>
       </div>
 
       {/* Factors */}
