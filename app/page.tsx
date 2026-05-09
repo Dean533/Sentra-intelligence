@@ -294,7 +294,7 @@ export default function HomePage() {
 
           <motion.p
             initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.15 }}
-            style={{ fontSize: 'clamp(16px, 2vw, 20px)', color: '#aaa', fontWeight: 400, lineHeight: 1.4, maxWidth: '672px', margin: '0 0 40px', whiteSpace: 'nowrap' }}
+            style={{ fontSize: 'clamp(16px, 2vw, 20px)', color: '#aaa', fontWeight: 400, lineHeight: 1.4, maxWidth: '672px', margin: '0 0 40px' }}
           >
             We scan 500+ stocks for event mispricings so you don&apos;t have to.
           </motion.p>
