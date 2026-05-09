@@ -268,7 +268,7 @@ export default function HomePage() {
     }}>
 
       {/* ── SECTION 1: HERO ─────────────────────────────────────────────────── */}
-      <section style={{ position: 'relative', overflow: 'hidden', background: '#000', paddingBottom: '80px' }}>
+      <section style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden', background: '#000' }}>
         {/* WebGL shader background */}
         <WebGLShader />
 
