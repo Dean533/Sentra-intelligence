@@ -76,6 +76,7 @@ export default function Navbar() {
         backdropFilter: navBlur,
         borderBottom: navBorder,
         transition: 'background 0.3s, backdrop-filter 0.3s, border-color 0.3s',
+        zoom: 1.67,
       }}>
         {/* Logo — always visible */}
         <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '16px', letterSpacing: '-0.3px', flexShrink: 0 }}>
