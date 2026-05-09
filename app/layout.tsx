@@ -6,6 +6,12 @@ export const metadata = {
   description: "Market narrative intelligence platform",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export default function RootLayout({
   children,
 }: {

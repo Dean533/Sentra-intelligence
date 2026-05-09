@@ -98,6 +98,12 @@
   .login-panel-right { display: none !important; }
 }
 
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+}
+
 @media (max-width: 480px) {
   /* Ticker stats bar -> 2-col on very small screens */
   .ticker-stats-bar { grid-template-columns: repeat(2, 1fr) !important; }
