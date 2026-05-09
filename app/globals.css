@@ -102,6 +102,10 @@
   html {
     font-size: 14px;
   }
+
+  .shader-mobile-offset {
+    transform: translateY(-25%);
+  }
 }
 
 @media (max-width: 480px) {

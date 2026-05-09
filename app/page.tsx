@@ -190,7 +190,7 @@ function HeroSearch() {
   return (
     <div
       ref={(el) => { wrapperRef[1](el) }}
-      style={{ position: 'relative', width: '100%', maxWidth: '680px', marginTop: '36px' }}
+      style={{ position: 'relative', width: '100%', maxWidth: '680px', marginTop: '64px' }}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false) }}
     >
       <div style={{
@@ -270,7 +270,9 @@ export default function HomePage() {
       {/* ── SECTION 1: HERO ─────────────────────────────────────────────────── */}
       <section style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden', background: '#000' }}>
         {/* WebGL shader background */}
-        <WebGLShader />
+        <div className="shader-mobile-offset" style={{ position: 'absolute', inset: 0 }}>
+          <WebGLShader />
+        </div>
 
         {/* dark overlay */}
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 10 }} />
@@ -279,12 +281,12 @@ export default function HomePage() {
         <div style={{
           position: 'relative', zIndex: 20,
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          textAlign: 'center', paddingTop: '80px', paddingLeft: '24px', paddingRight: '24px',
+          textAlign: 'center', paddingTop: '120px', paddingLeft: '24px', paddingRight: '24px',
         }}>
           <motion.h1
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.1 }}
             style={{
-              fontSize: 'clamp(56px, 9vw, 96px)', fontWeight: 900,
+              fontSize: 'clamp(40px, 7vw, 96px)', fontWeight: 900,
               lineHeight: 1.0, letterSpacing: '-3px', whiteSpace: 'nowrap',
               margin: '0 0 20px', color: '#fff',
             }}
@@ -294,7 +296,7 @@ export default function HomePage() {
 
           <motion.p
             initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.15 }}
-            style={{ fontSize: 'clamp(18px, 2.5vw, 22px)', color: '#aaa', fontWeight: 400, lineHeight: 1.4, maxWidth: '672px', margin: '0 0 40px' }}
+            style={{ fontSize: 'clamp(16px, 2vw, 20px)', color: '#aaa', fontWeight: 400, lineHeight: 1.4, maxWidth: '672px', margin: '0 0 40px' }}
           >
             We scan 500+ stocks for event mispricings so you don&apos;t have to.
           </motion.p>
