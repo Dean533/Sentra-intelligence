@@ -345,10 +345,7 @@ function scoreColor(s: number | null): string {
 }
 
 function scoreLabel(s: number): string {
-  if (s >= 85) return 'Very Strong Signal'
-  if (s >= 70) return 'Strong Signal'
-  if (s >= 51) return 'Moderate Signal'
-  if (s >= 31) return 'Weak Signal'
+  if (s >= 31) return 'Active Insider Signal'
   return 'No Signal'
 }
 
@@ -799,7 +796,7 @@ export default function EventsPage() {
   }, [])
 
   return (
-    <div style={{ padding: '48px 40px 80px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div className="rsp-pad" style={{ padding: '80px 40px 80px', maxWidth: '1400px', margin: '0 auto' }}>
 
       {/* heading */}
       <p style={{ color: '#7b8498', fontSize: '12px', letterSpacing: '2px', margin: '0 0 10px' }}>

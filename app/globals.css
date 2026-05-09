@@ -5,6 +5,111 @@
   --foreground: #171717;
 }
 
+/* ── Container system ──────────────────────────────────────────────────────────
+   Breakpoint targets:
+     375px  → 16px gutter
+     430px  → 16px gutter
+     768px  → 24px gutter  (clamp ≈ 23px)
+     1024px → 32px gutter  (clamp ≈ 31px)
+     1280px → 40px gutter  (clamp ≈ 38px)
+     1440px → 40px gutter  (capped)
+   Formula: clamp(16px, 3vw, 40px)
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Nav inner — same clamp, slightly tighter cap */
+.nav-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+  padding: 0 clamp(16px, 2.5vw, 40px);
+}
+
+/* Page horizontal padding — applied on all pages with rsp-pad */
+.rsp-pad {
+  padding-left: clamp(16px, 3vw, 40px) !important;
+  padding-right: clamp(16px, 3vw, 40px) !important;
+}
+
+/* ── Mobile-only overrides ─────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Navbar mobile menu */
+  .nav-links-desktop { display: none !important; }
+  .nav-auth-desktop  { display: none !important; }
+  .hamburger-btn     { display: flex !important; }
+
+  /* Homepage: hero subtitle wrap */
+  .hero-subtitle { white-space: normal !important; font-size: 15px !important; }
+
+  /* Homepage: stat bar items */
+  .stat-bar-item { padding: 0 20px !important; }
+
+  /* Ticker page: 7-col stats bar -> 4-col */
+  .ticker-stats-bar { grid-template-columns: repeat(4, 1fr) !important; }
+
+  /* Ticker page: 3-col company info -> stacked */
+  .company-info-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+  }
+  .company-info-grid > div {
+    padding-right: 0 !important;
+    padding-left: 0 !important;
+    border-right: none !important;
+    border-bottom: 1px solid #1e2530;
+    padding-bottom: 32px;
+    margin-bottom: 32px;
+  }
+  .company-info-grid > div:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+
+  /* Ticker page: 2-col filings+news -> stacked */
+  .two-col-section {
+    grid-template-columns: 1fr !important;
+    gap: 40px !important;
+  }
+
+  /* About page: 3-col backtest grid -> 2-col */
+  .backtest-grid-3 { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* About page: 2-col best results -> 1-col */
+  .best-results-grid { grid-template-columns: 1fr !important; }
+
+  /* About page: 3-col trading grid -> 2-col */
+  .trading-grid-3 { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Portfolio toggle full width */
+  .portfolio-view-toggle { width: 100% !important; }
+  .portfolio-view-toggle button { flex: 1 !important; justify-content: center !important; }
+
+  /* Horizontal table scroll wrapper */
+  .table-scroll-x { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+
+  /* Explore — hide less useful columns on small screens */
+  .col-hide-mobile { display: none !important; }
+
+  /* Login split: stack vertically on mobile */
+  .login-panel-right { display: none !important; }
+}
+
+@media (max-width: 480px) {
+  /* Ticker stats bar -> 2-col on very small screens */
+  .ticker-stats-bar { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* About grids -> 1-col */
+  .backtest-grid-3 { grid-template-columns: 1fr !important; }
+  .trading-grid-3  { grid-template-columns: 1fr !important; }
+}
+
+/* Account for fixed navbar height */
+.with-navbar { padding-top: 60px; }
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

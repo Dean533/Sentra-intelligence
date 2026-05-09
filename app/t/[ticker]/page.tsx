@@ -220,7 +220,7 @@ export default function TickerPage() {
 
   return (
     <div style={{ background: '#0a0e14', minHeight: '100vh', color: '#e6edf3', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 40px 80px' }}>
+      <div className="rsp-pad" style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 40px 80px' }}>
 
         {/* ── back ────────────────────────────────────────────────────────────── */}
         <div style={{ paddingTop: '24px', paddingBottom: '20px', position: 'relative', zIndex: 9999, pointerEvents: 'auto' }}>
@@ -320,7 +320,7 @@ export default function TickerPage() {
         </div>
 
         {/* ── stats bar ───────────────────────────────────────────────────────── */}
-        <div style={{
+        <div className="ticker-stats-bar" style={{
           ...card,
           display: 'grid',
           gridTemplateColumns: 'repeat(7, 1fr)',
@@ -351,7 +351,7 @@ export default function TickerPage() {
         </div>
 
         {/* ── 3. COMPANY INFO ROW ─────────────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr', ...sec, gap: '0' }}>
+        <div className="company-info-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr', ...sec, gap: '0' }}>
 
           {/* left — description */}
           <div style={{ paddingRight: '48px', borderRight: '1px solid #1e2530' }}>
@@ -444,7 +444,7 @@ export default function TickerPage() {
         </div>
 
         {/* ── 4. FILINGS + NEWS ROW ───────────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', ...sec }}>
+        <div className="two-col-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', ...sec }}>
 
           {/* recent filings */}
           <div>

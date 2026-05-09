@@ -372,7 +372,7 @@ export default function PortfolioPage() {
   }
 
   // ── Guards ────────────────────────────────────────────────────────────────────
-  if (!authReady || dbLoading) return <div style={{ minHeight: '100vh', background: '#0a0d12' }} />
+  if (!authReady || dbLoading) return <div style={{ minHeight: '100vh', background: '#0a0d12', paddingTop: '60px' }} />
   if (!portfolio)              return <CreateScreen onCreate={save} />
 
   // ── Derived ───────────────────────────────────────────────────────────────────
@@ -403,10 +403,10 @@ export default function PortfolioPage() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#0a0d12', color: '#e6edf3', fontFamily: 'inherit' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '80px 28px 100px' }}>
+      <div className="rsp-pad" style={{ maxWidth: '1400px', margin: '0 auto', padding: '80px 28px 100px' }}>
 
         {/* ── Header ── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
           {editing ? (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
               <input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }} autoFocus style={{ ...inputCss, width: '220px', fontWeight: 700 }} />
@@ -423,7 +423,7 @@ export default function PortfolioPage() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             {/* View toggle */}
-            <div style={{ display: 'flex', background: '#060910', border: '1px solid #1a1f2a', borderRadius: '8px', padding: '3px', gap: '2px' }}>
+            <div className="portfolio-view-toggle" style={{ display: 'flex', background: '#060910', border: '1px solid #1a1f2a', borderRadius: '8px', padding: '3px', gap: '2px' }}>
               {(['tickers', 'trades'] as const).map((v) => (
                 <button key={v} onClick={() => setView(v)} style={{
                   padding: '5px 16px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit',
@@ -443,7 +443,7 @@ export default function PortfolioPage() {
 
         {/* ── Add ticker ── */}
         <div style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <input ref={tickerRef} value={tickerInput}
               onChange={(e) => { setTickerInput(e.target.value); setValidateError(null) }}
               onKeyDown={(e) => { if (e.key === 'Enter') addTicker() }}

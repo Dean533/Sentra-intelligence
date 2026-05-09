@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { getSupabase } from '@/lib/supabase-browser'
-import { LiquidButton } from '@/components/ui/liquid-glass-button'
 import type { User } from '@supabase/supabase-js'
 
 const NAV_LINKS = [
@@ -20,6 +19,7 @@ export default function Navbar() {
 
   const [user,      setUser]      = useState<User | null>(null)
   const [showMenu,  setShowMenu]  = useState(false)
+  const [scrolled,  setScrolled]  = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Sync auth state
@@ -29,6 +29,13 @@ export default function Navbar() {
       setUser(session?.user ?? null)
     })
     return () => subscription.unsubscribe()
+  }, [])
+
+  // Solid background on scroll
+  useEffect(() => {
+    function onScroll() { setScrolled(window.scrollY > 10) }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
   // Close dropdown on outside click
@@ -55,7 +62,10 @@ export default function Navbar() {
       position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 40px', height: '60px',
-      background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)',
+      background: scrolled ? 'rgba(10,13,18,0.95)' : 'transparent',
+      backdropFilter: scrolled ? 'blur(12px)' : 'none',
+      borderBottom: scrolled ? '1px solid rgba(255,255,255,0.05)' : '1px solid transparent',
+      transition: 'background 0.3s, backdrop-filter 0.3s, border-color 0.3s',
     }}>
       <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '16px', letterSpacing: '-0.3px' }}>
         Sentra
@@ -134,9 +144,12 @@ export default function Navbar() {
             )}
           </>
         ) : (
-          <LiquidButton size="sm" onClick={() => router.push('/login')} className="text-[#c9d1d9]">
-            Sign In
-          </LiquidButton>
+          <Link href="/login"
+            style={{ fontSize: '13px', color: '#7b8498', textDecoration: 'none', padding: '6px 14px', border: '1px solid #1e2530', borderRadius: '8px', transition: 'color 0.15s, border-color 0.15s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#c9d1d9'; e.currentTarget.style.borderColor = '#3a4a5a' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#7b8498'; e.currentTarget.style.borderColor = '#1e2530' }}>
+            Sign In →
+          </Link>
         )}
       </div>
     </nav>

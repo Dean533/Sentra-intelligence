@@ -84,10 +84,7 @@ function signalStrengthLabel(v: number): string {
 // ─── Conviction score helpers ─────────────────────────────────────────────────
 
 function signalLabel(score: number): string {
-  if (score >= 85) return 'Very Strong Signal'
-  if (score >= 70) return 'Strong Signal'
-  if (score >= 51) return 'Moderate Signal'
-  if (score >= 31) return 'Weak Signal'
+  if (score >= 31) return 'Active Insider Signal'
   return 'No Signal'
 }
 
@@ -110,8 +107,6 @@ function ConvictionPanel({ conviction }: { conviction: ConvictionData }) {
   const { score, factors, holdDays, positionMultiplier } = conviction
   const clsColor = signalColor(score)
   const barColor  = scoreBarColor(score)
-  console.log('[ConvictionPanel] rendering', { score, holdDays, factors })
-
   return (
     <div style={{
       background: '#0d1117',
@@ -120,6 +115,9 @@ function ConvictionPanel({ conviction }: { conviction: ConvictionData }) {
       padding: '16px',
       marginBottom: '20px',
     }}>
+      <div style={{ fontSize: '11px', color: '#4a5568', marginBottom: '12px' }}>
+        This score reflects the most recent insider purchase — not a stock rating.
+      </div>
       {/* Score row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
         <span style={{ fontSize: '11px', letterSpacing: '1.5px', color: '#7b8498', textTransform: 'uppercase' }}>
@@ -254,6 +252,7 @@ export default function InsiderSection({
   const [loadingSignal,     setLoadingSignal]     = useState(true)
   const [loadingTrades,     setLoadingTrades]     = useState(true)
   const [loadingConviction, setLoadingConviction] = useState(true)
+  const [showDetails,       setShowDetails]       = useState(false)
 
   useEffect(() => {
     if (!ticker) return
@@ -316,8 +315,60 @@ export default function InsiderSection({
         )}
       </div>
 
-      {/* Conviction score panel (shown when loaded) */}
-      {!loadingConviction && conviction && (
+      {/* Active signal banner */}
+      {!loadingConviction && (() => {
+        if (!conviction) return null
+        const tradeDate = new Date(conviction.trade.transaction_date)
+        const daysDiff = Math.floor((Date.now() - tradeDate.getTime()) / 86400000)
+        const isActive = conviction.trade.is_opportunistic && daysDiff <= 180 && conviction.score >= 31
+
+        if (isActive) {
+          return (
+            <div style={{
+              background: 'rgba(63,185,80,0.06)', border: '1px solid rgba(63,185,80,0.2)',
+              borderRadius: '8px', padding: '14px 16px', marginBottom: '20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{
+                  background: 'rgba(63,185,80,0.15)', color: '#3fb950',
+                  fontSize: '11px', fontWeight: 700, letterSpacing: '1px',
+                  padding: '3px 8px', borderRadius: '4px',
+                }}>ACTIVE SIGNAL</span>
+                <span style={{ fontSize: '13px', color: '#7b8498' }}>{daysDiff} days ago</span>
+              </div>
+              <button
+                onClick={() => setShowDetails(v => !v)}
+                style={{
+                  background: 'none', border: '1px solid #1e2530', borderRadius: '6px',
+                  padding: '5px 12px', color: '#c9d1d9', fontSize: '12px',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {showDetails ? 'Hide Details' : 'View Signal Details'}
+              </button>
+            </div>
+          )
+        }
+
+        return (
+          <div style={{
+            background: '#0d1117', border: '1px solid #1f2937',
+            borderRadius: '8px', padding: '14px 16px', marginBottom: '20px',
+            display: 'flex', alignItems: 'center', gap: '12px',
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#4a5568' }}>No Active Signal</span>
+            <span style={{ fontSize: '12px', color: '#3a4a60' }}>
+              {conviction
+                ? `Last activity: ${fmtDate(conviction.trade.transaction_date)}`
+                : 'No insider purchases on record'}
+            </span>
+          </div>
+        )
+      })()}
+
+      {/* Conviction details — expanded on demand */}
+      {!loadingConviction && showDetails && conviction && (
         <ConvictionPanel conviction={conviction} />
       )}
 

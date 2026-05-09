@@ -137,7 +137,7 @@ export default function ExplorePage() {
   // ─── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ padding: '48px 40px 80px', maxWidth: '1100px', margin: '0 auto' }}>
+    <div className="rsp-pad" style={{ padding: '80px 40px 80px', maxWidth: '1100px', margin: '0 auto' }}>
 
       {/* heading */}
       <p style={{ color: '#7b8498', fontSize: '12px', letterSpacing: '2px', margin: '0 0 10px' }}>
@@ -206,7 +206,8 @@ export default function ExplorePage() {
       </div>
 
       {/* table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="table-scroll-x">
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '580px' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #1e2530' }}>
             {['#', 'Ticker', 'Company', 'Sector', 'Price', 'Day Change', 'Market Cap'].map((h) => (
@@ -298,6 +299,7 @@ export default function ExplorePage() {
 
         </tbody>
       </table>
+      </div>
 
       {/* pagination */}
       {!loading && pages > 1 && (

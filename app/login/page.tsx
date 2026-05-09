@@ -91,15 +91,17 @@ export default function LoginPage() {
   }
 
   return (
+    <div style={{ background: '#0a0d12', minHeight: '100vh', fontFamily: 'inherit' }}>
     <div style={{
       display: 'flex', minHeight: '100vh',
-      fontFamily: 'inherit', background: '#0a0d12',
+      maxWidth: '1400px', margin: '0 auto',
     }}>
 
       {/* ── Left: auth form ────────────────────────────────────────────────── */}
       <div style={{
         flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '60px 24px',
+        padding: 'clamp(60px, 8vh, 80px) clamp(20px, 4vw, 48px)',
+        minWidth: 0,
       }}>
         <div style={{ width: '100%', maxWidth: '360px' }}>
 
@@ -222,7 +224,7 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right: brand panel ─────────────────────────────────────────────── */}
-      <div style={{
+      <div className="login-panel-right" style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         borderLeft: '1px solid #111620',
@@ -299,6 +301,7 @@ export default function LoginPage() {
         </div>
       </div>
 
+    </div>
     </div>
   )
 }

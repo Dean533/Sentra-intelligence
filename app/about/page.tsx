@@ -15,7 +15,7 @@ export default function AboutPage() {
   const section = (topPad = '72px'): React.CSSProperties => ({
     maxWidth: '1100px',
     margin: '0 auto',
-    padding: `${topPad} 40px 0`,
+    padding: `${topPad} clamp(16px, 4vw, 40px) 0`,
   })
 
   const label: React.CSSProperties = {
@@ -58,7 +58,7 @@ export default function AboutPage() {
     <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: C.font, paddingBottom: '100px' }}>
 
       {/* ── 1. HERO ──────────────────────────────────────────────────────────── */}
-      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '80px 40px 0' }}>
+      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '80px clamp(16px, 4vw, 40px) 0' }}>
         <p style={label}>SENTRA INTELLIGENCE</p>
         <h1 style={{ fontSize: '48px', fontWeight: 800, margin: '0 0 20px', letterSpacing: '-1px', lineHeight: 1.1 }}>
           How Sentra Works
@@ -229,7 +229,7 @@ export default function AboutPage() {
       <div style={section()}>
         <p style={label}>Backtest Results</p>
         <h2 style={h2}>88,044 Trades · 2015–2026</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
+        <div className="backtest-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
           {[
             { stat: '88,044', sub: 'Insider transactions analyzed' },
             { stat: '59.7%',  sub: 'Win rate, all opportunistic' },
@@ -246,7 +246,7 @@ export default function AboutPage() {
             </div>
           ))}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="best-results-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div style={{ ...card, borderLeft: `3px solid ${C.green}` }}>
             <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1.5px', color: C.muted, marginBottom: '8px' }}>BEST ROLE</div>
             <div style={{ fontSize: '16px', fontWeight: 700, color: C.text, marginBottom: '4px' }}>10% Owner</div>
@@ -270,7 +270,7 @@ export default function AboutPage() {
           Qualifying signals are executed automatically on Alpaca paper trading via a daily
           cron job. Every trade follows a strict rules-based framework:
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+        <div className="trading-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
           {[
             { label: 'ENTRY',       value: 'Score ≥70',         sub: 'Opportunistic only' },
             { label: 'STOP LOSS',   value: '−15%',              sub: 'Hard exit within 30d' },

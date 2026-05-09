@@ -302,10 +302,7 @@ export default function InsiderAnalysisPage() {
     return '#7b8498'
   }
   function signalLabel(s: number) {
-    if (s >= 85) return 'Very Strong Signal'
-    if (s >= 70) return 'Strong Signal'
-    if (s >= 51) return 'Moderate Signal'
-    if (s >= 31) return 'Weak Signal'
+    if (s >= 31) return 'Active Insider Signal'
     return 'No Signal'
   }
 
@@ -353,7 +350,42 @@ export default function InsiderAnalysisPage() {
             const insiderClassification = recentPurchase?.classification ?? null
             const totalValue = recentPurchase?.total_value ?? null
             const bullets = buildReasoningBullets(factors, totalValue, insiderClassification)
+
+            const tradeDate = recentPurchase?.transaction_date ?? null
+            const daysDiff = tradeDate
+              ? Math.floor((Date.now() - new Date(tradeDate).getTime()) / 86400000)
+              : null
+            const isExpired = daysDiff != null && daysDiff > 180
+
             return (
+              <div>
+                {/* Framing disclaimer */}
+                <div style={{
+                  background: 'rgba(158,203,255,0.05)', border: '1px solid rgba(158,203,255,0.12)',
+                  borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+                  display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  <span style={{ fontSize: '12px', color: '#7b8498' }}>
+                    This score reflects the most recent insider purchase — not an overall stock rating.
+                  </span>
+                  {tradeDate && (
+                    <span style={{ fontSize: '12px', color: '#4a5568', flexShrink: 0 }}>
+                      Signal date: <span style={{ color: '#c9d1d9' }}>{fmtDate(tradeDate)}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Signal Expired warning */}
+                {isExpired && (
+                  <div style={{
+                    background: 'rgba(248,81,73,0.06)', border: '1px solid rgba(248,81,73,0.2)',
+                    borderRadius: '8px', padding: '10px 16px', marginBottom: '16px',
+                    fontSize: '12px', color: '#f85149',
+                  }}>
+                    Signal Expired — this trade is {daysDiff} days old. The 180-day signal window has closed.
+                  </div>
+                )}
+
               <div style={{ background: '#0d1117', border: '1px solid #1f2937', borderRadius: '6px', padding: '16px' }}>
                 {/* Score row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
@@ -396,6 +428,7 @@ export default function InsiderAnalysisPage() {
                     </div>
                   </div>
                 )}
+              </div>
               </div>
             )
           })() : (
