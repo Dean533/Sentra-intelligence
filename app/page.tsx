@@ -278,7 +278,7 @@ export default function HomePage() {
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 10 }} />
 
         {/* content */}
-        <div style={{
+        <div className="hero-content" style={{
           position: 'relative', zIndex: 20,
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           textAlign: 'center', paddingTop: '120px', paddingLeft: '24px', paddingRight: '24px',

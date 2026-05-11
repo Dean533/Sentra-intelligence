@@ -331,11 +331,11 @@ export async function GET(req: Request) {
     // Minimum sentra score
     if (minScore !== null) q = q.gte('sentra_score', minScore)
 
-    // Date range — when cluster mode is active and no explicit startDate, use
-    // clusterFrom as the lower bound so the batch query doesn't pull all-time history.
-    const effectiveStart = startDate ?? clusterFrom
-    if (effectiveStart) q = q.gte('transaction_date', effectiveStart)
-    if (endDate)        q = q.lte('transaction_date', endDate)
+    // Date range — only apply bounds explicitly passed by the caller.
+    // clusterFrom is intentionally NOT used here; it belongs only to the
+    // cluster discovery query above and must not restrict the main data query.
+    if (startDate) q = q.gte('transaction_date', startDate)
+    if (endDate)   q = q.lte('transaction_date', endDate)
 
     return q
   }
