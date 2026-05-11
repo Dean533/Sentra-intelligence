@@ -4,6 +4,9 @@ import Navbar from "./components/Navbar";
 export const metadata = {
   title: "Sentra Intelligence",
   description: "Market narrative intelligence platform",
+  verification: {
+    google: "jb73OKoIAWoS6bnD6y7M_sZctp_HEUhL8_upTCddjkI",
+  },
 };
 
 export const viewport = {
