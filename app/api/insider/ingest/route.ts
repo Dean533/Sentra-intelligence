@@ -12,7 +12,7 @@ const SEC_HEADERS = {
   Accept: 'application/json, text/xml, */*',
 }
 
-const XML_FETCH_CAP = 200
+const XML_FETCH_CAP = 250
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
@@ -308,7 +308,7 @@ async function processFiling(
 
 type FeedEntry = { cik: number; adsh: string; primaryDoc: string; filedDate: string }
 
-async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, string>): Promise<FeedEntry[]> {
+async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, string>, startOffset = 0): Promise<FeedEntry[]> {
   const base = `https://efts.sec.gov/LATEST/search-index?forms=4&dateRange=custom&startdt=${today}&enddt=${today}`
   const PAGE_SIZE = 50
   const results: FeedEntry[] = []
@@ -341,7 +341,7 @@ async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, stri
     return results.length >= XML_FETCH_CAP
   }
 
-  const firstUrl = `${base}&from=0&size=${PAGE_SIZE}`
+  const firstUrl = `${base}&from=${startOffset}&size=${PAGE_SIZE}`
   console.log(`[EDGAR] GET ${firstUrl}`)
   const firstRes = await fetch(firstUrl, { headers: SEC_HEADERS })
   const rawText  = await firstRes.text()
@@ -353,10 +353,11 @@ async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, stri
   const capped = extractHits(firstJson)
 
   if (!capped) {
-    const pages = Math.ceil(total / PAGE_SIZE)
+    const pages = Math.ceil((total - startOffset) / PAGE_SIZE)
     for (let page = 1; page < pages; page++) {
       await sleep(200)
-      const res = await fetch(`${base}&from=${page * PAGE_SIZE}&size=${PAGE_SIZE}`, { headers: SEC_HEADERS })
+      const from = startOffset + page * PAGE_SIZE
+      const res = await fetch(`${base}&from=${from}&size=${PAGE_SIZE}`, { headers: SEC_HEADERS })
       if (!res.ok) break
       if (extractHits(await res.json())) break
     }
@@ -458,27 +459,23 @@ export async function GET(req: Request) {
   // ── full-text search mode (normal cron path) ─────────────────────────────
   const batchParam = searchParams.get('batch')
   const batch      = batchParam !== null ? Math.max(0, Math.min(3, parseInt(batchParam, 10))) : null
-  const BATCH_SIZE = 50
 
   async function processDay(date: string): Promise<{
     date: string; total_fetched: number; processed: number; inserted: number; skipped: number; failed: number; error?: string
   }> {
+    const startOffset = batch !== null ? batch * XML_FETCH_CAP : 0
     let entries: FeedEntry[]
     try {
-      entries = await fetchTodaysForm4s(date, cikToTicker)
+      entries = await fetchTodaysForm4s(date, cikToTicker, startOffset)
     } catch (err: any) {
       return { date, total_fetched: 0, processed: 0, inserted: 0, skipped: 0, failed: 0, error: err.message ?? 'Search fetch failed' }
     }
-
-    const slice = batch !== null
-      ? entries.slice(batch * BATCH_SIZE, (batch + 1) * BATCH_SIZE)
-      : entries
 
     let inserted = 0
     let skipped  = 0
     let failed   = 0
 
-    for (const entry of slice) {
+    for (const entry of entries) {
       const ticker  = cikToTicker[entry.cik]
       const hqState = tickerToHqState[ticker] ?? null
       try {
@@ -491,7 +488,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return { date, total_fetched: entries.length, processed: slice.length, inserted, skipped, failed }
+    return { date, total_fetched: entries.length, processed: entries.length, inserted, skipped, failed }
   }
 
   // ── date range backfill mode ──────────────────────────────────────────────
