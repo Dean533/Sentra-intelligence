@@ -12,7 +12,6 @@ const SEC_HEADERS = {
   Accept: 'application/json, text/xml, */*',
 }
 
-const XML_FETCH_CAP = 250
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
@@ -303,63 +302,46 @@ async function processFiling(
   return { inserted, skipped: inserted === 0 ? 1 : 0 }
 }
 
-// ─── EDGAR full-text search fetcher ─────────────────────────────────────────
-// Returns only filings for tracked tickers, capped at XML_FETCH_CAP entries.
+// ─── Targeted per-CIK fetcher ────────────────────────────────────────────────
+// For each CIK, checks the submissions feed directly and returns any Form 4
+// filings dated exactly `today`. Guarantees no missed filings for tracked tickers.
 
-type FeedEntry = { cik: number; adsh: string; primaryDoc: string; filedDate: string }
+type FeedEntry = { cik: number; adsh: string; primaryDoc: string | null; filedDate: string }
 
-async function fetchTodaysForm4s(today: string, cikToTicker: Record<number, string>, startOffset = 0): Promise<FeedEntry[]> {
-  const base = `https://efts.sec.gov/LATEST/search-index?forms=4&dateRange=custom&startdt=${today}&enddt=${today}`
-  const PAGE_SIZE = 50
+async function fetchFilingsForCiks(
+  ciks: number[],
+  cikToTicker: Record<number, string>,
+  today: string,
+): Promise<FeedEntry[]> {
   const results: FeedEntry[] = []
 
-  function extractHits(json: any): boolean {
-    // Returns true if we hit the cap and should stop paginating
-    const hits: any[] = json?.hits?.hits ?? []
-    for (const hit of hits) {
-      if (results.length >= XML_FETCH_CAP) return true
-
-      // _id format: "0001234567-24-000001:somefile.xml"
-      const rawId     = (hit._id as string | undefined) ?? ''
-      const [adsh, primaryDoc] = rawId.split(':')
-      if (!adsh || !primaryDoc) continue
-
-      const src       = hit._source ?? {}
-      const filedDate: string = src.file_date ?? today
-
-      // "ciks" is an array of zero-padded CIK strings; find first that matches our tickers
-      const cikList: string[] = Array.isArray(src.ciks) ? src.ciks : []
-      let cik = 0
-      for (const c of cikList) {
-        const parsed = parseInt(c, 10)
-        if (cikToTicker[parsed]) { cik = parsed; break }
-      }
-      if (!cik) continue
-
-      results.push({ cik, adsh, primaryDoc, filedDate })
+  for (const cikInt of ciks) {
+    await sleep(150)
+    const res = await fetch(
+      `https://data.sec.gov/submissions/CIK${padCik(cikInt)}.json`,
+      { headers: SEC_HEADERS },
+    )
+    if (!res.ok) {
+      console.log(`[ingest] submissions fetch failed for CIK ${cikInt} (${cikToTicker[cikInt]}): ${res.status}`)
+      continue
     }
-    return results.length >= XML_FETCH_CAP
-  }
 
-  const firstUrl = `${base}&from=${startOffset}&size=${PAGE_SIZE}`
-  console.log(`[EDGAR] GET ${firstUrl}`)
-  const firstRes = await fetch(firstUrl, { headers: SEC_HEADERS })
-  const rawText  = await firstRes.text()
-  console.log(`[EDGAR] status=${firstRes.status} body_preview=${rawText.slice(0, 200)}`)
-  if (!firstRes.ok) throw new Error(`EDGAR search failed: ${firstRes.status}`)
+    const sub    = await res.json()
+    const recent = sub.filings?.recent
+    if (!recent) continue
 
-  const firstJson = JSON.parse(rawText)
-  const total: number = firstJson?.hits?.total?.value ?? 0
-  const capped = extractHits(firstJson)
+    const forms:    string[] = recent.form            ?? []
+    const dates:    string[] = recent.filingDate      ?? []
+    const adshList: string[] = recent.accessionNumber ?? []
+    const docs:     string[] = recent.primaryDocument ?? []
 
-  if (!capped) {
-    const pages = Math.ceil((total - startOffset) / PAGE_SIZE)
-    for (let page = 1; page < pages; page++) {
-      await sleep(200)
-      const from = startOffset + page * PAGE_SIZE
-      const res = await fetch(`${base}&from=${from}&size=${PAGE_SIZE}`, { headers: SEC_HEADERS })
-      if (!res.ok) break
-      if (extractHits(await res.json())) break
+    for (let i = 0; i < forms.length; i++) {
+      if (dates[i] < today) break    // filings are sorted descending — nothing older will match
+      if (forms[i] !== '4')   continue
+      if (dates[i] !== today) continue
+      const adsh = adshList[i]
+      if (!adsh) continue
+      results.push({ cik: cikInt, adsh, primaryDoc: docs[i] ?? null, filedDate: dates[i] })
     }
   }
 
@@ -456,19 +438,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ ticker: singleTicker, inserted, skipped })
   }
 
-  // ── full-text search mode (normal cron path) ─────────────────────────────
+  // ── per-CIK targeted mode (normal cron path) ─────────────────────────────
   const batchParam = searchParams.get('batch')
   const batch      = batchParam !== null ? Math.max(0, Math.min(3, parseInt(batchParam, 10))) : null
 
   async function processDay(date: string): Promise<{
     date: string; total_fetched: number; processed: number; inserted: number; skipped: number; failed: number; error?: string
   }> {
-    const startOffset = batch !== null ? batch * XML_FETCH_CAP : 0
+    const allCiks   = Object.keys(cikToTicker).map(Number)
+    const batchSize = Math.ceil(allCiks.length / 4)
+    const batchCiks = batch !== null
+      ? allCiks.slice(batch * batchSize, (batch + 1) * batchSize)
+      : allCiks
+
     let entries: FeedEntry[]
     try {
-      entries = await fetchTodaysForm4s(date, cikToTicker, startOffset)
+      entries = await fetchFilingsForCiks(batchCiks, cikToTicker, date)
     } catch (err: any) {
-      return { date, total_fetched: 0, processed: 0, inserted: 0, skipped: 0, failed: 0, error: err.message ?? 'Search fetch failed' }
+      return { date, total_fetched: 0, processed: 0, inserted: 0, skipped: 0, failed: 0, error: err.message ?? 'CIK fetch failed' }
     }
 
     let inserted = 0

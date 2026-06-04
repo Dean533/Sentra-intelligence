@@ -74,7 +74,7 @@ export default function LoginPage() {
     setLoading(true); setError(null)
     const { error } = await getSupabase().auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: 'https://www.sentraintelligence.com/auth/callback' },
+      options: { redirectTo: window.location.origin + '/auth/callback' },
     })
     if (error) { setError(error.message); setLoading(false) }
   }
@@ -83,7 +83,7 @@ export default function LoginPage() {
     if (!email.trim()) { setError('Enter your email address first.'); return }
     setLoading(true); setError(null)
     const { error } = await getSupabase().auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: 'https://www.sentraintelligence.com/auth/callback',
+      redirectTo: window.location.origin + '/auth/callback',
     })
     setLoading(false)
     if (error) setError(error.message)
