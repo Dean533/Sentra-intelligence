@@ -114,7 +114,7 @@ function parseForm4(xml: string): ParsedTx[] {
 
   for (const block of txBlocks) {
     const code = directVal(block, 'transactionCode')
-    if (code !== 'P' && code !== 'S') continue
+    if (!code) continue
 
     const dateStr        = nestedVal(block, 'transactionDate')
     const sharesStr      = nestedVal(block, 'transactionShares')
@@ -124,8 +124,7 @@ function parseForm4(xml: string): ParsedTx[] {
     const shares = sharesStr ? parseFloat(sharesStr) : 0
     const price  = priceStr  ? parseFloat(priceStr)  : 0
 
-    if (!dateStr || shares <= 0 || price <= 0) continue
-    if (shares * price < 100_000) continue
+    if (!dateStr) continue
 
     const isPlanSale = detectPlanSale(block, xml, code)
 
@@ -153,8 +152,6 @@ function parseForm4(xml: string): ParsedTx[] {
 
 // ─── process a single filing ─────────────────────────────────────────────────
 
-let skipLogCount = 0
-
 async function findRawXmlUrl(cikInt: number, adshClean: string): Promise<string | null> {
   const res = await fetch(
     `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/index.json`,
@@ -177,41 +174,44 @@ async function processFiling(
   const adshClean = adsh.replace(/-/g, '')
   const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${adsh}-index.htm`
 
-  const xmlUrl = primaryDoc
-    ? `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${primaryDoc}`
-    : await findRawXmlUrl(cikInt, adshClean)
-  if (!xmlUrl) return { inserted: 0, skipped: 1 }
+  // Strip SEC's XSLT renderer path prefix (e.g. "xslF345X06/") so we hit raw XML,
+  // not the HTML viewer. primaryDoc from submissions JSON can be "xslXXX/filename.xml".
+  const cleanDoc = primaryDoc?.replace(/^xsl[^/]+\//i, '') ?? null
+  const isHtmlDoc = cleanDoc && /\.html?$/i.test(cleanDoc)
+
+  let xmlUrl: string | null
+  if (isHtmlDoc || !cleanDoc) {
+    xmlUrl = await findRawXmlUrl(cikInt, adshClean)
+  } else {
+    xmlUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${cleanDoc}`
+  }
+
+  if (!xmlUrl) {
+    console.log(`skip ${ticker}: no xml url (adsh=${adsh} primaryDoc=${primaryDoc})`)
+    return { inserted: 0, skipped: 1 }
+  }
 
   await sleep(20)
 
   const xmlRes = await fetch(xmlUrl, { headers: SEC_HEADERS })
-  if (!xmlRes.ok) return { inserted: 0, skipped: 1 }
+  if (!xmlRes.ok) {
+    console.log(`skip ${ticker}: xml fetch failed ${xmlRes.status} url=${xmlUrl}`)
+    return { inserted: 0, skipped: 1 }
+  }
 
   const xml = await xmlRes.text()
 
   if (!xml.includes('<ownershipDocument') && !xml.includes('<rptOwnerName')) {
+    console.log(`skip ${ticker}: not an ownership document (adsh=${adsh})`)
     return { inserted: 0, skipped: 1 }
   }
 
   const allTxBlocks = allBlocks(xml, 'nonDerivativeTransaction')
-  const codes = allTxBlocks.map((b) => directVal(b, 'transactionCode')).filter(Boolean)
 
   const transactions = parseForm4(xml)
   if (transactions.length === 0) {
-    if (skipLogCount < 5) {
-      skipLogCount++
-      const reasons = allTxBlocks.length === 0
-        ? 'no nonDerivativeTx blocks'
-        : allTxBlocks.map((block) => {
-            const code = directVal(block, 'transactionCode')
-            if (code !== 'P' && code !== 'S') return `code=${code}`
-            const shares = parseFloat(nestedVal(block, 'transactionShares') ?? '0')
-            const price  = parseFloat(nestedVal(block, 'transactionPricePerShare') ?? '0')
-            if (shares <= 0 || price <= 0) return `missing shares/price`
-            return `under $100k ($${Math.round(shares * price).toLocaleString()})`
-          }).join(' | ')
-      console.log(`[skip] ${ticker} ${adsh} — codes: [${codes.join(', ')}] — ${reasons}`)
-    }
+    const codes = allTxBlocks.map((b) => directVal(b, 'transactionCode')).filter(Boolean)
+    console.log(`skip ${ticker}: 0 transactions parsed (${allTxBlocks.length} nonDerivative blocks, codes=[${codes.join(',')}]) adsh=${adsh}`)
     return { inserted: 0, skipped: 1 }
   }
 
@@ -219,7 +219,7 @@ async function processFiling(
 
   for (const tx of transactions) {
     if (tx.isPlanSale) {
-      console.log(`[skip] plan sale detected — ${adsh} — ${tx.insiderName} ${tx.transactionDirection} ${ticker}`)
+      console.log(`inserting ${ticker}: plan sale stored but no event (adsh=${adsh} insider=${tx.insiderName} dir=${tx.transactionDirection})`)
     }
 
     // Deduplication: amended filings (Form 4/A) get new accession numbers but describe
@@ -237,7 +237,7 @@ async function processFiling(
         .maybeSingle()
 
       if (existing) {
-        console.log(`[skip] duplicate trade detected — ${adsh} — ${ticker}`)
+        console.log(`skip ${ticker}: duplicate already in db (adsh=${adsh} insider=${tx.insiderCik} date=${tx.transactionDate} shares=${tx.shares})`)
         continue
       }
     }
@@ -268,7 +268,10 @@ async function processFiling(
       .from('insider_transactions')
       .insert([payload])
 
-    if (insertErr) continue
+    if (insertErr) {
+      console.log(`skip ${ticker}: db insert error — ${insertErr.message} (adsh=${adsh})`)
+      continue
+    }
 
     // Plan sales are stored for auditing but do not generate signal events
     if (tx.isPlanSale) { inserted++; continue }
