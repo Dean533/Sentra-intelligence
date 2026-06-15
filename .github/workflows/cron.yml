@@ -5,6 +5,7 @@ on:
     - cron: '0 11 * * *'
     - cron: '30 14 * * *'
     - cron: '0 16 * * *'
+    - cron: '0 10 * * 0'
   workflow_dispatch:
 
 jobs:
@@ -69,4 +70,13 @@ jobs:
       - name: Score
         run: |
           curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/score" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  cleanup-news:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 10 * * 0'
+    steps:
+      - name: Delete old news events
+        run: |
+          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/maintenance/cleanup-news" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
