@@ -217,7 +217,14 @@ async function processFiling(
 
   let inserted = 0
 
+  const cutoffMs = Date.now() + 7 * 24 * 60 * 60 * 1000
+
   for (const tx of transactions) {
+    if (new Date(tx.transactionDate).getTime() > cutoffMs) {
+      console.log(`skip ${ticker}: implausible future date ${tx.transactionDate} (adsh=${adsh})`)
+      continue
+    }
+
     if (tx.isPlanSale) {
       console.log(`inserting ${ticker}: plan sale stored but no event (adsh=${adsh} insider=${tx.insiderName} dir=${tx.transactionDirection})`)
     }

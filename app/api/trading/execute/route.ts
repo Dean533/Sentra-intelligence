@@ -196,6 +196,7 @@ async function runExecute(req: Request): Promise<NextResponse> {
     .in('ticker', signalTickers)
     .gte('transaction_date', signalMonth)
     .lt('transaction_date', new Date(new Date(signalMonth).setUTCMonth(new Date(signalMonth).getUTCMonth() + 1)).toISOString().split('T')[0])
+    .eq('transaction_code', 'P')
     .eq('transaction_direction', 'buy')
     .not('insider_cik', 'is', null)
 

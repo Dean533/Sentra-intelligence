@@ -128,10 +128,11 @@ export async function GET(req: Request) {
   const deny = authorizeCron(req)
   if (deny) return deny
 
-  // Score any row with purchase data — expected_move doesn't require price enrichment.
+  // Score open-market purchases only — awards/exercises (A, M, F, etc.) are excluded.
   const { data: rows, error } = await supabase
     .from('insider_transactions')
     .select('id, ticker, officer_title, role, purchase_pct_market_cap, total_value, transaction_date, insider_name')
+    .eq('transaction_code', 'P')
     .not('total_value', 'is', null)
     .order('transaction_date', { ascending: false })
     .limit(50)
@@ -165,6 +166,7 @@ export async function GET(req: Request) {
         .from('insider_transactions')
         .select('insider_name')
         .eq('ticker', row.ticker)
+        .eq('transaction_code', 'P')
         .neq('id', row.id)
         .gte('transaction_date', thirtyDaysBack)
         .lte('transaction_date', row.transaction_date)
@@ -177,7 +179,7 @@ export async function GET(req: Request) {
       // put strong but lesser weight on raw dollars (25%), and apply lighter
       // adjustments for who bought (15%) and whether multiple insiders were buying (10%).
       // The remaining 10% is a flat open-market quality credit — every row earns it
-      // since ingestion filters for P-code discretionary purchases only.
+      // since this query filters to transaction_code='P' (open-market purchases only).
       const eventStrength =
         WEIGHT_RELATIVE * relativePurchaseScore(row.purchase_pct_market_cap) +
         WEIGHT_DOLLAR   * rawDollarScore(row.total_value) +
