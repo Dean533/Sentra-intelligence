@@ -521,18 +521,47 @@ export async function GET(req: Request) {
     return NextResponse.json({ batch, days: results, totals })
   }
 
-  // ── single-day mode ───────────────────────────────────────────────────────
-  const today  = searchParams.get('date') ?? new Date().toISOString().split('T')[0]
-  const result = await processDay(today)
-  if (result.error) return NextResponse.json({ error: result.error }, { status: 502 })
+  // ── single-day mode (?date=YYYY-MM-DD) ───────────────────────────────────
+  const explicitDate = searchParams.get('date')
+  if (explicitDate) {
+    const result = await processDay(explicitDate)
+    if (result.error) return NextResponse.json({ error: result.error }, { status: 502 })
+    return NextResponse.json({
+      date:          result.date,
+      total_fetched: result.total_fetched,
+      batch,
+      processed:     result.processed,
+      inserted:      result.inserted,
+      skipped:       result.skipped,
+      failed:        result.failed,
+    })
+  }
 
-  return NextResponse.json({
-    date:          result.date,
-    total_fetched: result.total_fetched,
-    batch,
-    processed:     result.processed,
-    inserted:      result.inserted,
-    skipped:       result.skipped,
-    failed:        result.failed,
-  })
+  // ── daily cron mode (no date param) — rolling 5-day window ───────────────
+  // Insiders have a 2-day filing lag, and weekends/holidays create gaps.
+  // A 5-day lookback ensures Mon after a long weekend reaches back to Thu.
+  // The dedup in processFiling makes re-processing already-seen days safe.
+  const todayStr    = new Date().toISOString().split('T')[0]
+  const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+  const windowDays: string[] = []
+  for (const d = new Date(fiveDaysAgo); d.toISOString().split('T')[0] <= todayStr; d.setUTCDate(d.getUTCDate() + 1)) {
+    windowDays.push(d.toISOString().split('T')[0])
+  }
+
+  const windowResults = []
+  for (const day of windowDays) {
+    windowResults.push(await processDay(day))
+  }
+
+  const windowTotals = windowResults.reduce(
+    (acc, r) => ({
+      inserted: acc.inserted + r.inserted,
+      skipped:  acc.skipped  + r.skipped,
+      failed:   acc.failed   + r.failed,
+    }),
+    { inserted: 0, skipped: 0, failed: 0 }
+  )
+
+  return NextResponse.json({ batch, window: `${fiveDaysAgo}..${todayStr}`, days: windowResults, totals: windowTotals })
 }
