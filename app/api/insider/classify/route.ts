@@ -94,38 +94,71 @@ export async function GET(req: Request) {
   const limit  = parseInt(searchParams.get('limit')  ?? '500', 10)
 
   const classifiedYear = new Date().getUTCFullYear()
-
-  // Fetch a page of distinct insider_cik values with their trade dates.
-  // We need 3 years of lookback, so pull everything from the past 4 years.
   const since = `${classifiedYear - 4}-01-01`
 
-  const { data: rows, error } = await supabase
-    .from('insider_transactions')
-    .select('insider_cik, insider_name, transaction_date')
-    .not('insider_cik', 'is', null)
-    .gte('transaction_date', since)
-    .order('insider_cik', { ascending: true })
-    .order('transaction_date', { ascending: true })
-    .range(offset, offset + limit - 1)
+  // ── Step 1: Get ALL distinct insider_cik values in the window ────────────────
+  // PostgREST caps queries at 1000 rows by default. We must paginate through all
+  // rows in chunks collecting distinct CIKs, otherwise we'd only see the first
+  // 1000 rows and massively undercount distinct insiders.
+  const CIK_PAGE = 1000
+  const allCikSet = new Set<string>()
+  let from = 0
+  while (true) {
+    const { data: chunk, error: cikErr } = await supabase
+      .from('insider_transactions')
+      .select('insider_cik')
+      .not('insider_cik', 'is', null)
+      .gte('transaction_date', since)
+      .order('insider_cik', { ascending: true })
+      .range(from, from + CIK_PAGE - 1)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!rows || rows.length === 0) {
-    return NextResponse.json({ processed: 0, routine: 0, opportunistic: 0, unclassifiable: 0, remaining: 0 })
+    if (cikErr) return NextResponse.json({ error: cikErr.message }, { status: 500 })
+    if (!chunk || chunk.length === 0) break
+    for (const r of chunk) allCikSet.add((r as any).insider_cik)
+    if (chunk.length < CIK_PAGE) break
+    from += CIK_PAGE
   }
 
-  // Group by insider_cik and classify each
-  const grouped = groupByInsider(rows as TradeRecord[])
+  const allCiks  = [...allCikSet].sort()
+  const totalDistinct = allCiks.length
+  const pageCiks = allCiks.slice(offset, offset + limit)
 
-  let routine       = 0
-  let opportunistic = 0
+  if (pageCiks.length === 0) {
+    return NextResponse.json({ processed: 0, routine: 0, opportunistic: 0, unclassifiable: 0, remaining: 0, offset_next: null })
+  }
+
+  // ── Step 2: Fetch ALL trades for every insider in this page ──────────────────
+  // Paginate here too — 500 insiders with multi-year history can easily exceed
+  // the 1000-row PostgREST cap, which would truncate trade histories mid-insider.
+  const allTrades: TradeRecord[] = []
+  let tradeFrom = 0
+  while (true) {
+    const { data: chunk, error: tradesErr } = await supabase
+      .from('insider_transactions')
+      .select('insider_cik, insider_name, transaction_date')
+      .in('insider_cik', pageCiks)
+      .gte('transaction_date', since)
+      .order('transaction_date', { ascending: true })
+      .range(tradeFrom, tradeFrom + CIK_PAGE - 1)
+
+    if (tradesErr) return NextResponse.json({ error: tradesErr.message }, { status: 500 })
+    if (!chunk || chunk.length === 0) break
+    allTrades.push(...(chunk as TradeRecord[]))
+    if (chunk.length < CIK_PAGE) break
+    tradeFrom += CIK_PAGE
+  }
+
+  // ── Step 3: Classify each insider and build upsert rows ──────────────────────
+  const grouped = groupByInsider(allTrades)
+
+  let routine        = 0
+  let opportunistic  = 0
   let unclassifiable = 0
-  let failed        = 0
-
   const upserts: any[] = []
 
-  for (const [cik, trades] of grouped) {
-    const insiderName = trades[0].insider_name ?? null
-    const result = classifyInsider(trades, classifiedYear)
+  for (const [cik, cikTrades] of grouped) {
+    const insiderName = cikTrades[0].insider_name ?? null
+    const result = classifyInsider(cikTrades, classifiedYear)
 
     upserts.push({
       insider_cik:      cik,
@@ -134,15 +167,17 @@ export async function GET(req: Request) {
       classified_year:  classifiedYear,
       active_months:    result.activeMonths,
       trade_year_count: result.tradeYearCount,
-      total_trades:     trades.length,
+      total_trades:     cikTrades.length,
       classified_at:    new Date().toISOString(),
     })
 
-    if (result.classification === 'ROUTINE')       routine++
+    if (result.classification === 'ROUTINE')            routine++
     else if (result.classification === 'OPPORTUNISTIC') opportunistic++
-    else unclassifiable++
+    else                                                 unclassifiable++
   }
 
+  // ── Step 4: Upsert — idempotent on (insider_cik, classified_year) ────────────
+  let failed = 0
   if (upserts.length > 0) {
     const { error: upsertErr } = await supabase
       .from('insider_classifications')
@@ -154,16 +189,17 @@ export async function GET(req: Request) {
     }
   }
 
-  // Estimate remaining: if we got a full page, there may be more
-  const remaining = rows.length === limit ? limit : 0
+  const remaining  = Math.max(0, totalDistinct - (offset + pageCiks.length))
+  const offset_next = remaining > 0 ? offset + limit : null
 
   return NextResponse.json({
-    processed:     grouped.size,
+    processed:      grouped.size,
     routine,
     opportunistic,
     unclassifiable,
     failed,
+    total_distinct: totalDistinct,
     remaining,
-    offset_next:   remaining > 0 ? offset + limit : null,
+    offset_next,
   })
 }
