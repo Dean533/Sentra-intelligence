@@ -6,6 +6,7 @@
 import * as fs   from 'fs'
 import * as path from 'path'
 import { createClient } from '@supabase/supabase-js'
+import { toGicsSector } from '../lib/gicsSector'
 
 // ─── Load .env.local ──────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ async function main() {
     rows.push({
       symbol,
       name:   fields[colName]   ?? '',
-      sector: fields[colSector] ?? '',
+      sector: toGicsSector(fields[colSector] ?? ''),
     })
   }
   console.log(`\nRows to seed: ${rows.length}`)

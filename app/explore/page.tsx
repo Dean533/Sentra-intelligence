@@ -10,7 +10,7 @@ type Ticker = {
   symbol: string
   name: string
   sector: string
-  market_cap: number
+  market_cap: number | null
   price: number | null
   day_change: number | null
   day_change_percent: number | null
@@ -26,16 +26,16 @@ const SORT_OPTIONS: { label: string; value: SortKey }[] = [
 
 const SECTOR_OPTIONS = [
   'All Sectors',
-  'Basic Materials',
   'Communication Services',
-  'Consumer Cyclical',
-  'Consumer Defensive',
+  'Consumer Discretionary',
+  'Consumer Staples',
   'Energy',
-  'Financial Services',
-  'Healthcare',
+  'Financials',
+  'Health Care',
   'Industrials',
+  'Information Technology',
+  'Materials',
   'Real Estate',
-  'Technology',
   'Utilities',
 ]
 
@@ -58,7 +58,8 @@ const dropdownStyle: React.CSSProperties = {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function formatMarketCap(num: number): string {
+function formatMarketCap(num: number | null): string {
+  if (num == null) return '—'
   if (num >= 1e12) return `$${(num / 1e12).toFixed(1)}T`
   if (num >= 1e9)  return `$${(num / 1e9).toFixed(1)}B`
   return `$${(num / 1e6).toFixed(1)}M`

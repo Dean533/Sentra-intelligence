@@ -31,11 +31,12 @@ export async function GET(
     .select(
       'id, ticker, insider_name, insider_cik, officer_title, role, ' +
       'transaction_date, transaction_code, transaction_direction, ' +
-      'total_value, price_per_share, shares, is_local'
+      'total_value, price_per_share, shares, shares_owned_after, is_local'
     )
     .eq('ticker', TK)
     .eq('transaction_direction', 'buy')
     .eq('transaction_code', 'P')
+    .neq('is_issuer_buyback', true)
     .order('transaction_date', { ascending: false })
     .limit(10)
 
@@ -88,12 +89,14 @@ export async function GET(
 
   // ── 3. Sector for this ticker ──────────────────────────────────────────────
   let sector: string | null = null
+  let market_cap: number | null = null
   const { data: tikMeta } = await supabase
     .from('tickers')
-    .select('sector')
+    .select('sector, market_cap')
     .eq('symbol', TK)
     .maybeSingle()
-  sector = (tikMeta as any)?.sector ?? null
+  sector     = (tikMeta as any)?.sector     ?? null
+  market_cap = (tikMeta as any)?.market_cap ?? null
 
   // ── 4. All opportunistic buys for this ticker in the past 6 months ─────────
   // Used to compute per-month cluster counts and ticker signal history.
@@ -198,6 +201,15 @@ export async function GET(
       `history=${insiderData.outcomes.length} trades`
     )
 
+    // Resolve three-way CMP classification for the new scoring engine.
+    // Prefer confirmed classification; fall back to inferred-opportunistic; else null.
+    const txCls: 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE' | null =
+      cik && opportunisticCiks.has(cik) ? 'OPPORTUNISTIC'
+      : isInferred                       ? 'OPPORTUNISTIC'
+      : cik && routineCiks.has(cik)      ? 'ROUTINE'
+      : cik && classifiedCiks.has(cik)   ? 'UNCLASSIFIABLE'
+      : null
+
     const convTrade: ConvictionTrade = {
       ticker:               tx.ticker,
       insider_name:         tx.insider_name,
@@ -212,6 +224,12 @@ export async function GET(
       cluster_count:        clusterCount,
       cluster_total_value:  clusterTotalValue,
       insider_median_value: insiderData.medianValue,
+      // New validated-factor inputs
+      classification:       txCls,
+      shares:               tx.shares ?? null,
+      shares_owned_after:   tx.shares_owned_after ?? null,
+      market_cap,
+      momentum_90d:         null,  // not fetched at this stage; graceful neutral
     }
 
     const result = computeConvictionScore(convTrade, insiderData.outcomes, tickerHistory)
@@ -235,6 +253,8 @@ export async function GET(
   return NextResponse.json({
     data: {
       score:              bestResult.score,
+      color:              bestResult.color,       // 'green' | 'yellow' | 'red' | 'gray'
+      breakdown:          bestResult.breakdown,   // [{factor, points, maxPoints, reason}]
       classification:     bestResult.classification,
       role:               bestResult.role,
       factors:            bestResult.factors,

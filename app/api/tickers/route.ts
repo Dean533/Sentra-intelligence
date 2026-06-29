@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     sort === 'alpha'  ? sectored.order('symbol',     { ascending: true }) :
     sort === 'sector' ? sectored.order('sector',     { ascending: true })
                                 .order('symbol',     { ascending: true }) :
-                        sectored.order('market_cap', { ascending: false })
+                        sectored.order('market_cap', { ascending: false, nullsFirst: false })
 
   const { data: rows, count, error } = await ordered.range(offset, offset + PAGE_SIZE - 1)
 

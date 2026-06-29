@@ -87,12 +87,16 @@ export async function GET(req: Request) {
   // Fetch all tickers
   const { data: tickerRows, error: tickerErr } = await supabase
     .from('tickers')
-    .select('symbol, sector')
+    .select('symbol, sector, market_cap')
 
   if (tickerErr) return NextResponse.json({ error: tickerErr.message }, { status: 500 })
   const tickers = (tickerRows ?? []).map((r: any) => r.symbol as string)
-  const sectorMap: Record<string, string | null> = {}
-  for (const r of tickerRows ?? []) sectorMap[(r as any).symbol] = (r as any).sector ?? null
+  const sectorMap:    Record<string, string | null> = {}
+  const marketCapMap: Record<string, number | null> = {}
+  for (const r of tickerRows ?? []) {
+    sectorMap[(r as any).symbol]    = (r as any).sector     ?? null
+    marketCapMap[(r as any).symbol] = (r as any).market_cap ?? null
+  }
 
   // Bulk-fetch classifications for current year AND prior year in one query.
   // Prior year acts as fallback when the annual classify job hasn't run yet (Jan/Feb gap).
@@ -156,12 +160,13 @@ export async function GET(req: Request) {
   // officer_title and role are needed for inferred-opportunistic detection.
   const { data: allTx, error: txErr } = await supabase
     .from('insider_transactions')
-    .select('ticker, insider_cik, insider_name, officer_title, role, transaction_direction, transaction_date, total_value, is_local')
+    .select('ticker, insider_cik, insider_name, officer_title, role, transaction_direction, transaction_date, total_value, shares, shares_owned_after, is_local')
     .in('ticker', tickers)
     .gte('transaction_date', rangeFrom)
     .lte('transaction_date', rangeTo)
     .not('transaction_direction', 'is', null)
     .neq('is_plan_sale', true)
+    .neq('is_issuer_buyback', true)
 
   if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
 
@@ -301,13 +306,21 @@ export async function GET(req: Request) {
       let maxHoldDays = 0
       let maxResult: ReturnType<typeof computeConvictionScore> | null = null
       for (const { tx, isOpportunistic, isInferred } of qualifyingBuys) {
+        const txCik = (tx as any).insider_cik as string | null
+        const txCls: 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE' | null =
+          isOpportunistic && !isInferred          ? 'OPPORTUNISTIC'
+          : isInferred                            ? 'OPPORTUNISTIC'
+          : txCik && classMap[txCik] === 'ROUTINE' ? 'ROUTINE'
+          : txCik && classMap[txCik]              ? 'UNCLASSIFIABLE'
+          : null
+
         const convTrade: ConvictionTrade = {
           ticker,
           insider_name:              (tx as any).insider_name,
           officer_title:             (tx as any).officer_title ?? null,
           role:                      (tx as any).role ?? null,
           total_value:               (tx as any).total_value ?? null,
-          price_per_share:           null,     // not fetched at this stage
+          price_per_share:           null,
           transaction_date:          (tx as any).transaction_date ?? signalMonth,
           is_opportunistic:          isOpportunistic,
           is_inferred_opportunistic: isInferred,
@@ -315,7 +328,13 @@ export async function GET(req: Request) {
           sector:                    sectorMap[ticker] ?? null,
           cluster_count:             opportunisticBuys,
           cluster_total_value:       buyValue,
-          insider_median_value:      null,     // no history in cron context
+          insider_median_value:      null,
+          // New validated-factor inputs
+          classification:            txCls,
+          shares:                    (tx as any).shares ?? null,
+          shares_owned_after:        (tx as any).shares_owned_after ?? null,
+          market_cap:                marketCapMap[ticker] ?? null,
+          momentum_90d:              null,  // not available in cron context
         }
         const result = computeConvictionScore(convTrade, [], [], null)
         console.log(`[signals-monthly] scored ${ticker} | insider="${(tx as any).insider_name}" | isOpportunistic=${isOpportunistic} isInferred=${isInferred} | score=${result.score} | factors=[${result.factors.join(' · ')}]`)

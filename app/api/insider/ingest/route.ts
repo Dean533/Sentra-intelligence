@@ -1,406 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { authorizeCron } from '@/lib/cronAuth'
+import {
+  runDailyIngest,
+  ingestTickerInsiders,
+  loadTickerMeta,
+  loadCikMap,
+} from '@/lib/insider/ingestCore'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!
 )
-
-const SEC_HEADERS = {
-  'User-Agent': 'Sentra contact@sentra.com',
-  Accept: 'application/json, text/xml, */*',
-}
-
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms))
-}
-
-function padCik(cik: string | number) {
-  return String(cik).padStart(10, '0')
-}
-
-// ─── XML helpers ─────────────────────────────────────────────────────────────
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&amp;/g,  '&')
-    .replace(/&lt;/g,   '<')
-    .replace(/&gt;/g,   '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-}
-
-function directVal(xml: string, tag: string): string | null {
-  const m = xml.match(new RegExp(`<${tag}[^>]*>\\s*([^<]+?)\\s*<\\/${tag}>`, 'i'))
-  return m?.[1] ? decodeEntities(m[1].trim()) : null
-}
-
-function nestedVal(xml: string, outer: string): string | null {
-  const block = xml.match(new RegExp(`<${outer}[^>]*>([\\s\\S]*?)<\\/${outer}>`, 'i'))
-  if (!block) return null
-  return directVal(block[1], 'value')
-}
-
-function allBlocks(xml: string, tag: string): string[] {
-  const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi')
-  return xml.match(re) ?? []
-}
-
-// ─── Form 4 parser ────────────────────────────────────────────────────────────
-
-type ParsedTx = {
-  insiderName: string
-  insiderCik: string | null
-  insiderState: string | null
-  isDirector: boolean
-  isOfficer: boolean
-  officerTitle: string | null
-  role: string
-  transactionDate: string
-  transactionCode: string
-  transactionDirection: string
-  shares: number
-  pricePerShare: number
-  totalValue: number
-  sharesOwnedAfter: number | null
-  isPlanSale: boolean
-}
-
-// Returns true if the transaction block was executed under a pre-arranged 10b5-1 plan.
-// Primary signal: <planName> or <transactionPlanName> tags contain any text value.
-// Secondary signal (sells only): a referenced footnote contains the string "10b5-1".
-function detectPlanSale(block: string, xml: string, code: string): boolean {
-  // <planName> can be direct text or wrapped in <value> — check both
-  const planNameDirect = directVal(block, 'planName')
-  const planNameNested = nestedVal(block, 'transactionPlanName')
-  if ((planNameDirect && planNameDirect.trim().length > 0) ||
-      (planNameNested && planNameNested.trim().length > 0)) {
-    return true
-  }
-
-  // For sell transactions, resolve footnote references and check for "10b5-1" text
-  if (code === 'S') {
-    const footnoteIdRe = /footnoteId[^>]*\sid="([^"]+)"/gi
-    let match: RegExpExecArray | null
-    while ((match = footnoteIdRe.exec(block)) !== null) {
-      const fid = match[1]
-      const footnoteRe = new RegExp(`<footnote[^>]*\\sid="${fid}"[^>]*>([\\s\\S]*?)<\\/footnote>`, 'i')
-      const fn = xml.match(footnoteRe)
-      if (fn && fn[1].toLowerCase().includes('10b5-1')) return true
-    }
-  }
-
-  return false
-}
-
-function parseForm4(xml: string): ParsedTx[] {
-  const insiderName  = directVal(xml, 'rptOwnerName') ?? 'Unknown'
-  const insiderCik   = directVal(xml, 'rptOwnerCik') ?? null
-  const insiderState = directVal(xml, 'rptOwnerState') ?? null
-  const isDirector   = directVal(xml, 'isDirector') === '1'
-  const isOfficer    = directVal(xml, 'isOfficer') === '1'
-  const officerTitle = directVal(xml, 'officerTitle')
-  const is10Pct      = directVal(xml, 'isTenPercentOwner') === '1'
-
-  const role = officerTitle
-    ?? (isDirector ? 'Director' : null)
-    ?? (is10Pct    ? '10% Owner' : null)
-    ?? 'Insider'
-
-  const txBlocks = allBlocks(xml, 'nonDerivativeTransaction')
-  const results: ParsedTx[] = []
-
-  for (const block of txBlocks) {
-    const code = directVal(block, 'transactionCode')
-    if (!code) continue
-
-    const dateStr        = nestedVal(block, 'transactionDate')
-    const sharesStr      = nestedVal(block, 'transactionShares')
-    const priceStr       = nestedVal(block, 'transactionPricePerShare')
-    const sharesAfterStr = nestedVal(block, 'sharesOwnedFollowingTransaction')
-
-    const shares = sharesStr ? parseFloat(sharesStr) : 0
-    const price  = priceStr  ? parseFloat(priceStr)  : 0
-
-    if (!dateStr) continue
-
-    const isPlanSale = detectPlanSale(block, xml, code)
-
-    results.push({
-      insiderName,
-      insiderCik,
-      insiderState,
-      isDirector,
-      isOfficer,
-      officerTitle,
-      role,
-      transactionDate: dateStr,
-      transactionCode: code,
-      transactionDirection: code === 'P' ? 'buy' : 'sell',
-      shares,
-      pricePerShare: price,
-      totalValue: Math.round(shares * price * 100) / 100,
-      sharesOwnedAfter: sharesAfterStr ? parseFloat(sharesAfterStr) : null,
-      isPlanSale,
-    })
-  }
-
-  return results
-}
-
-// ─── process a single filing ─────────────────────────────────────────────────
-
-async function findRawXmlUrl(cikInt: number, adshClean: string): Promise<string | null> {
-  const res = await fetch(
-    `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/index.json`,
-    { headers: SEC_HEADERS }
-  )
-  if (!res.ok) return null
-  const items: { name: string }[] = (await res.json())?.directory?.item ?? []
-  const f = items.find((i) => i.name.toLowerCase().endsWith('.xml') && !i.name.toLowerCase().includes('xsl'))
-  return f ? `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${f.name}` : null
-}
-
-async function processFiling(
-  ticker: string,
-  cikInt: number,
-  adsh: string,
-  primaryDoc: string | null,
-  filedDate: string,
-  hqState: string | null = null
-): Promise<{ inserted: number; skipped: number }> {
-  const adshClean = adsh.replace(/-/g, '')
-  const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${adsh}-index.htm`
-
-  // Strip SEC's XSLT renderer path prefix (e.g. "xslF345X06/") so we hit raw XML,
-  // not the HTML viewer. primaryDoc from submissions JSON can be "xslXXX/filename.xml".
-  const cleanDoc = primaryDoc?.replace(/^xsl[^/]+\//i, '') ?? null
-  const isHtmlDoc = cleanDoc && /\.html?$/i.test(cleanDoc)
-
-  let xmlUrl: string | null
-  if (isHtmlDoc || !cleanDoc) {
-    xmlUrl = await findRawXmlUrl(cikInt, adshClean)
-  } else {
-    xmlUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${cleanDoc}`
-  }
-
-  if (!xmlUrl) {
-    console.log(`skip ${ticker}: no xml url (adsh=${adsh} primaryDoc=${primaryDoc})`)
-    return { inserted: 0, skipped: 1 }
-  }
-
-  await sleep(20)
-
-  const xmlRes = await fetch(xmlUrl, { headers: SEC_HEADERS })
-  if (!xmlRes.ok) {
-    console.log(`skip ${ticker}: xml fetch failed ${xmlRes.status} url=${xmlUrl}`)
-    return { inserted: 0, skipped: 1 }
-  }
-
-  const xml = await xmlRes.text()
-
-  if (!xml.includes('<ownershipDocument') && !xml.includes('<rptOwnerName')) {
-    console.log(`skip ${ticker}: not an ownership document (adsh=${adsh})`)
-    return { inserted: 0, skipped: 1 }
-  }
-
-  const allTxBlocks = allBlocks(xml, 'nonDerivativeTransaction')
-
-  const transactions = parseForm4(xml)
-  if (transactions.length === 0) {
-    const codes = allTxBlocks.map((b) => directVal(b, 'transactionCode')).filter(Boolean)
-    console.log(`skip ${ticker}: 0 transactions parsed (${allTxBlocks.length} nonDerivative blocks, codes=[${codes.join(',')}]) adsh=${adsh}`)
-    return { inserted: 0, skipped: 1 }
-  }
-
-  let inserted = 0
-
-  const cutoffMs = Date.now() + 7 * 24 * 60 * 60 * 1000
-
-  for (const tx of transactions) {
-    if (new Date(tx.transactionDate).getTime() > cutoffMs) {
-      console.log(`skip ${ticker}: implausible future date ${tx.transactionDate} (adsh=${adsh})`)
-      continue
-    }
-
-    if (tx.isPlanSale) {
-      console.log(`inserting ${ticker}: plan sale stored but no event (adsh=${adsh} insider=${tx.insiderName} dir=${tx.transactionDirection})`)
-    }
-
-    // Deduplication: amended filings (Form 4/A) get new accession numbers but describe
-    // the same underlying trade. Skip if an identical row already exists.
-    if (tx.insiderCik) {
-      const { data: existing } = await supabase
-        .from('insider_transactions')
-        .select('id')
-        .eq('ticker',                ticker)
-        .eq('insider_cik',           tx.insiderCik)
-        .eq('transaction_date',      tx.transactionDate)
-        .eq('shares',                tx.shares)
-        .eq('transaction_direction', tx.transactionDirection)
-        .limit(1)
-        .maybeSingle()
-
-      if (existing) {
-        console.log(`skip ${ticker}: duplicate already in db (adsh=${adsh} insider=${tx.insiderCik} date=${tx.transactionDate} shares=${tx.shares})`)
-        continue
-      }
-    }
-
-    const payload = {
-      ticker,
-      insider_name:          tx.insiderName,
-      insider_cik:           tx.insiderCik,
-      role:                  tx.role,
-      is_director:           tx.isDirector,
-      is_officer:            tx.isOfficer,
-      officer_title:         tx.officerTitle,
-      transaction_date:      tx.transactionDate,
-      transaction_code:      tx.transactionCode,
-      transaction_direction: tx.transactionDirection,
-      shares:                tx.shares,
-      price_per_share:       tx.pricePerShare,
-      total_value:           tx.totalValue,
-      shares_owned_after:    tx.sharesOwnedAfter,
-      is_plan_sale:          tx.isPlanSale,
-      is_local:              tx.insiderState !== null && hqState !== null && tx.insiderState === hqState,
-      accession_number:      adsh,
-      filed_date:            filedDate,
-      source_url:            sourceUrl,
-    }
-
-    const { error: insertErr } = await supabase
-      .from('insider_transactions')
-      .insert([payload])
-
-    if (insertErr) {
-      console.log(`skip ${ticker}: db insert error — ${insertErr.message} (adsh=${adsh})`)
-      continue
-    }
-
-    // Plan sales are stored for auditing but do not generate signal events
-    if (tx.isPlanSale) { inserted++; continue }
-
-    const verb = tx.transactionDirection === 'sell' ? 'sold' : 'purchased'
-    await supabase.from('events').upsert({
-      ticker,
-      event_type:   'insider',
-      title:        `${tx.insiderName} ${verb} ${tx.shares.toLocaleString()} shares of ${ticker}`,
-      summary:      `${tx.role} · ${verb} ${tx.shares.toLocaleString()} shares @ $${tx.pricePerShare.toFixed(2)} · Total $${(tx.totalValue / 1000).toFixed(0)}K`,
-      source_url:   sourceUrl,
-      published_at: tx.transactionDate,
-      event_date:   tx.transactionDate,
-      raw_text:     JSON.stringify({
-        form:                 '4',
-        insiderName:          tx.insiderName,
-        insiderCik:           tx.insiderCik,
-        role:                 tx.role,
-        transactionCode:      tx.transactionCode,
-        transactionDirection: tx.transactionDirection,
-        shares:               tx.shares,
-        price:                tx.pricePerShare,
-        totalValue:           tx.totalValue,
-        adsh,
-      }),
-    }, { onConflict: 'ticker,source_url', ignoreDuplicates: true })
-
-    inserted++
-  }
-
-  return { inserted, skipped: inserted === 0 ? 1 : 0 }
-}
-
-// ─── Targeted per-CIK fetcher ────────────────────────────────────────────────
-// For each CIK, checks the submissions feed directly and returns any Form 4
-// filings dated exactly `today`. Guarantees no missed filings for tracked tickers.
-
-type FeedEntry = { cik: number; adsh: string; primaryDoc: string | null; filedDate: string }
-
-async function fetchFilingsForCiks(
-  ciks: number[],
-  cikToTicker: Record<number, string>,
-  today: string,
-): Promise<FeedEntry[]> {
-  const results: FeedEntry[] = []
-
-  for (const cikInt of ciks) {
-    await sleep(150)
-    const res = await fetch(
-      `https://data.sec.gov/submissions/CIK${padCik(cikInt)}.json`,
-      { headers: SEC_HEADERS },
-    )
-    if (!res.ok) {
-      console.log(`[ingest] submissions fetch failed for CIK ${cikInt} (${cikToTicker[cikInt]}): ${res.status}`)
-      continue
-    }
-
-    const sub    = await res.json()
-    const recent = sub.filings?.recent
-    if (!recent) continue
-
-    const forms:    string[] = recent.form            ?? []
-    const dates:    string[] = recent.filingDate      ?? []
-    const adshList: string[] = recent.accessionNumber ?? []
-    const docs:     string[] = recent.primaryDocument ?? []
-
-    for (let i = 0; i < forms.length; i++) {
-      if (dates[i] < today) break    // filings are sorted descending — nothing older will match
-      if (forms[i] !== '4')   continue
-      if (dates[i] !== today) continue
-      const adsh = adshList[i]
-      if (!adsh) continue
-      results.push({ cik: cikInt, adsh, primaryDoc: docs[i] ?? null, filedDate: dates[i] })
-    }
-  }
-
-  return results
-}
-
-// ─── single-ticker fallback (for ?ticker= manual testing) ────────────────────
-
-async function ingestTickerInsiders(
-  ticker: string,
-  cikStr: string,
-  cutoffDate: string,
-  hqState: string | null = null
-): Promise<{ inserted: number; skipped: number }> {
-  const subRes = await fetch(
-    `https://data.sec.gov/submissions/CIK${padCik(cikStr)}.json`,
-    { headers: SEC_HEADERS }
-  )
-  if (!subRes.ok) throw new Error(`submissions ${subRes.status} for ${ticker}`)
-
-  const sub    = await subRes.json()
-  const recent = sub.filings?.recent
-  if (!recent) return { inserted: 0, skipped: 0 }
-
-  const forms:    string[] = recent.form            ?? []
-  const dates:    string[] = recent.filingDate      ?? []
-  const adshList: string[] = recent.accessionNumber ?? []
-
-  let inserted = 0
-  let skipped  = 0
-
-  for (let i = 0; i < forms.length; i++) {
-    if (forms[i] !== '4') continue
-    if (dates[i] < cutoffDate) break
-
-    const adsh = adshList[i]
-    if (!adsh) { skipped++; continue }
-
-    await sleep(150)
-
-    const result = await processFiling(ticker, parseInt(cikStr, 10), adsh, null, dates[i], hqState)
-    inserted += result.inserted
-    skipped  += result.skipped
-  }
-
-  return { inserted, skipped }
-}
-
-// ─── route handler ────────────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
   const deny = authorizeCron(req)
@@ -409,86 +20,33 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const singleTicker = searchParams.get('ticker')?.toUpperCase() ?? null
 
-  const { data: tickerRows, error } = await supabase
-    .from('tickers')
-    .select('symbol, hq_state')
-    .order('market_cap', { ascending: false })
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  const symbolSet      = new Set((tickerRows ?? []).map((r: any) => r.symbol as string))
-  const tickerToHqState: Record<string, string | null> = {}
-  for (const r of tickerRows ?? []) {
-    tickerToHqState[(r as any).symbol] = (r as any).hq_state ?? null
-  }
-
-  const cikRes = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS })
-  if (!cikRes.ok) return NextResponse.json({ error: 'Failed to fetch CIK map' }, { status: 502 })
-
-  const cikRaw: Record<string, { cik_str: string; ticker: string }> = await cikRes.json()
-
-  const tickerToCik: Record<string, string> = {}
-  const cikToTicker: Record<number, string> = {}
-  for (const entry of Object.values(cikRaw)) {
-    if (symbolSet.has(entry.ticker)) {
-      tickerToCik[entry.ticker] = entry.cik_str
-      cikToTicker[parseInt(entry.cik_str, 10)] = entry.ticker
-    }
-  }
-
-  // ── single-ticker mode ────────────────────────────────────────────────────
+  // ── single-ticker mode (?ticker=AAPL) ────────────────────────────────────
   if (singleTicker) {
-    const cikStr = tickerToCik[singleTicker]
-    if (!cikStr) {
-      return NextResponse.json({ error: `Ticker ${singleTicker} not found in CIK map` }, { status: 404 })
+    const tickerMeta = await loadTickerMeta(supabase)
+    const meta       = tickerMeta.find((t) => t.symbol === singleTicker)
+    if (!meta) {
+      return NextResponse.json({ error: `Ticker ${singleTicker} not in tickers table` }, { status: 404 })
     }
+
+    const symbolSet         = new Set(tickerMeta.map((t) => t.symbol))
+    const { tickerToCik }   = await loadCikMap(symbolSet)
+    const cikStr            = tickerToCik[singleTicker]
+    if (!cikStr) {
+      return NextResponse.json({ error: `Ticker ${singleTicker} not found in SEC CIK map` }, { status: 404 })
+    }
+
     const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    const hqState    = tickerToHqState[singleTicker] ?? null
-    const { inserted, skipped } = await ingestTickerInsiders(singleTicker, cikStr, cutoffDate, hqState)
+    const { inserted, skipped } = await ingestTickerInsiders(
+      singleTicker, cikStr, cutoffDate, meta.hqState, meta.companyName, supabase
+    )
     return NextResponse.json({ ticker: singleTicker, inserted, skipped })
   }
 
-  // ── per-CIK targeted mode (normal cron path) ─────────────────────────────
+  // ── batch param: restricts to a quarter-slice of CIKs (manual / testing) ─
   const batchParam = searchParams.get('batch')
-  const batch      = batchParam !== null ? Math.max(0, Math.min(3, parseInt(batchParam, 10))) : null
+  const batch      = batchParam !== null ? Math.max(0, Math.min(3, parseInt(batchParam, 10))) : undefined
 
-  async function processDay(date: string): Promise<{
-    date: string; total_fetched: number; processed: number; inserted: number; skipped: number; failed: number; error?: string
-  }> {
-    const allCiks   = Object.keys(cikToTicker).map(Number)
-    const batchSize = Math.ceil(allCiks.length / 4)
-    const batchCiks = batch !== null
-      ? allCiks.slice(batch * batchSize, (batch + 1) * batchSize)
-      : allCiks
-
-    let entries: FeedEntry[]
-    try {
-      entries = await fetchFilingsForCiks(batchCiks, cikToTicker, date)
-    } catch (err: any) {
-      return { date, total_fetched: 0, processed: 0, inserted: 0, skipped: 0, failed: 0, error: err.message ?? 'CIK fetch failed' }
-    }
-
-    let inserted = 0
-    let skipped  = 0
-    let failed   = 0
-
-    for (const entry of entries) {
-      const ticker  = cikToTicker[entry.cik]
-      const hqState = tickerToHqState[ticker] ?? null
-      try {
-        await sleep(150)
-        const result = await processFiling(ticker, entry.cik, entry.adsh, entry.primaryDoc, entry.filedDate, hqState)
-        inserted += result.inserted
-        skipped  += result.skipped
-      } catch {
-        failed++
-      }
-    }
-
-    return { date, total_fetched: entries.length, processed: entries.length, inserted, skipped, failed }
-  }
-
-  // ── date range backfill mode ──────────────────────────────────────────────
+  // ── date range mode (?start_date=&end_date=) ──────────────────────────────
   const startDateParam = searchParams.get('start_date')
   const endDateParam   = searchParams.get('end_date')
 
@@ -498,70 +56,41 @@ export async function GET(req: Request) {
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
       return NextResponse.json({ error: 'Invalid start_date or end_date' }, { status: 400 })
     }
-
-    const days: string[] = []
-    for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-      days.push(d.toISOString().split('T')[0])
-    }
-
-    const results = []
-    for (const day of days) {
-      results.push(await processDay(day))
-    }
-
-    const totals = results.reduce(
-      (acc, r) => ({
-        inserted: acc.inserted + r.inserted,
-        skipped:  acc.skipped  + r.skipped,
-        failed:   acc.failed   + r.failed,
-      }),
-      { inserted: 0, skipped: 0, failed: 0 }
-    )
-
-    return NextResponse.json({ batch, days: results, totals })
+    const { days, totals } = await runDailyIngest(supabase, {
+      startDate:  startDateParam,
+      endDate:    endDateParam,
+      batch,
+      batchCount: batch !== undefined ? 4 : undefined,
+    })
+    return NextResponse.json({ batch: batch ?? null, days, totals })
   }
 
-  // ── single-day mode (?date=YYYY-MM-DD) ───────────────────────────────────
+  // ── single-date mode (?date=YYYY-MM-DD) ───────────────────────────────────
   const explicitDate = searchParams.get('date')
   if (explicitDate) {
-    const result = await processDay(explicitDate)
-    if (result.error) return NextResponse.json({ error: result.error }, { status: 502 })
-    return NextResponse.json({
-      date:          result.date,
-      total_fetched: result.total_fetched,
+    const { days, totals } = await runDailyIngest(supabase, {
+      date:       explicitDate,
       batch,
-      processed:     result.processed,
-      inserted:      result.inserted,
-      skipped:       result.skipped,
-      failed:        result.failed,
+      batchCount: batch !== undefined ? 4 : undefined,
     })
+    const result = days[0]
+    if (result?.error) return NextResponse.json({ error: result.error }, { status: 502 })
+    return NextResponse.json({ batch: batch ?? null, ...result, totals })
   }
 
-  // ── daily cron mode (no date param) — rolling 5-day window ───────────────
-  // Insiders have a 2-day filing lag, and weekends/holidays create gaps.
-  // A 5-day lookback ensures Mon after a long weekend reaches back to Thu.
-  // The dedup in processFiling makes re-processing already-seen days safe.
+  // ── daily rolling-window mode (no date param) ─────────────────────────────
+  const { days, totals } = await runDailyIngest(supabase, {
+    batch,
+    batchCount: batch !== undefined ? 4 : undefined,
+  })
+
   const todayStr    = new Date().toISOString().split('T')[0]
   const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-  const windowDays: string[] = []
-  for (const d = new Date(fiveDaysAgo); d.toISOString().split('T')[0] <= todayStr; d.setUTCDate(d.getUTCDate() + 1)) {
-    windowDays.push(d.toISOString().split('T')[0])
-  }
-
-  const windowResults = []
-  for (const day of windowDays) {
-    windowResults.push(await processDay(day))
-  }
-
-  const windowTotals = windowResults.reduce(
-    (acc, r) => ({
-      inserted: acc.inserted + r.inserted,
-      skipped:  acc.skipped  + r.skipped,
-      failed:   acc.failed   + r.failed,
-    }),
-    { inserted: 0, skipped: 0, failed: 0 }
-  )
-
-  return NextResponse.json({ batch, window: `${fiveDaysAgo}..${todayStr}`, days: windowResults, totals: windowTotals })
+  return NextResponse.json({
+    batch:  batch ?? null,
+    window: `${fiveDaysAgo}..${todayStr}`,
+    days,
+    totals,
+  })
 }

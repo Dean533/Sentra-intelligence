@@ -32,40 +32,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Batch 0
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run daily ingest
+        run: npx tsx scripts/run-daily-ingest.ts
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Price enrich
         run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=0" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
-
-      - name: Wait 5 minutes
-        run: sleep 300
-
-      - name: Batch 1
-        run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=1" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
-
-      - name: Wait 5 minutes
-        run: sleep 300
-
-      - name: Batch 2
-        run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=2" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
-
-      - name: Wait 5 minutes
-        run: sleep 300
-
-      - name: Batch 3 + Price Enrich
-        run: |
-          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/ingest?batch=3" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" &
           curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/price-enrich" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" &
-          wait
-
-      - name: Wait 5 minutes
-        run: sleep 300
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
       - name: Score
         run: |

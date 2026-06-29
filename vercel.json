@@ -9,22 +9,6 @@
       "schedule": "30 6 * * *"
     },
     {
-      "path": "/api/insider/ingest?batch=0",
-      "schedule": "0 11 * * *"
-    },
-    {
-      "path": "/api/insider/ingest?batch=1",
-      "schedule": "5 11 * * *"
-    },
-    {
-      "path": "/api/insider/ingest?batch=2",
-      "schedule": "10 11 * * *"
-    },
-    {
-      "path": "/api/insider/ingest?batch=3",
-      "schedule": "15 11 * * *"
-    },
-    {
       "path": "/api/ingest/sec-all",
       "schedule": "0 6 * * *"
     },
