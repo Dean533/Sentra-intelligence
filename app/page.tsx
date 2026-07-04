@@ -346,7 +346,6 @@ export default function HomePage() {
         }}>
           {[
             { value: '3,000+', label: 'Stocks Monitored' },
-            { value: '3',   label: 'Data Sources' },
             { value: 'Daily', label: 'Updated' },
           ].map(({ value, label }, i, arr) => (
             <FadeUp key={label} delay={i * 0.1} className="">
