@@ -332,7 +332,7 @@ export default function PortfolioPage() {
     setValidating(true); setValidateError(null)
     try {
       const d = await fetch(`/api/watchlist/data?tickers=${t}`).then((r) => r.json())
-      if (!d.tickers?.[0]?.name) { setValidateError(`${t} not found in S&P 500`); return }
+      if (!d.tickers?.[0]?.name) { setValidateError(`${t} not found in coverage universe`); return }
       await save({ ...portfolio!, tickers: [...portfolio!.tickers, t] })
       setTickerInput(''); tickerRef.current?.focus()
     } catch { setValidateError('Validation failed') }

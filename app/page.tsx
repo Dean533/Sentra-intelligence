@@ -145,7 +145,7 @@ const FAQS = [
   },
   {
     q: 'What stocks does Sentra cover?',
-    a: 'Sentra currently monitors all 500+ S&P 500 constituents with full signal coverage.',
+    a: 'Sentra currently monitors all 3,000+ stocks with full signal coverage.',
   },
 ]
 
@@ -298,7 +298,7 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.15 }}
             style={{ fontSize: 'clamp(16px, 2vw, 20px)', color: '#aaa', fontWeight: 400, lineHeight: 1.4, maxWidth: '672px', margin: '0 0 40px' }}
           >
-            We scan 500+ stocks for event mispricings so you don&apos;t have to.
+            We scan 3,000+ stocks for event mispricings so you don&apos;t have to.
           </motion.p>
 
           <motion.div
@@ -345,7 +345,7 @@ export default function HomePage() {
           display: 'flex', justifyContent: 'center', gap: '0',
         }}>
           {[
-            { value: '522', label: 'Stocks Monitored' },
+            { value: '3,000+', label: 'Stocks Monitored' },
             { value: '3',   label: 'Data Sources' },
             { value: 'Daily', label: 'Updated' },
           ].map(({ value, label }, i, arr) => (
@@ -386,7 +386,7 @@ export default function HomePage() {
               {
                 icon: <FileText size={22} color="#fff" />,
                 title: 'SEC EDGAR Ingestion',
-                body: 'Every Form 4 insider filing across 522 S&P 500 stocks is ingested daily, parsed, and stored with full metadata.',
+                body: 'Every Form 4 insider filing across 3,000+ stocks is ingested daily, parsed, and stored with full metadata.',
                 delay: 0,
               },
               {
@@ -521,7 +521,7 @@ export default function HomePage() {
               See Today's Insider Signals
             </h2>
             <p style={{ fontSize: '17px', color: '#666', margin: '0 0 40px', lineHeight: 1.7 }}>
-              522 S&P 500 stocks monitored daily. Only the strongest signals surface.
+              3,000+ stocks monitored daily. Only the strongest signals surface.
             </p>
             <Link
               href="/alerts"

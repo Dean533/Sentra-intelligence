@@ -78,7 +78,7 @@ export default function AboutPage() {
           "CEOs, CFOs, and major shareholders see earnings before they're announced, contracts before they're signed, and product pipelines before the market has any idea. They have an edge that no analyst, no algorithm, and no hedge fund can replicate. And fortunately for us, every time they act on that conviction, they have to tell you about it.",
           "By law, every insider trade must be reported to the SEC within 2 business days. The information is public. The signal is hiding in plain sight. So why isn't everyone using it?",
           "The problem is noise. Insiders file thousands of trades every month: outine stock grants, scheduled 10b5-1 plan sales, compensation exercises. None of trhat means anything. Finding the trades that actually matter requires knowing the difference between an insider following a calendar and an insider acting on conviction, isnt easy.",
-          "But that's the entire thesis of Sentra. We built a system that reads every Form 4 filing across the S&P 500, classifies each insider using a methodology developed by Harvard and MIT researchers, and surfaces only the trades where someone with real conviction is putting real money to work.",
+          "But that's the entire thesis of Sentra. We built a system that reads every Form 4 filing across 3,000+ stocks, classifies each insider using a methodology developed by Harvard and MIT researchers, and surfaces only the trades where someone with real conviction is putting real money to work.",
         ].map((para, i) => (
           <p key={i} style={{ ...prose, color: C.text }}>{para}</p>
         ))}
@@ -140,7 +140,7 @@ export default function AboutPage() {
             {
               step: '01',
               title: 'Ingest SEC EDGAR Form 4 filings',
-              body:  'Daily ingestion of Form 4 filings across 522 S&P 500 stocks. Every transaction is parsed, normalized, and stored with full insider metadata.',
+              body:  'Daily ingestion of Form 4 filings across 3,000+ stocks. Every transaction is parsed, normalized, and stored with full insider metadata.',
             },
             {
               step: '02',
