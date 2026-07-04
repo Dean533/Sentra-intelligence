@@ -14,7 +14,8 @@ async function circularPng(size: number): Promise<Buffer> {
     `<svg width="${size}" height="${size}"><circle cx="${r}" cy="${r}" r="${r}" /></svg>`
   )
   return sharp(SOURCE)
-    .resize(size, size)
+    .trim({ background: '#000000', threshold: 15 })  // strip black padding so logo fills the canvas
+    .resize(size, size, { fit: 'cover' })
     .ensureAlpha()
     .composite([{ input: mask, blend: 'dest-in' }])
     .png()
