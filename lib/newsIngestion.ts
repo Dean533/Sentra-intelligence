@@ -53,7 +53,7 @@ function extractDomain(url: string): string {
 
 async function fetchFeed(url: string): Promise<RSSItem[]> {
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'Sentra Intelligence contact@sentra.com' },
+    headers: { 'User-Agent': 'Sentra Signals contact@sentra.com' },
     cache: 'no-store',
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)

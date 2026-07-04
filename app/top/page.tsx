@@ -155,7 +155,7 @@ export default function TopPage() {
 
         {/* heading */}
         <p style={{ fontSize: '11px', letterSpacing: '2px', color: '#7b8498', margin: '0 0 10px' }}>
-          SENTRA INTELLIGENCE
+          SENTRA SIGNALS
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', marginBottom: '8px' }}>
           <h1 style={{ fontSize: '36px', fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>

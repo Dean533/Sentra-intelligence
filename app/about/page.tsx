@@ -59,7 +59,7 @@ export default function AboutPage() {
 
       {/* ── 1. HERO ──────────────────────────────────────────────────────────── */}
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '80px clamp(16px, 4vw, 40px) 0' }}>
-        <p style={label}>SENTRA INTELLIGENCE</p>
+        <p style={label}>SENTRA SIGNALS</p>
         <h1 style={{ fontSize: '48px', fontWeight: 800, margin: '0 0 20px', letterSpacing: '-1px', lineHeight: 1.1 }}>
           How Sentra Works
         </h1>

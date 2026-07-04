@@ -72,7 +72,7 @@ async function main() {
   // 2. Fetch SEC company_tickers.json
   console.log('Fetching https://www.sec.gov/files/company_tickers.json ...')
   const res = await fetch('https://www.sec.gov/files/company_tickers.json', {
-    headers: { 'User-Agent': 'Sentra contact@sentraintelligence.com' },
+    headers: { 'User-Agent': 'Sentra contact@sentrasignals.com' },
   })
   if (!res.ok) {
     console.error(`ERROR: SEC fetch failed with status ${res.status}`)

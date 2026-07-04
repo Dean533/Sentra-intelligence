@@ -7,7 +7,7 @@ const supabase = createClient(
 )
 
 const SEC_HEADERS = {
-  'User-Agent': 'Sentra Intelligence contact@sentra.com',
+  'User-Agent': 'Sentra Signals contact@sentra.com',
   Accept: 'application/json',
 }
 

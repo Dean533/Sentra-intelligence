@@ -291,7 +291,7 @@ export default function HomePage() {
               margin: '0 0 20px', color: '#fff',
             }}
           >
-            Sentra Intelligence
+            Sentra Signals
           </motion.h1>
 
           <motion.p

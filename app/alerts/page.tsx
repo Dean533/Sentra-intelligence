@@ -169,7 +169,7 @@ export default function TopSignalsPage() {
       <div style={{ maxWidth: '860px', margin: '0 auto', padding: '48px 40px 80px' }}>
 
         <p style={{ fontSize: '11px', letterSpacing: '2px', color: '#7b8498', margin: '0 0 10px' }}>
-          SENTRA INTELLIGENCE
+          SENTRA SIGNALS
         </p>
         <h1 style={{ fontSize: '36px', fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.5px' }}>
           Top Signals

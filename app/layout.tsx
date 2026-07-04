@@ -2,7 +2,7 @@ import "./globals.css";
 import Navbar from "./components/Navbar";
 
 export const metadata = {
-  title: "Sentra Intelligence",
+  title: "Sentra Signals",
   description: "Market narrative intelligence platform",
   verification: {
     google: "jb73OKoIAWoS6bnD6y7M_sZctp_HEUhL8_upTCddjkI",
