@@ -5,8 +5,8 @@ import * as fs from 'fs'
 const PUBLIC = path.join(__dirname, '..', 'public')
 const APP    = path.join(__dirname, '..', 'app')
 
-// Source: use the highest-res PNG we have
-const SOURCE = path.join(PUBLIC, 'android-chrome-512x512.png')
+// Source: apple-touch-icon.png is the highest-res PNG the user drops on each update
+const SOURCE = path.join(PUBLIC, 'apple-touch-icon.png')
 
 async function circularPng(size: number): Promise<Buffer> {
   const r = size / 2
