@@ -55,7 +55,11 @@ async function main() {
   const key     = process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
-    console.error('Missing Supabase credentials. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).')
+    console.error('Missing Supabase credentials.')
+    console.error(`  NEXT_PUBLIC_SUPABASE_URL            = ${process.env.NEXT_PUBLIC_SUPABASE_URL            ? '(set)' : '(missing)'}`)
+    console.error(`  SUPABASE_URL                        = ${process.env.SUPABASE_URL                        ? '(set)' : '(missing)'}`)
+    console.error(`  NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY = ${process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY ? '(set)' : '(missing)'}`)
+    console.error(`  SUPABASE_SERVICE_ROLE_KEY           = ${process.env.SUPABASE_SERVICE_ROLE_KEY           ? '(set)' : '(missing)'}`)
     process.exit(1)
   }
 
