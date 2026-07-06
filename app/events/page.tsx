@@ -108,6 +108,7 @@ type InsiderRow = {
   role: string | null
   officer_title: string | null
   transaction_date: string
+  filed_date: string | null
   transaction_code: string | null
   shares: number | null
   price_per_share: number | null
@@ -408,7 +409,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
   const pageEnd         = Math.min(page * 50, total)
   const countLabel      = dirFilter === 'buys' ? 'purchases' : dirFilter === 'sells' ? 'sales' : 'transactions'
 
-  const COLS = ['Ticker', 'Insider Name', 'Role', 'Date', 'Type', 'Price', 'Shares', 'Δ Hold', 'Score', 'Value']
+  const COLS = ['Ticker', 'Insider Name', 'Role', 'Filed', 'Type', 'Price', 'Shares', 'Δ Hold', 'Score', 'Value']
 
   // In cluster mode, group by ticker (sorted by each group's most recent trade) then flatten.
   const displayRows: InsiderRow[] = (() => {
@@ -455,7 +456,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
         <td style={{ padding: '11px 10px', color: '#7b8498', fontSize: '12px', maxWidth: '160px' }}>
           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayRole}</div>
         </td>
-        <td style={{ padding: '11px 10px', color: '#7b8498', fontSize: '13px', whiteSpace: 'nowrap' }}>{fmtDate(row.transaction_date)}</td>
+        <td style={{ padding: '11px 10px', color: '#7b8498', fontSize: '13px', whiteSpace: 'nowrap' }}>{row.filed_date ? fmtDate(row.filed_date) : fmtDate(row.transaction_date)}</td>
         <td style={{ padding: '11px 10px' }}>
           <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', color: txColor, background: `${txColor}1a`, border: `1px solid ${txColor}40` }}>
             {txLabel}
