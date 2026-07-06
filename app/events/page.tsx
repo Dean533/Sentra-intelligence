@@ -117,7 +117,7 @@ type InsiderRow = {
   source_url: string | null
   classification: string | null
   conviction_score: number | null
-  sentra_score: number | null
+  fundamental_score: number | null
 }
 
 // ─── EVENTS FEED (SEC Filings + News) ────────────────────────────────────────
@@ -480,7 +480,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
             : <span style={{ color: '#3a4a60' }}>—</span>
           }
         </td>
-        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !isBuy ? '#3a4a60' : cls === 'ROUTINE' ? scoreColor(0) : scoreColor(row.sentra_score) }}>
+        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !isBuy ? '#3a4a60' : cls === 'ROUTINE' ? scoreColor(0) : scoreColor(row.fundamental_score) }}>
           {!isBuy
             ? <span style={{ color: '#3a4a60' }}>N/A</span>
             : cls === 'ROUTINE'
@@ -488,10 +488,10 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
                   0
                   <span className="score-tooltip">{scoreLabel(0)}</span>
                 </span>
-              : row.sentra_score != null
+              : row.fundamental_score != null
                 ? <span className="score-badge">
-                    {row.sentra_score}
-                    <span className="score-tooltip">{scoreLabel(row.sentra_score)}</span>
+                    {row.fundamental_score}
+                    <span className="score-tooltip">{scoreLabel(row.fundamental_score)}</span>
                   </span>
                 : <span style={{ color: '#3a4a60' }}>—</span>}
         </td>

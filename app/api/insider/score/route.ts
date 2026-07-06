@@ -134,8 +134,9 @@ export async function GET(req: Request) {
     .select('id, ticker, officer_title, role, purchase_pct_market_cap, total_value, transaction_date, insider_name')
     .eq('transaction_code', 'P')
     .not('total_value', 'is', null)
+    .is('fundamental_score', null)
     .order('transaction_date', { ascending: false })
-    .limit(50)
+    .limit(200)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!rows || rows.length === 0) return NextResponse.json({ total: 0, scored: 0, failed: 0 })

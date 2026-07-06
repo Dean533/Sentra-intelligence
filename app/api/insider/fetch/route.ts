@@ -10,7 +10,7 @@ const SELECT_COLS =
   'id, ticker, insider_name, insider_cik, role, is_director, is_officer, officer_title, ' +
   'transaction_date, transaction_code, transaction_direction, ' +
   'shares, price_per_share, total_value, shares_owned_after, purchase_pct_market_cap, ' +
-  'filed_date, source_url, sentra_score'
+  'filed_date, source_url, fundamental_score'
 
 // Attach conviction_score from insider_signals_monthly, matched by ticker + transaction month.
 async function attachScores(rows: any[]): Promise<any[]> {
@@ -329,8 +329,8 @@ export async function GET(req: Request) {
     // Minimum trade value
     if (minValue !== null) q = q.gte('total_value', minValue)
 
-    // Minimum sentra score
-    if (minScore !== null) q = q.gte('sentra_score', minScore)
+    // Minimum score filter
+    if (minScore !== null) q = q.gte('fundamental_score', minScore)
 
     // Date range — only apply bounds explicitly passed by the caller.
     // clusterFrom is intentionally NOT used here; it belongs only to the
