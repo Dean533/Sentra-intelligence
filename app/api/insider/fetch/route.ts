@@ -269,6 +269,7 @@ export async function GET(req: Request) {
     let q = supabase
       .from('insider_transactions')
       .select(SELECT_COLS, withCount ? { count: 'exact' } : {})
+      .order('filed_date', { ascending: false })
       .order('transaction_date', { ascending: false })
       .lte('transaction_date', '2027-01-01')
 
