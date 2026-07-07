@@ -38,7 +38,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from('events')
-    .select('id, ticker, event_type, title, summary, source_url, published_at, raw_text', { count: 'exact' })
+    .select('id, ticker, event_type, title, summary, source_url, published_at, raw_text', { count: 'estimated' })
     .order('published_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
