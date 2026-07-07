@@ -313,9 +313,9 @@ function transactionLabel(t: string | null) {
 }
 
 const CLS_BADGE: Record<string, { color: string; bg: string; border: string }> = {
-  OPPORTUNISTIC:  { color: '#3fb950', bg: 'rgba(63,185,80,0.1)',    border: 'rgba(63,185,80,0.25)'   },
-  ROUTINE:        { color: '#d29922', bg: 'rgba(210,153,34,0.1)',   border: 'rgba(210,153,34,0.25)'  },
-  UNCLASSIFIABLE: { color: '#7b8498', bg: 'rgba(123,132,152,0.1)', border: 'rgba(123,132,152,0.2)'  },
+  OPPORTUNISTIC:  { color: '#3fb950', bg: 'rgba(63,185,80,0.1)',   border: 'rgba(63,185,80,0.25)'  },
+  UNCLASSIFIABLE: { color: '#d29922', bg: 'rgba(210,153,34,0.1)',  border: 'rgba(210,153,34,0.25)' },
+  ROUTINE:        { color: '#f85149', bg: 'rgba(248,81,73,0.1)',   border: 'rgba(248,81,73,0.25)'  },
 }
 
 function matchesRole(row: InsiderRow, filter: string): boolean {
@@ -338,19 +338,20 @@ function holdingsPctOf(row: InsiderRow): number | null {
 }
 
 // Score color is always the classification color — the color IS the primary signal.
-// OPPORTUNISTIC green / ROUTINE amber / UNCLASSIFIABLE red / null dim.
+// OPPORTUNISTIC green / UNCLASSIFIABLE yellow / ROUTINE red / null dim.
 function convictionColor(cls: string | null): string {
   if (cls === 'OPPORTUNISTIC')  return '#3fb950'
-  if (cls === 'ROUTINE')        return '#d29922'
-  if (cls === 'UNCLASSIFIABLE') return '#f85149'
+  if (cls === 'UNCLASSIFIABLE') return '#d29922'
+  if (cls === 'ROUTINE')        return '#f85149'
   return '#3a4a60'
 }
 
-function convictionLabel(s: number): string {
-  if (s >= 75) return 'High Conviction'
-  if (s >= 55) return 'Take Trade'
-  if (s >= 35) return 'Monitor'
-  return 'No Signal'
+// Bucket label: classification × score threshold of 50.
+function convictionLabel(cls: string | null, s: number): string {
+  if (cls === 'OPPORTUNISTIC')  return s >= 50 ? 'Very high signal' : 'Moderate signal'
+  if (cls === 'UNCLASSIFIABLE') return s >= 50 ? 'High signal'      : 'Low signal'
+  if (cls === 'ROUTINE')        return s >= 50 ? 'Low signal'       : 'No signal'
+  return 'No signal'
 }
 
 function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string; capped: boolean } | null {
@@ -489,7 +490,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
             : row.conviction_score != null
               ? <span className="score-badge">
                   {row.conviction_score}
-                  <span className="score-tooltip">{convictionLabel(row.conviction_score)}</span>
+                  <span className="score-tooltip">{convictionLabel(cls, row.conviction_score)}</span>
                 </span>
               : <span style={{ color: '#3a4a60' }}>—</span>}
         </td>
@@ -599,17 +600,22 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '16px' }}>
               {([
-                { range: '75–100', label: 'High Conviction', color: '#3fb950', desc: 'Top-quartile stake increase, strong role signal' },
-                { range: '55–74',  label: 'Take Trade',      color: '#3fb950', desc: 'Above-median within classification' },
-                { range: '35–54',  label: 'Monitor',         color: '#d29922', desc: 'Modest signal, worth watching' },
-                { range: '0–34',   label: 'No Signal',       color: '#7b8498', desc: 'Small or formulaic trade' },
-              ] as const).map(({ range, label, color, desc }, i, arr) => (
-                <div key={range} style={{
+                { cls: 'OPPORTUNISTIC',  score: '≥50', label: 'Very high signal', color: '#3fb950', desc: 'Strong opportunistic buy' },
+                { cls: 'UNCLASSIFIABLE', score: '≥50', label: 'High signal',      color: '#d29922', desc: 'Above-median unclassified buy' },
+                { cls: 'OPPORTUNISTIC',  score: '<50',  label: 'Moderate signal',  color: '#3fb950', desc: 'Weak opportunistic buy' },
+                { cls: 'UNCLASSIFIABLE', score: '<50',  label: 'Low signal',       color: '#d29922', desc: 'Below-median unclassified buy' },
+                { cls: 'ROUTINE',        score: '≥50',  label: 'Low signal',       color: '#f85149', desc: 'Above-median routine buy' },
+                { cls: 'ROUTINE',        score: '<50',  label: 'No signal',        color: '#f85149', desc: 'Formulaic or small routine buy' },
+              ] as const).map(({ cls, score, label, color, desc }, i, arr) => (
+                <div key={`${cls}-${score}`} style={{
                   display: 'flex', alignItems: 'flex-start', gap: '12px',
-                  padding: '10px 0',
+                  padding: '9px 0',
                   borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
                 }}>
-                  <span style={{ fontSize: '12px', color, fontWeight: 700, minWidth: '48px', paddingTop: '1px' }}>{range}</span>
+                  <div style={{ minWidth: '100px', paddingTop: '1px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '10px', color, fontWeight: 700, background: `${color}18`, border: `1px solid ${color}30`, padding: '1px 5px', borderRadius: '3px', letterSpacing: '0.3px' }}>{cls.slice(0, 4)}</span>
+                    <span style={{ fontSize: '11px', color: '#555' }}>{score}</span>
+                  </div>
                   <div>
                     <span style={{ fontSize: '13px', color, fontWeight: 600 }}>{label}</span>
                     <span style={{ fontSize: '12px', color: '#555', marginLeft: '6px' }}>— {desc}</span>
