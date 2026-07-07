@@ -589,36 +589,42 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
               onMouseLeave={(e) => (e.currentTarget.style.color = '#3a4a60')}
             >×</button>
 
-            <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#e6edf3', margin: '0 0 20px' }}>
+            <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#e6edf3', margin: '0 0 16px' }}>
               How Conviction Scores Work
             </h3>
 
+            <p style={{ fontSize: '13px', color: '#7b8498', lineHeight: 1.6, margin: '0 0 6px' }}>
+              <strong style={{ color: '#c9d1d9' }}>Color = CMP classification:</strong>{' '}
+              <span style={{ color: '#3fb950' }}>green</span> for Opportunistic,{' '}
+              <span style={{ color: '#d29922' }}>yellow</span> for Unclassifiable,{' '}
+              <span style={{ color: '#f85149' }}>red</span> for Routine.
+            </p>
             <p style={{ fontSize: '13px', color: '#7b8498', lineHeight: 1.6, margin: '0 0 16px' }}>
-              Each score is a percentile rank (0–100) within its CMP classification — not a profit prediction.
-              Color shows the classification; the number ranks the trade within it.
+              <strong style={{ color: '#c9d1d9' }}>The number (0–100)</strong> ranks the trade within its classification.
+              Signal strength comes from classification and score together, not the number alone.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '16px' }}>
               {([
-                { cls: 'OPPORTUNISTIC',  score: '≥50', label: 'Very high signal', color: '#3fb950', desc: 'Strong opportunistic buy' },
-                { cls: 'UNCLASSIFIABLE', score: '≥50', label: 'High signal',      color: '#d29922', desc: 'Above-median unclassified buy' },
-                { cls: 'OPPORTUNISTIC',  score: '<50',  label: 'Moderate signal',  color: '#3fb950', desc: 'Weak opportunistic buy' },
-                { cls: 'UNCLASSIFIABLE', score: '<50',  label: 'Low signal',       color: '#d29922', desc: 'Below-median unclassified buy' },
-                { cls: 'ROUTINE',        score: '≥50',  label: 'Low signal',       color: '#f85149', desc: 'Above-median routine buy' },
-                { cls: 'ROUTINE',        score: '<50',  label: 'No signal',        color: '#f85149', desc: 'Formulaic or small routine buy' },
+                { cls: 'OPPORTUNISTIC',  score: '50+',      label: 'Very high signal', color: '#3fb950', desc: 'Strong opportunistic buy' },
+                { cls: 'UNCLASSIFIABLE', score: '50+',      label: 'High signal',      color: '#d29922', desc: 'Above-median unclassified buy' },
+                { cls: 'OPPORTUNISTIC',  score: 'under 50', label: 'Moderate signal',  color: '#3fb950', desc: 'Weak opportunistic buy' },
+                { cls: 'UNCLASSIFIABLE', score: 'under 50', label: 'Low signal',       color: '#d29922', desc: 'Below-median unclassified buy' },
+                { cls: 'ROUTINE',        score: '50+',      label: 'Low signal',       color: '#f85149', desc: 'Above-median routine buy' },
+                { cls: 'ROUTINE',        score: 'under 50', label: 'No signal',        color: '#f85149', desc: 'Formulaic or small routine buy' },
               ] as const).map(({ cls, score, label, color, desc }, i, arr) => (
                 <div key={`${cls}-${score}`} style={{
                   display: 'flex', alignItems: 'flex-start', gap: '12px',
                   padding: '9px 0',
                   borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
                 }}>
-                  <div style={{ minWidth: '100px', paddingTop: '1px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <div style={{ minWidth: '108px', paddingTop: '1px', display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
                     <span style={{ fontSize: '10px', color, fontWeight: 700, background: `${color}18`, border: `1px solid ${color}30`, padding: '1px 5px', borderRadius: '3px', letterSpacing: '0.3px' }}>{cls.slice(0, 4)}</span>
                     <span style={{ fontSize: '11px', color: '#555' }}>{score}</span>
                   </div>
                   <div>
                     <span style={{ fontSize: '13px', color, fontWeight: 600 }}>{label}</span>
-                    <span style={{ fontSize: '12px', color: '#555', marginLeft: '6px' }}>— {desc}</span>
+                    <span style={{ fontSize: '12px', color: '#555', marginLeft: '6px' }}>{desc}</span>
                   </div>
                 </div>
               ))}
@@ -627,10 +633,10 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
             <p style={{ fontSize: '12px', color: '#555', lineHeight: 1.6, margin: '0 0 12px' }}>
               Factors: stake increase % (30 pts), price momentum 90d (40 pts, ROUTINE/UNCL only),
               insider role (12 pts), market cap tilt (8 pts).
-              Calibrated on 17,000+ backtest trades (IC ≈ 0.05–0.09).
+              Calibrated on 17,000+ backtest trades (IC 0.05 to 0.09).
             </p>
             <p style={{ fontSize: '11px', color: '#3a4a60', margin: 0 }}>
-              Based on Cohen, Malloy &amp; Pomorski (2012) Harvard/MIT research on insider trading patterns.
+              Based on Cohen, Malloy and Pomorski (2012) Harvard/MIT research on insider trading patterns.
             </p>
           </div>
         </div>
