@@ -10,25 +10,7 @@ const SELECT_COLS =
   'id, ticker, insider_name, insider_cik, role, is_director, is_officer, officer_title, ' +
   'transaction_date, transaction_code, transaction_direction, ' +
   'shares, price_per_share, total_value, shares_owned_after, purchase_pct_market_cap, ' +
-  'filed_date, source_url, fundamental_score'
-
-// Attach conviction_score from insider_signals_monthly, matched by ticker + transaction month.
-async function attachScores(rows: any[]): Promise<any[]> {
-  if (rows.length === 0) return rows
-  const tickers = [...new Set(rows.map((r: any) => r.ticker).filter(Boolean))]
-  const { data: signalRows } = await supabase
-    .from('insider_signals_monthly')
-    .select('ticker, signal_month, conviction_score')
-    .in('ticker', tickers)
-  const scoreMap = new Map<string, number>()
-  for (const s of signalRows ?? []) {
-    scoreMap.set(`${s.ticker}|${s.signal_month}`, s.conviction_score as number)
-  }
-  return rows.map((r: any) => {
-    const month = r.transaction_date ? r.transaction_date.slice(0, 7) + '-01' : null
-    return { ...r, conviction_score: month ? (scoreMap.get(`${r.ticker}|${month}`) ?? null) : null }
-  })
-}
+  'filed_date, source_url, conviction_score'
 
 // Attach classification string to every row. Rows with no matching CIK → UNCLASSIFIABLE.
 async function attachClassifications(rows: any[]): Promise<any[]> {
@@ -329,8 +311,8 @@ export async function GET(req: Request) {
     // Minimum trade value
     if (minValue !== null) q = q.gte('total_value', minValue)
 
-    // Minimum score filter
-    if (minScore !== null) q = q.gte('fundamental_score', minScore)
+    // Minimum conviction score filter
+    if (minScore !== null) q = q.gte('conviction_score', minScore)
 
     // Date range — only apply bounds explicitly passed by the caller.
     // clusterFrom is intentionally NOT used here; it belongs only to the
@@ -383,7 +365,7 @@ export async function GET(req: Request) {
     const pageRows = matching.slice(offset, offset + limit)
 
     return NextResponse.json({
-      rows:  await attachScores(await attachClassifications(pageRows)),
+      rows:  await attachClassifications(pageRows),
       total,
       page,
       pages,
@@ -399,7 +381,7 @@ export async function GET(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({
-    rows:  await attachScores(await attachClassifications(data ?? [])),
+    rows:  await attachClassifications(data ?? []),
     total: count ?? 0,
     page,
     pages: Math.ceil((count ?? 0) / limit),

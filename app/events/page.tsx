@@ -117,7 +117,6 @@ type InsiderRow = {
   source_url: string | null
   classification: string | null
   conviction_score: number | null
-  fundamental_score: number | null
 }
 
 // ─── EVENTS FEED (SEC Filings + News) ────────────────────────────────────────
@@ -338,15 +337,19 @@ function holdingsPctOf(row: InsiderRow): number | null {
   return (s / before) * 100
 }
 
-function scoreColor(s: number | null): string {
-  if (s == null) return '#3a4a60'
-  if (s >= 70)   return '#3fb950'
-  if (s >= 50)   return '#d29922'
-  return '#7b8498'
+// Score color is always the classification color — the color IS the primary signal.
+// OPPORTUNISTIC green / ROUTINE amber / UNCLASSIFIABLE red / null dim.
+function convictionColor(cls: string | null): string {
+  if (cls === 'OPPORTUNISTIC')  return '#3fb950'
+  if (cls === 'ROUTINE')        return '#d29922'
+  if (cls === 'UNCLASSIFIABLE') return '#f85149'
+  return '#3a4a60'
 }
 
-function scoreLabel(s: number): string {
-  if (s >= 31) return 'Active Insider Signal'
+function convictionLabel(s: number): string {
+  if (s >= 75) return 'High Conviction'
+  if (s >= 55) return 'Take Trade'
+  if (s >= 35) return 'Monitor'
   return 'No Signal'
 }
 
@@ -480,20 +483,15 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
             : <span style={{ color: '#3a4a60' }}>—</span>
           }
         </td>
-        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !isBuy ? '#3a4a60' : cls === 'ROUTINE' ? scoreColor(0) : scoreColor(row.fundamental_score) }}>
+        <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !isBuy ? '#3a4a60' : convictionColor(cls) }}>
           {!isBuy
             ? <span style={{ color: '#3a4a60' }}>N/A</span>
-            : cls === 'ROUTINE'
+            : row.conviction_score != null
               ? <span className="score-badge">
-                  0
-                  <span className="score-tooltip">{scoreLabel(0)}</span>
+                  {row.conviction_score}
+                  <span className="score-tooltip">{convictionLabel(row.conviction_score)}</span>
                 </span>
-              : row.fundamental_score != null
-                ? <span className="score-badge">
-                    {row.fundamental_score}
-                    <span className="score-tooltip">{scoreLabel(row.fundamental_score)}</span>
-                  </span>
-                : <span style={{ color: '#3a4a60' }}>—</span>}
+              : <span style={{ color: '#3a4a60' }}>—</span>}
         </td>
         <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 600, color: txColor, fontVariantNumeric: 'tabular-nums' }}>
           {fmtCurrency(row.total_value)}
@@ -591,20 +589,20 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
             >×</button>
 
             <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#e6edf3', margin: '0 0 20px' }}>
-              How Sentra Scores Work
+              How Conviction Scores Work
             </h3>
 
-            <p style={{ fontSize: '13px', color: '#7b8498', lineHeight: 1.6, margin: '0 0 20px' }}>
-              Scores are based on empirical backtests of 2,800+ insider trades. Opportunistic
-              insiders receive a 1.25× classification bonus over the base lookup score.
+            <p style={{ fontSize: '13px', color: '#7b8498', lineHeight: 1.6, margin: '0 0 16px' }}>
+              Each score is a percentile rank (0–100) within its CMP classification — not a profit prediction.
+              Color shows the classification; the number ranks the trade within it.
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '16px' }}>
               {([
-                { range: '85–100', label: 'Very Strong', color: '#3fb950', desc: 'Top tier combination, highest historical alpha' },
-                { range: '70–84',  label: 'Strong',      color: '#3fb950', desc: 'High conviction, qualifies for paper trading' },
-                { range: '51–69',  label: 'Moderate',    color: '#d29922', desc: 'Meaningful pattern, worth watching' },
-                { range: '0–30',   label: 'No Signal',   color: '#7b8498', desc: 'Small trade or weak combination' },
+                { range: '75–100', label: 'High Conviction', color: '#3fb950', desc: 'Top-quartile stake increase, strong role signal' },
+                { range: '55–74',  label: 'Take Trade',      color: '#3fb950', desc: 'Above-median within classification' },
+                { range: '35–54',  label: 'Monitor',         color: '#d29922', desc: 'Modest signal, worth watching' },
+                { range: '0–34',   label: 'No Signal',       color: '#7b8498', desc: 'Small or formulaic trade' },
               ] as const).map(({ range, label, color, desc }, i, arr) => (
                 <div key={range} style={{
                   display: 'flex', alignItems: 'flex-start', gap: '12px',
@@ -620,9 +618,10 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
               ))}
             </div>
 
-            <p style={{ fontSize: '12px', color: '#555', lineHeight: 1.6, margin: '0 0 8px' }}>
-              Routine insiders show <span style={{ color: '#3a4a60', fontWeight: 600 }}>N/A</span> — their
-              trades follow predictable calendar patterns and a different methodology applies.
+            <p style={{ fontSize: '12px', color: '#555', lineHeight: 1.6, margin: '0 0 12px' }}>
+              Factors: stake increase % (30 pts), price momentum 90d (40 pts, ROUTINE/UNCL only),
+              insider role (12 pts), market cap tilt (8 pts).
+              Calibrated on 17,000+ backtest trades (IC ≈ 0.05–0.09).
             </p>
             <p style={{ fontSize: '11px', color: '#3a4a60', margin: 0 }}>
               Based on Cohen, Malloy &amp; Pomorski (2012) Harvard/MIT research on insider trading patterns.

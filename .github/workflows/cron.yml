@@ -58,6 +58,11 @@ jobs:
           curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/score" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
+      - name: Conviction score
+        run: |
+          curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/conviction-score" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
   cleanup-news:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 10 * * 0'
