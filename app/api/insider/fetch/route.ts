@@ -197,49 +197,6 @@ export async function GET(req: Request) {
       }
     }
 
-    // ── Diagnostic: full-table scan (no date filter) ─────────────────────────
-    {
-      const DIAG_PAGE = 1_000
-      const diagData: { ticker: string; insider_cik: string | null; insider_name: string | null; transaction_date: string }[] = []
-      for (let f = 0; ; f += DIAG_PAGE) {
-        let dq = supabase
-          .from('insider_transactions')
-          .select('ticker, insider_cik, insider_name, transaction_date')
-          .eq('transaction_code', 'P')
-          .order('transaction_date', { ascending: true })
-          .range(f, f + DIAG_PAGE - 1)
-        if (ticker) dq = dq.eq('ticker', ticker)
-        const { data: diagPage } = await dq
-        if (!diagPage || diagPage.length === 0) break
-        diagData.push(...diagPage)
-        if (diagPage.length < DIAG_PAGE) break
-      }
-
-      // counts map gives true max-insiders-in-any-window per ticker,
-      // independent of minInsiders threshold — so one pass suffices.
-      const { counts: allCounts } = computeClusters(diagData, 2)
-      const t2 = [...allCounts.entries()].filter(([, c]) => c >= 2)
-      const t3 = [...allCounts.entries()].filter(([, c]) => c >= 3)
-      const t4 = [...allCounts.entries()].filter(([, c]) => c >= 4)
-      const top5 = [...allCounts.entries()]
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 5)
-
-      console.log(`[cluster-diag] rows scanned (no date filter): ${diagData.length}`)
-      console.log(`[cluster-diag] all-time 2+ insiders: ${t2.length} tickers`)
-      console.log(`[cluster-diag] all-time 3+ insiders: ${t3.length} tickers`)
-      console.log(`[cluster-diag] all-time 4+ insiders: ${t4.length} tickers`)
-      console.log(`[cluster-diag] top 5 by max cluster: ${top5.map(([t, c]) => `${t}=${c}`).join(' | ')}`)
-      // Cross-check: which all-time 4+ tickers are NOT in the windowed discovery
-      const windowed4 = new Set(Object.keys(clusterCounts))
-      const allTime4  = t4.map(([t]) => t)
-      const missing   = allTime4.filter(t => !windowed4.has(t))
-      console.log(`[cluster-diag] all-time 4+ tickers absent from ${clusterFrom}–${endDate ?? 'now'} window: ${missing.length > 0 ? missing.join(', ') : 'none (all captured in window)'}`)
-      if (windowed4.size === 0 && allTime4.length > 0) {
-        console.log(`[cluster-diag] *** clusterFrom window (${clusterFrom}) captures 0 qualifying tickers — widen date range or remove start_date filter ***`)
-      }
-    }
-
     if (clusteredTickers.length === 0) {
       return NextResponse.json({ rows: [], total: 0, page, pages: 0, clusterCounts })
     }
@@ -250,7 +207,7 @@ export async function GET(req: Request) {
   function buildBaseQuery(withCount: boolean) {
     let q = supabase
       .from('insider_transactions')
-      .select(SELECT_COLS, withCount ? { count: 'exact' } : {})
+      .select(SELECT_COLS, withCount ? { count: 'estimated' } : {})
       .order('filed_date', { ascending: false })
       .order('transaction_date', { ascending: false })
       .lte('transaction_date', '2027-01-01')
