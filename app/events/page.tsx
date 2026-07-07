@@ -486,7 +486,10 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
         </td>
         <td style={{ padding: '11px 10px', fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !isBuy ? '#3a4a60' : convictionColor(cls) }}>
           {!isBuy
-            ? <span style={{ color: '#3a4a60' }}>N/A</span>
+            ? <span className="score-badge" style={{ color: '#3a4a60', borderBottomStyle: 'dotted' }}>
+                N/A
+                <span className="score-tooltip">Only purchases are scored. Insiders sell for many reasons: taxes, diversification, personal liquidity. Sales carry little signal.</span>
+              </span>
             : row.conviction_score != null
               ? <span className="score-badge">
                   {row.conviction_score}
