@@ -1,58 +1,72 @@
 export default function AboutPage() {
   const C = {
-    bg:       '#0a0e14',
-    surface:  '#0d1117',
-    border:   '#1e2530',
-    text:     '#e6edf3',
-    muted:    '#7b8498',
-    dimmed:   '#3a4a60',
-    green:    '#3fb950',
-    yellow:   '#d29922',
-    blue:     '#9ecbff',
-    font:     '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    bg:      '#0a0e14',
+    surface: '#0d1117',
+    border:  '#1e2530',
+    text:    '#e6edf3',
+    muted:   '#7b8498',
+    dimmed:  '#3a4a60',
+    green:   '#3fb950',
+    yellow:  '#d29922',
+    red:     '#f85149',
+    blue:    '#9ecbff',
+    font:    '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   }
 
   const section = (topPad = '72px'): React.CSSProperties => ({
     maxWidth: '1100px',
-    margin: '0 auto',
-    padding: `${topPad} clamp(16px, 4vw, 40px) 0`,
+    margin:   '0 auto',
+    padding:  `${topPad} clamp(16px, 4vw, 40px) 0`,
   })
 
   const label: React.CSSProperties = {
-    fontSize: '11px',
+    fontSize:      '11px',
     letterSpacing: '2.5px',
-    color: C.muted,
-    margin: '0 0 12px',
+    color:         C.muted,
+    margin:        '0 0 12px',
     textTransform: 'uppercase',
   }
 
   const h2: React.CSSProperties = {
-    fontSize: '26px',
-    fontWeight: 800,
-    color: C.text,
-    margin: '0 0 20px',
+    fontSize:      '26px',
+    fontWeight:    800,
+    color:         C.text,
+    margin:        '0 0 20px',
     letterSpacing: '-0.3px',
   }
 
   const prose: React.CSSProperties = {
-    fontSize: '15px',
-    color: C.muted,
+    fontSize:   '15px',
+    color:      C.muted,
     lineHeight: 1.75,
-    margin: '0 0 16px',
+    margin:     '0 0 16px',
   }
 
   const card: React.CSSProperties = {
-    background: C.surface,
-    border: `1px solid ${C.border}`,
+    background:   C.surface,
+    border:       `1px solid ${C.border}`,
     borderRadius: '12px',
-    padding: '24px 28px',
+    padding:      '24px 28px',
   }
 
   const divider: React.CSSProperties = {
-    maxWidth: '1100px',
-    margin: '72px auto 0',
-    borderTop: `1px solid ${C.border}`,
+    maxWidth:   '1100px',
+    margin:     '72px auto 0',
+    borderTop:  `1px solid ${C.border}`,
   }
+
+  const chip = (color: string): React.CSSProperties => ({
+    display:         'inline-block',
+    width:           '10px',
+    height:          '10px',
+    borderRadius:    '50%',
+    background:      color,
+    marginRight:     '8px',
+    flexShrink:      0,
+    verticalAlign:   'middle',
+    position:        'relative',
+    top:             '-1px',
+  })
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', color: C.text, fontFamily: C.font, paddingBottom: '100px' }}>
@@ -61,60 +75,177 @@ export default function AboutPage() {
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '80px clamp(16px, 4vw, 40px) 0' }}>
         <p style={label}>SENTRA SIGNALS</p>
         <h1 style={{ fontSize: '48px', fontWeight: 800, margin: '0 0 20px', letterSpacing: '-1px', lineHeight: 1.1 }}>
-          How Sentra Works
+          How Sentra Signals Works
         </h1>
         <p style={{ fontSize: '18px', color: C.muted, lineHeight: 1.7, maxWidth: '580px', margin: 0 }}>
-          Institutional-grade insider signal detection, powered by academic research.
+          An insider-activity radar for the full Russell 3000. Surfaces the trades that carry real signal and filters out the noise.
         </p>
       </div>
 
       <div style={divider} />
 
-      {/* ── INTRO ────────────────────────────────────────────────────────────── */}
+      {/* ── 2. THE PROBLEM ───────────────────────────────────────────────────── */}
       <div style={section()}>
-        <p style={label}>OUR THESIS</p>
-        {[
-          "Investors try to make money in the market through all different types of comlicated means; whether it's analyzing financial statements, building large language models, or even using satellite imagery to count the number of cars in a retailer store parking lot. But the single most powerful signal has always been hidden in plain sight: insiders.",
-          "CEOs, CFOs, and major shareholders see earnings before they're announced, contracts before they're signed, and product pipelines before the market has any idea. They have an edge that no analyst, no algorithm, and no hedge fund can replicate. And fortunately for us, every time they act on that conviction, they have to tell you about it.",
-          "By law, every insider trade must be reported to the SEC within 2 business days. The information is public. The signal is hiding in plain sight. So why isn't everyone using it?",
-          "The problem is noise. Insiders file thousands of trades every month: outine stock grants, scheduled 10b5-1 plan sales, compensation exercises. None of trhat means anything. Finding the trades that actually matter requires knowing the difference between an insider following a calendar and an insider acting on conviction, isnt easy.",
-          "But that's the entire thesis of Sentra. We built a system that reads every Form 4 filing across 3,000+ stocks, classifies each insider using a methodology developed by Harvard and MIT researchers, and surfaces only the trades where someone with real conviction is putting real money to work.",
-        ].map((para, i) => (
-          <p key={i} style={{ ...prose, color: C.text }}>{para}</p>
-        ))}
+        <p style={label}>The Problem</p>
+        <p style={{ ...prose, color: C.text }}>
+          The most powerful signal in markets has always been hiding in plain sight: insiders. CEOs, CFOs, and major shareholders see earnings before they are announced, contracts before they are signed, product pipelines before the market has any idea. They have an edge that no analyst and no algorithm can replicate.
+        </p>
+        <p style={{ ...prose, color: C.text }}>
+          And by law, every time an insider acts on that conviction, they have to report it to the SEC within two business days. The data is public. The signal is sitting there. So why does it get ignored?
+        </p>
+        <p style={{ ...prose, color: C.text }}>
+          Noise. Insiders file thousands of trades every month: routine stock grants, scheduled sales on pre-set 10b5-1 plans, small compensation exercises. None of that means anything. Finding the trades that matter means telling the difference between an insider following a calendar and one acting on conviction. That is not easy to do at scale.
+        </p>
+        <p style={{ ...prose, color: C.text }}>
+          Sentra reads every Form 4 filing across the full Russell 3000 (~2,899 tickers), classifies each insider using a methodology grounded in academic research, and surfaces the trades where the signal is real.
+        </p>
       </div>
 
       <div style={divider} />
 
+      {/* ── 3. CLASSIFICATION ────────────────────────────────────────────────── */}
+      <div style={section()}>
+        <p style={label}>CMP Classification</p>
+        <h2 style={h2}>Three Classes of Insiders</h2>
+        <p style={prose}>
+          Every insider in the Russell 3000 is classified using the Cohen, Malloy and Pomorski (2012) framework. The core insight: insiders who buy outside their historical calendar patterns generate meaningful returns. Insiders on predictable schedules generate essentially none.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ ...card, borderLeft: `3px solid ${C.green}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={chip(C.green)} />
+              <span style={{ fontSize: '14px', fontWeight: 700, color: C.text }}>Opportunistic</span>
+            </div>
+            <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.65, margin: 0 }}>
+              The insider bought outside their historical calendar pattern. This is the strongest class of signal. Opportunistic buyers tend to act when they have a genuine reason to buy, not because a scheduled plan told them to.
+            </p>
+          </div>
+          <div style={{ ...card, borderLeft: `3px solid ${C.yellow}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={chip(C.yellow)} />
+              <span style={{ fontSize: '14px', fontWeight: 700, color: C.text }}>Unclassifiable</span>
+            </div>
+            <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.65, margin: 0 }}>
+              There is insufficient trading history to determine a pattern. The insider may be new, filing rarely, or joining the company recently. Carries signal but with less certainty than Opportunistic.
+            </p>
+          </div>
+          <div style={{ ...card, borderLeft: `3px solid ${C.red}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={chip(C.red)} />
+              <span style={{ fontSize: '14px', fontWeight: 700, color: C.text }}>Routine</span>
+            </div>
+            <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.65, margin: 0 }}>
+              The insider trades on a predictable, calendar-driven schedule. These are typically plan-based or compensation-related transactions. The research shows they carry little forward-looking signal.
+            </p>
+          </div>
+        </div>
+      </div>
 
-      {/* ── 3. ACADEMIC FOUNDATION ───────────────────────────────────────────── */}
+      <div style={divider} />
+
+      {/* ── 4. CONVICTION SCORE ──────────────────────────────────────────────── */}
+      <div style={section()}>
+        <p style={label}>The Conviction Score</p>
+        <h2 style={h2}>A Percentile Rank Within Each Classification</h2>
+        <p style={prose}>
+          The color tells you the classification. The number (0–100) ranks that trade relative to other trades in the same classification. A score of 80 means this trade scored better than 80% of similar trades on the same signals. It is a description of trade characteristics, not a profit prediction.
+        </p>
+        <p style={prose}>
+          Only purchases are scored. Insider selling carries almost no forward-looking signal: insiders sell for many reasons (taxes, diversification, personal liquidity). Sentra scores open market purchases only.
+        </p>
+
+        <h3 style={{ fontSize: '16px', fontWeight: 700, color: C.text, margin: '28px 0 16px' }}>
+          Scoring Factors (walk-forward validated)
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '36px' }}>
+          {[
+            {
+              name:    'F1 — Stake increase',
+              max:     '30 pts',
+              classes: 'All',
+              desc:    'How much the purchase increases existing holdings as a percentage. A large increase relative to existing position signals real conviction. New positions (no prior holdings) are scored by dollar size.',
+            },
+            {
+              name:    'F2 — Price momentum 90d',
+              max:     '40 pts',
+              classes: 'Unclassifiable and Routine only',
+              desc:    'The stock\'s 90-day price return before the trade. A pullback before a buy scores higher than buying into an uptrend. Not applied to Opportunistic trades (walk-forward IC is near zero for that group).',
+            },
+            {
+              name:    'F3 — Role',
+              max:     '12 pts',
+              classes: 'All',
+              desc:    '10% owners and co-founders score highest (12 pts), followed by CEO, CFO, President, and Directors (9 pts), then other titles (7 pts).',
+            },
+            {
+              name:    'F4 — Size tilt',
+              max:     '8 pts',
+              classes: 'All',
+              desc:    'Smaller-cap companies score higher. Pearson IC is modest (−0.11); Spearman is near zero. Labeled as a lottery tilt: adds high-variance upside potential, not a consistent edge.',
+            },
+          ].map(({ name, max, classes, desc }) => (
+            <div key={name} style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: C.text }}>{name}</span>
+                <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+                  <span style={{ fontSize: '12px', color: C.blue }}>{max}</span>
+                  <span style={{ fontSize: '12px', color: C.dimmed }}>{classes}</span>
+                </div>
+              </div>
+              <p style={{ fontSize: '13px', color: C.muted, lineHeight: 1.65, margin: 0 }}>{desc}</p>
+            </div>
+          ))}
+        </div>
+        <p style={{ ...prose, fontSize: '13px', color: C.dimmed, margin: '0 0 28px' }}>
+          Composite IC 0.05 to 0.09 across validation sample. Factors excluded from the model (noise or lookahead bias): trade size in dollars, insider cluster breadth, sector, 52-week range, and prior track record.
+        </p>
+
+        <h3 style={{ fontSize: '16px', fontWeight: 700, color: C.text, margin: '0 0 16px' }}>
+          Six Signal Buckets
+        </h3>
+        <div style={{ borderTop: `1px solid ${C.border}` }}>
+          {[
+            { cls: 'OPPORTUNISTIC',  score: '50+',      label: 'Very high signal', color: C.green,  desc: 'Opportunistic buyer with above-median conviction signals' },
+            { cls: 'UNCLASSIFIABLE', score: '50+',      label: 'High signal',      color: C.yellow, desc: 'Unclassifiable insider with above-median signals' },
+            { cls: 'OPPORTUNISTIC',  score: 'Under 50', label: 'Moderate signal',  color: C.green,  desc: 'Opportunistic buyer with below-median signals' },
+            { cls: 'UNCLASSIFIABLE', score: 'Under 50', label: 'Low signal',       color: C.yellow, desc: 'Unclassifiable insider with below-median signals' },
+            { cls: 'ROUTINE',        score: '50+',      label: 'Low signal',       color: C.red,    desc: 'Routine buyer, above median for its class' },
+            { cls: 'ROUTINE',        score: 'Under 50', label: 'No signal',        color: C.red,    desc: 'Formulaic or small routine buy' },
+          ].map(({ cls, score, label: lbl, color, desc }) => (
+            <div key={cls + score} style={{ display: 'flex', alignItems: 'center', padding: '12px 0', borderBottom: `1px solid ${C.border}`, gap: '16px' }}>
+              <span style={chip(color)} />
+              <span style={{ fontSize: '12px', color: C.dimmed, width: '130px', flexShrink: 0 }}>{cls}</span>
+              <span style={{ fontSize: '12px', color: C.dimmed, width: '68px', flexShrink: 0 }}>{score}</span>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: C.text, width: '130px', flexShrink: 0 }}>{lbl}</span>
+              <span style={{ fontSize: '13px', color: C.muted }}>{desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={divider} />
+
+      {/* ── 5. ACADEMIC FOUNDATION ───────────────────────────────────────────── */}
       <div style={section()}>
         <p style={label}>Academic Foundation</p>
         <h2 style={h2}>The Research Base</h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '28px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[
             {
-              authors: 'Seyhun (1986)',
-              title: "Insiders' Profits, Costs of Trading, and Market Efficiency",
-              journal: 'Journal of Financial Economics',
-              finding: 'Foundational study establishing that insider purchases predict positive abnormal returns and insider sales predict negative returns, proving insiders systematically exploit private information.',
-              adapted: 'Sentra adapted the finding that purchase size relative to company size is the strongest predictor of abnormal returns. We use this to weight relative purchase size most heavily in our expected move calculation, giving more significance to buys in smaller companies than the same dollar amount in a mega cap.',
-            },
-            {
-              authors: 'Jeng, Metrick & Zeckhauser (2003)',
-              title: 'Estimating the Returns to Insider Trading',
-              journal: 'Review of Economics and Statistics',
-              finding: 'Insider purchases earn roughly 6% abnormal return over 6 months on a value-weighted basis. Insider sales show no significant predictive power; buys are the signal.',
-              adapted: 'Sentra adapted the finding that insider purchases earn roughly 6% abnormal return over 6 months, with buys carrying the signal and sales carrying none. This anchors our expected move estimates and is why Sentra only tracks open market purchases, not sales or option exercises.',
-            },
-            {
-              authors: 'Cohen, Malloy & Pomorski (2012)',
-              title: 'Decoding Inside Information',
+              authors: 'Cohen, Malloy and Pomorski (2012)',
+              title:   'Decoding Inside Information',
               journal: 'Journal of Finance',
-              finding: 'Insiders who trade outside their historical calendar patterns generate significant market-adjusted alpha. Insiders on predictable schedules generate essentially nothing. This distinction is the core of Sentra\'s methodology.',
-              adapted: "Sentra adapted the core distinction between opportunistic and routine insiders. Insiders who buy outside their historical patterns generate the meaningful signal. This is why Sentra's classification system filters for opportunistic buyers and discounts predictable calendar-driven transactions.",
+              finding: 'Insiders who trade outside their historical calendar patterns ("opportunistic" traders) generate significant market-adjusted returns. Insiders on predictable schedules ("routine" traders) generate essentially nothing. The classification is a better predictor of future returns than trade size, role, or any other single variable.',
+              use:     'This is the core of the Sentra classification system. Every insider\'s trades are evaluated against their own historical pattern. The opportunistic/routine split drives both the color coding and the signal interpretation.',
             },
-          ].map(({ authors, title, finding, adapted, journal }) => (
+            {
+              authors: 'Jeng, Metrick and Zeckhauser (2003)',
+              title:   'Estimating the Returns to Insider Trading',
+              journal: 'Review of Economics and Statistics',
+              finding: 'Insider purchases earn roughly 6% abnormal return over 6 months on a value-weighted basis. Insider sales show no significant predictive power.',
+              use:     'This anchors the decision to score purchases only. Insider selling is noisy: insiders sell for taxes, diversification, and personal liquidity regardless of their view. Buying with personal capital is a cleaner signal.',
+            },
+          ].map(({ authors, title, finding, use, journal }) => (
             <div key={authors} style={{ ...card, borderLeft: `3px solid ${C.blue}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: C.blue }}>{authors}</div>
@@ -123,7 +254,7 @@ export default function AboutPage() {
               <div style={{ fontSize: '13px', fontWeight: 600, color: C.text, marginBottom: '6px' }}>{title}</div>
               <div style={{ fontSize: '13px', color: C.muted, lineHeight: 1.65, marginBottom: '12px' }}>{finding}</div>
               <div style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '1.5px', color: C.dimmed, marginBottom: '6px' }}>HOW SENTRA USES THIS</div>
-              <div style={{ fontSize: '13px', color: C.muted, lineHeight: 1.65 }}>{adapted}</div>
+              <div style={{ fontSize: '13px', color: C.muted, lineHeight: 1.65 }}>{use}</div>
             </div>
           ))}
         </div>
@@ -131,31 +262,31 @@ export default function AboutPage() {
 
       <div style={divider} />
 
-      {/* ── 4. METHODOLOGY ───────────────────────────────────────────────────── */}
+      {/* ── 6. METHODOLOGY ───────────────────────────────────────────────────── */}
       <div style={section()}>
-        <p style={label}>Our Methodology</p>
+        <p style={label}>Methodology</p>
         <h2 style={h2}>From Filing to Signal</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[
             {
-              step: '01',
+              step:  '01',
               title: 'Ingest SEC EDGAR Form 4 filings',
-              body:  'Daily ingestion of Form 4 filings across 3,000+ stocks. Every transaction is parsed, normalized, and stored with full insider metadata.',
+              body:  'Daily ingestion of Form 4 filings across the full Russell 3000 (~2,899 tickers). Every transaction is parsed, normalized, and stored with full insider metadata.',
             },
             {
-              step: '02',
-              title: 'Classify insiders as Routine or Opportunistic',
-              body:  '3-year rolling calendar analysis per insider. Trades that align with a predictable monthly or quarterly pattern are flagged Routine. All others are Opportunistic.',
+              step:  '02',
+              title: 'Classify each insider using CMP methodology',
+              body:  'Each insider\'s trade history is analyzed for calendar patterns. Trades outside a predictable monthly or quarterly pattern are classified Opportunistic. Predictable, scheduled trades are Routine. Insiders without enough history to classify are Unclassifiable.',
             },
             {
-              step: '03',
-              title: 'Score every signal 0–100',
-              body:  'Our conviction engine weighs role seniority, trade size, sector alpha history, insider clustering, track record, and known high-alpha insiders.',
+              step:  '03',
+              title: 'Score open market purchases 0–100',
+              body:  'For each purchase, four validated factors are computed: stake increase, price momentum (Unclassifiable and Routine only), role, and size tilt. The raw composite is mapped to a 0–100 percentile rank within that insider\'s classification, calibrated from historical buys.',
             },
             {
-              step: '04',
-              title: 'Surface actionable alerts',
-              body:  'Only signals scoring ≥70 are surfaced as trade alerts. Scores of 60–69 are flagged for monitoring. Routine trades and low-conviction signals are filtered out.',
+              step:  '04',
+              title: 'Display with classification color and signal bucket',
+              body:  'Each trade is shown with its CMP color (green/yellow/red) and conviction score. Classification and score together determine signal strength using six buckets, from Very high signal (Opportunistic ≥50) to No signal (Routine under 50).',
             },
           ].map(({ step, title, body }) => (
             <div key={step} style={{ ...card, display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
@@ -176,125 +307,10 @@ export default function AboutPage() {
 
       <div style={divider} />
 
-      {/* ── 5. CONVICTION SCORE ──────────────────────────────────────────────── */}
-      <div style={section()}>
-        <p style={label}>The Conviction Score</p>
-        <h2 style={h2}>0–100 Signal Scoring Engine</h2>
-        <div style={{ borderTop: `1px solid ${C.border}` }}>
-          {[
-            { criterion: 'Opportunistic classification (CMP 2012)',              desc: 'Insider trades outside their historical calendar pattern',                                    value: 'Base: 50 pts' },
-            { criterion: 'Routine classification (CMP 2012)',                    desc: 'Insider trades on a predictable schedule',                                                   value: 'Hard cap: 1–49 pts' },
-            { criterion: 'Open market purchase (Form 4, Code P)',                desc: 'Required condition — signal is void if absent',                                             value: 'Required: +0 pts' },
-            { criterion: 'Transaction size $500K–$5M',                          desc: '',                                                                                           value: '+8 pts' },
-            { criterion: 'Transaction size $5M–$25M',                           desc: '',                                                                                           value: '+15 pts' },
-            { criterion: 'Transaction size >$25M',                              desc: '',                                                                                           value: '-10 pts' },
-            { criterion: 'Purchase as % of market cap 0.01–0.05%',              desc: '',                                                                                           value: '+5 pts' },
-            { criterion: 'Purchase as % of market cap 0.05–0.1%',               desc: '',                                                                                           value: '+10 pts' },
-            { criterion: 'Purchase as % of market cap >0.1%',                   desc: '',                                                                                           value: '+18 pts' },
-            { criterion: 'CEO or Executive Chairman role',                       desc: '',                                                                                           value: '+14 pts' },
-            { criterion: '10% Owner role',                                       desc: '',                                                                                           value: '+20 pts' },
-            { criterion: 'CFO or COO role',                                      desc: '',                                                                                           value: '+10 pts' },
-            { criterion: 'Director role',                                        desc: '',                                                                                           value: '+6 pts' },
-            { criterion: 'Insider cluster — 2 buyers, same 30d window',         desc: '',                                                                                           value: '+5 pts' },
-            { criterion: 'Insider cluster — 3 buyers, same 30d window',         desc: '',                                                                                           value: '+9 pts' },
-            { criterion: 'Insider cluster — 4+ buyers, same 30d window',        desc: '',                                                                                           value: '+12 pts' },
-            { criterion: 'Communication Services sector',                        desc: '',                                                                                           value: '+12 pts' },
-            { criterion: 'Financial Services sector',                            desc: '',                                                                                           value: '+8 pts' },
-            { criterion: 'Industrials sector',                                   desc: '',                                                                                           value: '+7 pts' },
-            { criterion: 'Consumer Cyclical sector',                             desc: '',                                                                                           value: '+6 pts' },
-            { criterion: 'Stock in bottom 20% of 52-week range',                desc: '',                                                                                           value: '+6 pts' },
-            { criterion: 'Stock in bottom 40% of 52-week range',                desc: '',                                                                                           value: '+3 pts' },
-            { criterion: 'Stock in top 20% of 52-week range',                   desc: '',                                                                                           value: '-4 pts' },
-            { criterion: 'Prior opportunistic buy, same insider, within 180d',  desc: '',                                                                                           value: '+5 pts' },
-            { criterion: 'Maximum score (opportunistic)',                        desc: '',                                                                                           value: '100 pts' },
-            { criterion: 'Minimum score (routine, any criteria)',                desc: '',                                                                                           value: '49 pts' },
-          ].map(({ criterion, desc, value }) => (
-            <div key={criterion} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '12px 0', borderBottom: `1px solid ${C.border}`, gap: '24px' }}>
-              <div>
-                <span style={{ fontSize: '13px', color: C.text }}>{criterion}</span>
-                {desc && <span style={{ fontSize: '12px', color: C.muted, marginLeft: '8px' }}>{desc}</span>}
-              </div>
-              <span style={{ fontSize: '13px', color: C.muted, whiteSpace: 'nowrap', flexShrink: 0 }}>{value}</span>
-            </div>
-          ))}
-        </div>
-        <p style={{ fontSize: '14px', color: C.muted, lineHeight: 1.75, margin: '24px 0 0' }}>
-          Scores of 70 or above trigger a Sentra signal. Scores of 85 or above are classified as high conviction. Routine traders never exceed 49 regardless of transaction size or cluster activity.
-        </p>
-      </div>
-
-      <div style={divider} />
-
-      {/* ── 6. BACKTEST RESULTS ──────────────────────────────────────────────── */}
-      <div style={section()}>
-        <p style={label}>Backtest Results</p>
-        <h2 style={h2}>88,044 Trades · 2015–2026</h2>
-        <div className="backtest-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
-          {[
-            { stat: '88,044', sub: 'Insider transactions analyzed' },
-            { stat: '59.7%',  sub: 'Win rate, all opportunistic' },
-            { stat: '90%',    sub: 'Win rate at conviction ≥70' },
-            { stat: '100%',   sub: 'Win rate at conviction ≥85' },
-            { stat: '+12.9%', sub: 'Avg alpha at 180d (score ≥70)' },
-            { stat: '11yr',   sub: 'Dataset spanning 2015–2026' },
-          ].map(({ stat, sub }) => (
-            <div key={sub} style={{ ...card, textAlign: 'center' }}>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: C.green, letterSpacing: '-0.5px', lineHeight: 1, marginBottom: '6px' }}>
-                {stat}
-              </div>
-              <div style={{ fontSize: '12px', color: C.muted, lineHeight: 1.4 }}>{sub}</div>
-            </div>
-          ))}
-        </div>
-        <div className="best-results-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div style={{ ...card, borderLeft: `3px solid ${C.green}` }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1.5px', color: C.muted, marginBottom: '8px' }}>BEST ROLE</div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: C.text, marginBottom: '4px' }}>10% Owner</div>
-            <div style={{ fontSize: '13px', color: C.muted }}>100% win rate at 180 days</div>
-          </div>
-          <div style={{ ...card, borderLeft: `3px solid ${C.green}` }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1.5px', color: C.muted, marginBottom: '8px' }}>BEST SECTOR</div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: C.text, marginBottom: '4px' }}>Communication Services</div>
-            <div style={{ fontSize: '13px', color: C.muted }}>81% win rate</div>
-          </div>
-        </div>
-      </div>
-
-      <div style={divider} />
-
-      {/* ── 7. TRADING SYSTEM ────────────────────────────────────────────────── */}
-      <div style={section()}>
-        <p style={label}>The Trading System</p>
-        <h2 style={h2}>Automated Signal Execution</h2>
-        <p style={prose}>
-          Qualifying signals are executed automatically on Alpaca paper trading via a daily
-          cron job. Every trade follows a strict rules-based framework:
-        </p>
-        <div className="trading-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-          {[
-            { label: 'ENTRY',       value: 'Score ≥70',         sub: 'Opportunistic only' },
-            { label: 'STOP LOSS',   value: '−15%',              sub: 'Hard exit within 30d' },
-            { label: 'TAKE PROFIT', value: '+25%',              sub: 'Limit order attached' },
-            { label: 'HOLD PERIOD', value: '90–180 days',       sub: 'Role and sector adjusted' },
-            { label: 'TIER 1',      value: '$10,000 split',     sub: 'Score ≥70, equal weight' },
-            { label: 'TIER 2',      value: '$500 flat',         sub: 'Score 60–69, monitor size' },
-          ].map(({ label: l, value, sub }) => (
-            <div key={l} style={card}>
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px', color: C.muted, marginBottom: '8px' }}>{l}</div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: C.text, lineHeight: 1, marginBottom: '4px' }}>{value}</div>
-              <div style={{ fontSize: '12px', color: C.dimmed }}>{sub}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={divider} />
-
-      {/* ── 8. DISCLAIMER ────────────────────────────────────────────────────── */}
+      {/* ── 7. DISCLAIMER ────────────────────────────────────────────────────── */}
       <div style={{ ...section('48px'), paddingBottom: '0' }}>
-        <p style={{ fontSize: '12px', color: C.dimmed, lineHeight: 1.7, textAlign: 'center', maxWidth: '560px', margin: '0 auto' }}>
-          Sentra is a research and paper trading platform. All signals are for informational
-          purposes only. Past performance does not guarantee future results.
+        <p style={{ fontSize: '13px', color: C.dimmed, lineHeight: 1.7, textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
+          Sentra Signals provides informational data sourced from public SEC filings only. It is not a registered investment advisor and nothing on this platform constitutes investment advice. Users are solely responsible for their own investment decisions.
         </p>
       </div>
 
