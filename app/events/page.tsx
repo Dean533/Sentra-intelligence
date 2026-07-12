@@ -131,6 +131,7 @@ function EventsFeed({ eventType, ticker }: { eventType: string; ticker?: string 
 
   const [events,    setEvents]    = useState<EventItem[]>([])
   const [loading,   setLoading]   = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [page,      setPage]      = useState(1)
   const [total,     setTotal]     = useState(0)
   const [pages,     setPages]     = useState(1)
@@ -153,21 +154,35 @@ function EventsFeed({ eventType, ticker }: { eventType: string; ticker?: string 
 
   useEffect(() => {
     setLoading(true)
+    setFetchError(null)
     const params = new URLSearchParams({ type: eventType, page: String(page), limit: '30' })
     if (ticker)                      params.set('ticker', ticker)
     if (isNews && sentiment !== 'all') params.set('sentiment', sentiment)
     if (isNews && source !== 'all')    params.set('source', source)
     if (isNews && startDate)           params.set('start_date', startDate)
     if (isNews && endDate)             params.set('end_date', endDate)
+    const t0 = performance.now()
     fetch(`/api/signals?${params}`)
-      .then((r) => r.json())
-      .then((d) => { setEvents(d.events ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
+      .then((r) => {
+        if (!r.ok) return r.json().then((d) => { throw new Error(d.error ?? `HTTP ${r.status}`) })
+        return r.json()
+      })
+      .then((d) => {
+        console.log(`[signals] ${eventType} loaded in ${(performance.now() - t0).toFixed(0)}ms — ${d.total ?? 0} total`)
+        setEvents(d.events ?? [])
+        setTotal(d.total ?? 0)
+        setPages(d.pages ?? 1)
+      })
+      .catch((e: Error) => {
+        console.error(`[signals] fetch failed after ${(performance.now() - t0).toFixed(0)}ms:`, e.message)
+        setFetchError(e.message)
+      })
       .finally(() => setLoading(false))
   }, [eventType, ticker, sentiment, source, startDate, endDate, page, isNews])
 
   const pageStart = (page - 1) * 30 + 1
   const pageEnd   = Math.min(page * 30, total)
-  const countLabel = loading ? 'Loading…' : total === 0 ? 'No events found' : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} events`
+  const countLabel = loading ? 'Loading…' : fetchError ? 'Error loading data' : total === 0 ? 'No events found' : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} events`
 
   return (
     <>
@@ -214,7 +229,14 @@ function EventsFeed({ eventType, ticker }: { eventType: string; ticker?: string 
           </div>
         ))}
 
-        {!loading && events.length === 0 && (
+        {!loading && fetchError && (
+          <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+            <div style={{ color: '#f85149', fontSize: '14px', marginBottom: '6px' }}>Failed to load events</div>
+            <div style={{ color: '#7b8498', fontSize: '12px', fontFamily: 'monospace' }}>{fetchError}</div>
+          </div>
+        )}
+
+        {!loading && !fetchError && events.length === 0 && (
           <div style={{ padding: '48px 24px', textAlign: 'center', color: '#7b8498', fontSize: '14px' }}>No events found for this filter.</div>
         )}
 
@@ -371,6 +393,7 @@ function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string; ca
 function InsiderActivityTable({ ticker }: { ticker?: string }) {
   const [rows,        setRows]        = useState<InsiderRow[]>([])
   const [loading,     setLoading]     = useState(true)
+  const [fetchError,  setFetchError]  = useState<string | null>(null)
   const [page,        setPage]        = useState(1)
   const [total,       setTotal]       = useState(0)
   const [pages,       setPages]       = useState(1)
@@ -390,6 +413,7 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
 
   useEffect(() => {
     setLoading(true)
+    setFetchError(null)
     const params = new URLSearchParams({ page: String(page), limit: '50', direction: dirFilter })
     if (ticker)              params.set('ticker', ticker)
     if (clsFilter  !== 'all') params.set('classification', clsFilter)
@@ -400,9 +424,22 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
     if (holdingsPct !== 'any')  params.set('holdings_min', holdingsPct)
     if (valueFilter !== 'all')  params.set('min_value', valueFilter)
     if (scoreFilter !== 'all')  params.set('min_score', scoreFilter)
+    const t0 = performance.now()
     fetch(`/api/insider/fetch?${params}`)
-      .then((r) => r.json())
-      .then((d) => { setRows(d.rows ?? []); setTotal(d.total ?? 0); setPages(d.pages ?? 1) })
+      .then((r) => {
+        if (!r.ok) return r.json().then((d) => { throw new Error(d.error ?? `HTTP ${r.status}`) })
+        return r.json()
+      })
+      .then((d) => {
+        console.log(`[insider/fetch] loaded in ${(performance.now() - t0).toFixed(0)}ms — ${d.total ?? 0} total rows`)
+        setRows(d.rows ?? [])
+        setTotal(d.total ?? 0)
+        setPages(d.pages ?? 1)
+      })
+      .catch((e: Error) => {
+        console.error(`[insider/fetch] failed after ${(performance.now() - t0).toFixed(0)}ms:`, e.message)
+        setFetchError(e.message)
+      })
       .finally(() => setLoading(false))
   }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter, page])
 
@@ -691,14 +728,16 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
           <option value="4">4+ Insiders</option>
         </select>
 
-        <span style={{ color: '#7b8498', fontSize: '13px', marginLeft: 'auto' }}>
+        <span style={{ color: fetchError ? '#f85149' : '#7b8498', fontSize: '13px', marginLeft: 'auto' }}>
           {loading
             ? 'Loading…'
-            : hasClientFilter
-              ? `${filteredRows.length} ${countLabel} on this page`
-              : total === 0
-                ? `No ${countLabel} found`
-                : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} ${countLabel}`
+            : fetchError
+              ? 'Failed to load'
+              : hasClientFilter
+                ? `${filteredRows.length} ${countLabel} on this page`
+                : total === 0
+                  ? `No ${countLabel} found`
+                  : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} ${countLabel}`
           }
         </span>
       </div>
@@ -732,7 +771,16 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
               </tr>
             ))}
 
-            {!loading && filteredRows.length === 0 && (
+            {!loading && fetchError && (
+              <tr>
+                <td colSpan={10} style={{ padding: '56px 24px', textAlign: 'center' }}>
+                  <div style={{ color: '#f85149', fontSize: '14px', marginBottom: '6px' }}>Failed to load transactions</div>
+                  <div style={{ color: '#7b8498', fontSize: '12px', fontFamily: 'monospace' }}>{fetchError}</div>
+                </td>
+              </tr>
+            )}
+
+            {!loading && !fetchError && filteredRows.length === 0 && (
               <tr>
                 <td colSpan={10} style={{ padding: '56px 24px', textAlign: 'center' }}>
                   <div style={{ color: '#3a4a60', fontSize: '12px', letterSpacing: '2px', marginBottom: '8px' }}>NO DATA</div>
