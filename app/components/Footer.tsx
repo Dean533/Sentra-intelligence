@@ -122,7 +122,14 @@ export default function Footer() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
             <FooterLink href="/privacy"     label="Privacy Policy" />
             <FooterLink href="/terms"       label="Terms of Service" />
-            <FooterLink href="/sitemap.xml" label="Sitemap" />
+            <a
+              href="/sitemap.xml"
+              style={{ color: '#7b8498', textDecoration: 'none', fontSize: '13px', transition: 'color 0.15s' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#c9d1d9')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#7b8498')}
+            >
+              Sitemap
+            </a>
           </div>
         </div>
 
