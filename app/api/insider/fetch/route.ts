@@ -334,11 +334,24 @@ export async function GET(req: Request) {
   const base = buildBaseQuery(true)
   if (!base) return NextResponse.json({ rows: [], total: 0, page, pages: 0, clusterCounts })
 
+  const t0 = performance.now()
   const { data, count, error } = await base.range(offset, offset + limit - 1)
+  const tQuery = performance.now() - t0
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  const t1 = performance.now()
+  const classified = await attachClassifications(data ?? [])
+  const tCls = performance.now() - t1
+
+  console.log(
+    `[insider/fetch] query=${tQuery.toFixed(0)}ms classify=${tCls.toFixed(0)}ms ` +
+    `count=${count} rows=${data?.length ?? 0} ` +
+    `filters: direction=${direction} ticker=${ticker ?? 'none'} cls=${classification ?? 'none'} ` +
+    `start=${startDate ?? '-'} end=${endDate ?? '-'}`
+  )
+
   return NextResponse.json({
-    rows:  await attachClassifications(data ?? []),
+    rows:  classified,
     total: count ?? 0,
     page,
     pages: Math.ceil((count ?? 0) / limit),
