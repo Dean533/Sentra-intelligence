@@ -36,10 +36,10 @@ export async function GET(req: Request) {
     }
 
     const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    const { inserted, skipped } = await ingestTickerInsiders(
+    const { inserted, skipped, insertFailed } = await ingestTickerInsiders(
       singleTicker, cikStr, cutoffDate, meta.hqState, meta.companyName, supabase
     )
-    return NextResponse.json({ ticker: singleTicker, inserted, skipped })
+    return NextResponse.json({ ticker: singleTicker, inserted, skipped, insertFailed })
   }
 
   // ── batch param: restricts to a quarter-slice of CIKs (manual / testing) ─
@@ -56,30 +56,30 @@ export async function GET(req: Request) {
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
       return NextResponse.json({ error: 'Invalid start_date or end_date' }, { status: 400 })
     }
-    const { days, totals } = await runDailyIngest(supabase, {
+    const { days, totals, healthOk } = await runDailyIngest(supabase, {
       startDate:  startDateParam,
       endDate:    endDateParam,
       batch,
       batchCount: batch !== undefined ? 4 : undefined,
     })
-    return NextResponse.json({ batch: batch ?? null, days, totals })
+    return NextResponse.json({ batch: batch ?? null, healthOk, days, totals }, { status: healthOk ? 200 : 500 })
   }
 
   // ── single-date mode (?date=YYYY-MM-DD) ───────────────────────────────────
   const explicitDate = searchParams.get('date')
   if (explicitDate) {
-    const { days, totals } = await runDailyIngest(supabase, {
+    const { days, totals, healthOk } = await runDailyIngest(supabase, {
       date:       explicitDate,
       batch,
       batchCount: batch !== undefined ? 4 : undefined,
     })
     const result = days[0]
     if (result?.error) return NextResponse.json({ error: result.error }, { status: 502 })
-    return NextResponse.json({ batch: batch ?? null, ...result, totals })
+    return NextResponse.json({ batch: batch ?? null, healthOk, ...result, totals }, { status: healthOk ? 200 : 500 })
   }
 
   // ── daily rolling-window mode (no date param) ─────────────────────────────
-  const { days, totals } = await runDailyIngest(supabase, {
+  const { days, totals, healthOk } = await runDailyIngest(supabase, {
     batch,
     batchCount: batch !== undefined ? 4 : undefined,
   })
@@ -90,7 +90,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     batch:  batch ?? null,
     window: `${fiveDaysAgo}..${todayStr}`,
+    healthOk,
     days,
     totals,
-  })
+  }, { status: healthOk ? 200 : 500 })
 }

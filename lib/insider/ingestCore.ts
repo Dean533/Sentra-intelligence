@@ -163,7 +163,7 @@ export async function processFiling(
   hqState: string | null = null,
   companyName: string | null = null,
   supabase: SupabaseClient,
-): Promise<{ inserted: number; skipped: number }> {
+): Promise<{ inserted: number; skipped: number; insertFailed: number }> {
   const adshClean = adsh.replace(/-/g, '')
   const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${adshClean}/${adsh}-index.htm`
 
@@ -180,7 +180,7 @@ export async function processFiling(
 
   if (!xmlUrl) {
     console.log(`skip ${ticker}: no xml url (adsh=${adsh} primaryDoc=${primaryDoc})`)
-    return { inserted: 0, skipped: 1 }
+    return { inserted: 0, skipped: 1, insertFailed: 0 }
   }
 
   await sleep(20)
@@ -188,14 +188,14 @@ export async function processFiling(
   const xmlRes = await fetch(xmlUrl, { headers: SEC_HEADERS })
   if (!xmlRes.ok) {
     console.log(`skip ${ticker}: xml fetch failed ${xmlRes.status} url=${xmlUrl}`)
-    return { inserted: 0, skipped: 1 }
+    return { inserted: 0, skipped: 1, insertFailed: 0 }
   }
 
   const xml = await xmlRes.text()
 
   if (!xml.includes('<ownershipDocument') && !xml.includes('<rptOwnerName')) {
     console.log(`skip ${ticker}: not an ownership document (adsh=${adsh})`)
-    return { inserted: 0, skipped: 1 }
+    return { inserted: 0, skipped: 1, insertFailed: 0 }
   }
 
   const allTxBlocks = allBlocks(xml, 'nonDerivativeTransaction')
@@ -204,10 +204,11 @@ export async function processFiling(
   if (transactions.length === 0) {
     const codes = allTxBlocks.map((b) => directVal(b, 'transactionCode')).filter(Boolean)
     console.log(`skip ${ticker}: 0 transactions parsed (${allTxBlocks.length} nonDerivative blocks, codes=[${codes.join(',')}]) adsh=${adsh}`)
-    return { inserted: 0, skipped: 1 }
+    return { inserted: 0, skipped: 1, insertFailed: 0 }
   }
 
-  let inserted = 0
+  let inserted     = 0
+  let insertFailed = 0
 
   const cutoffMs = Date.now() + 7 * 24 * 60 * 60 * 1000
 
@@ -269,7 +270,12 @@ export async function processFiling(
       .insert([payload])
 
     if (insertErr) {
-      console.log(`skip ${ticker}: db insert error — ${insertErr.message} (adsh=${adsh})`)
+      console.error(
+        `[ingest] INSERT FAILED ${ticker} adsh=${adsh}` +
+        ` insider="${tx.insiderName}" date=${tx.transactionDate}` +
+        ` shares=${tx.shares} code=${tx.transactionCode}: ${insertErr.message}`
+      )
+      insertFailed++
       continue
     }
 
@@ -301,7 +307,15 @@ export async function processFiling(
     inserted++
   }
 
-  return { inserted, skipped: inserted === 0 ? 1 : 0 }
+  if (insertFailed > 0) {
+    console.error(
+      `[ingest] *** FILING INCOMPLETE: ${ticker} ${adsh} —` +
+      ` ${insertFailed}/${insertFailed + inserted} attempted inserts FAILED,` +
+      ` XML had ${transactions.length} transactions`
+    )
+  }
+
+  return { inserted, skipped: inserted === 0 ? 1 : 0, insertFailed }
 }
 
 // ─── Targeted per-CIK fetcher ────────────────────────────────────────────────
@@ -357,7 +371,7 @@ export async function ingestTickerInsiders(
   hqState: string | null = null,
   companyName: string | null = null,
   supabase: SupabaseClient,
-): Promise<{ inserted: number; skipped: number }> {
+): Promise<{ inserted: number; skipped: number; insertFailed: number }> {
   const subRes = await fetch(
     `https://data.sec.gov/submissions/CIK${padCik(cikStr)}.json`,
     { headers: SEC_HEADERS }
@@ -366,14 +380,15 @@ export async function ingestTickerInsiders(
 
   const sub    = await subRes.json()
   const recent = sub.filings?.recent
-  if (!recent) return { inserted: 0, skipped: 0 }
+  if (!recent) return { inserted: 0, skipped: 0, insertFailed: 0 }
 
   const forms:    string[] = recent.form            ?? []
   const dates:    string[] = recent.filingDate      ?? []
   const adshList: string[] = recent.accessionNumber ?? []
 
-  let inserted = 0
-  let skipped  = 0
+  let inserted     = 0
+  let skipped      = 0
+  let insertFailed = 0
 
   for (let i = 0; i < forms.length; i++) {
     if (forms[i] !== '4') continue
@@ -385,11 +400,12 @@ export async function ingestTickerInsiders(
     await sleep(150)
 
     const result = await processFiling(ticker, parseInt(cikStr, 10), adsh, null, dates[i], hqState, companyName, supabase)
-    inserted += result.inserted
-    skipped  += result.skipped
+    inserted     += result.inserted
+    skipped      += result.skipped
+    insertFailed += result.insertFailed
   }
 
-  return { inserted, skipped }
+  return { inserted, skipped, insertFailed }
 }
 
 // ─── Ticker + CIK map loaders ─────────────────────────────────────────────────
@@ -460,6 +476,7 @@ export type DayResult = {
   inserted: number
   skipped: number
   failed: number
+  insertFailed: number
   error?: string
 }
 
@@ -477,7 +494,7 @@ export type IngestOptions = {
 export async function runDailyIngest(
   supabase: SupabaseClient,
   options: IngestOptions = {},
-): Promise<{ days: DayResult[]; totals: { inserted: number; skipped: number; failed: number } }> {
+): Promise<{ days: DayResult[]; totals: { inserted: number; skipped: number; failed: number; insertFailed: number }; healthOk: boolean }> {
   const tickerMeta = await loadTickerMeta(supabase)
   const symbolSet  = new Set(tickerMeta.map((t) => t.symbol))
 
@@ -502,12 +519,13 @@ export async function runDailyIngest(
     try {
       entries = await fetchFilingsForCiks(allCiks, cikToTicker, dateStr)
     } catch (err: any) {
-      return { date: dateStr, total_fetched: 0, processed: 0, inserted: 0, skipped: 0, failed: 0, error: err.message ?? 'CIK fetch failed' }
+      return { date: dateStr, total_fetched: 0, processed: 0, inserted: 0, skipped: 0, failed: 0, insertFailed: 0, error: err.message ?? 'CIK fetch failed' }
     }
 
-    let inserted = 0
-    let skipped  = 0
-    let failed   = 0
+    let inserted     = 0
+    let skipped      = 0
+    let failed       = 0
+    let insertFailed = 0
 
     for (const entry of entries) {
       const ticker      = cikToTicker[entry.cik]
@@ -516,15 +534,16 @@ export async function runDailyIngest(
       try {
         await sleep(150)
         const result = await processFiling(ticker, entry.cik, entry.adsh, entry.primaryDoc, entry.filedDate, hqState, companyName, supabase)
-        inserted += result.inserted
-        skipped  += result.skipped
+        inserted     += result.inserted
+        skipped      += result.skipped
+        insertFailed += result.insertFailed
       } catch (err: any) {
         console.log(`[ingest] error processing filing ${entry.adsh} (${ticker}): ${err.message}`)
         failed++
       }
     }
 
-    return { date: dateStr, total_fetched: entries.length, processed: entries.length, inserted, skipped, failed }
+    return { date: dateStr, total_fetched: entries.length, processed: entries.length, inserted, skipped, failed, insertFailed }
   }
 
   // Build the list of dates to process
@@ -555,12 +574,32 @@ export async function runDailyIngest(
 
   const totals = results.reduce(
     (acc, r) => ({
-      inserted: acc.inserted + r.inserted,
-      skipped:  acc.skipped  + r.skipped,
-      failed:   acc.failed   + r.failed,
+      inserted:     acc.inserted     + r.inserted,
+      skipped:      acc.skipped      + r.skipped,
+      failed:       acc.failed       + r.failed,
+      insertFailed: acc.insertFailed + r.insertFailed,
     }),
-    { inserted: 0, skipped: 0, failed: 0 },
+    { inserted: 0, skipped: 0, failed: 0, insertFailed: 0 },
   )
 
-  return { days: results, totals }
+  // ── Health check ───────────────────────────────────────────────────────────
+  // insertFailed tracks individual row inserts that the DB rejected — distinct
+  // from `failed` (whole-filing exceptions) and `skipped` (dedup hits). Any
+  // insert failure is logged loudly above; exceeding 1% of attempted inserts
+  // marks the run unhealthy so callers can exit non-zero or return HTTP 500.
+  const FAIL_THRESHOLD = 0.01
+  const attempted      = totals.inserted + totals.insertFailed
+  const failureRate    = attempted > 0 ? totals.insertFailed / attempted : 0
+  const healthOk       = failureRate <= FAIL_THRESHOLD
+
+  if (totals.insertFailed > 0) {
+    const pct = (failureRate * 100).toFixed(1)
+    console.error(`[ingest] *** WARNING: ${totals.insertFailed} row insert failure(s) this run`)
+    console.error(`[ingest]   attempted=${attempted}  inserted=${totals.inserted}  insertFailed=${totals.insertFailed}  rate=${pct}%`)
+    if (!healthOk) {
+      console.error(`[ingest] *** FAILURE RATE ${pct}% EXCEEDS ${(FAIL_THRESHOLD * 100).toFixed(0)}% THRESHOLD — marking run UNHEALTHY`)
+    }
+  }
+
+  return { days: results, totals, healthOk }
 }

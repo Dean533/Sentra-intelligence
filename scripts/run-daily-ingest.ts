@@ -78,7 +78,7 @@ async function main() {
 
   const start = Date.now()
 
-  const { days, totals } = await runDailyIngest(supabase, {
+  const { days, totals, healthOk } = await runDailyIngest(supabase, {
     date,
     startDate,
     endDate,
@@ -93,13 +93,14 @@ async function main() {
   console.log()
 
   // Summary table
-  const colW = { date: 12, fetched: 9, inserted: 10, skipped: 9, failed: 7 }
+  const colW = { date: 12, fetched: 9, inserted: 10, skipped: 9, failed: 7, insertFailed: 13 }
   const hdr =
     'Date'.padEnd(colW.date) +
     'Fetched'.padStart(colW.fetched) +
     'Inserted'.padStart(colW.inserted) +
     'Skipped'.padStart(colW.skipped) +
-    'Failed'.padStart(colW.failed)
+    'Failed'.padStart(colW.failed) +
+    'InsertFailed'.padStart(colW.insertFailed)
   console.log('  ' + hdr)
   console.log('  ' + '─'.repeat(hdr.length))
 
@@ -110,7 +111,9 @@ async function main() {
       String(d.inserted).padStart(colW.inserted) +
       String(d.skipped).padStart(colW.skipped) +
       String(d.failed).padStart(colW.failed) +
-      (d.error ? `  ⚠ ${d.error}` : '')
+      String(d.insertFailed).padStart(colW.insertFailed) +
+      (d.error ? `  ⚠ ${d.error}` : '') +
+      (d.insertFailed > 0 ? `  *** ${d.insertFailed} INSERT FAILURE(S)` : '')
     console.log('  ' + row)
   }
 
@@ -120,12 +123,14 @@ async function main() {
     ''.padStart(colW.fetched) +
     String(totals.inserted).padStart(colW.inserted) +
     String(totals.skipped).padStart(colW.skipped) +
-    String(totals.failed).padStart(colW.failed)
+    String(totals.failed).padStart(colW.failed) +
+    String(totals.insertFailed).padStart(colW.insertFailed)
   console.log('  ' + totalRow)
   console.log()
 
-  if (totals.failed > 0) {
-    console.error(`[ingest] ${totals.failed} filing(s) failed — check logs above`)
+  if (!healthOk || totals.failed > 0) {
+    if (!healthOk)           console.error(`[ingest] *** INSERT FAILURE RATE EXCEEDED 1% THRESHOLD — see warnings above`)
+    if (totals.failed > 0)   console.error(`[ingest] *** ${totals.failed} filing(s) threw exceptions — see logs above`)
     process.exit(1)
   }
 }
