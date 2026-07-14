@@ -81,8 +81,8 @@ function resolveClassification(
     insider_cik:   string | null
     officer_title: string | null
     role:          string | null
-    total_value:   number | null
   },
+  effectiveValue: number,  // group-summed total_value for (accession_number, insider_cik, transaction_date)
   classMap:       Map<string, string>,
   classifiedCiks: Set<string>
 ): 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE' | null {
@@ -95,10 +95,9 @@ function resolveClassification(
   // Inferred-opportunistic: CIK not in classification table, but meets CEO+$1M criteria.
   // ROUTINE is never inferred — any explicitly classified ROUTINE insider is excluded above.
   if (classifiedCiks.has(cik)) return null  // classified as something else (shouldn't happen)
-  const val  = row.total_value ?? 0
   const text = ((row.officer_title ?? '') + ' ' + (row.role ?? '')).toLowerCase()
   if (
-    val >= 1_000_000 &&
+    effectiveValue >= 1_000_000 &&
     (text.includes('ceo') || text.includes('chief executive') ||
      text.includes('president') || text.includes('10%'))
   ) return 'OPPORTUNISTIC'
@@ -157,7 +156,7 @@ async function main(): Promise<void> {
 
   // ── 1. Load insider_classifications ──────────────────────────────────────
   // Prefer most recent classified_year per CIK, matching signals-monthly fallback logic.
-  console.log('\n[1/3] Loading insider_classifications...')
+  console.log('\n[1/4] Loading insider_classifications...')
   const clsRows = await fetchAll<{ insider_cik: string; classification: string; classified_year: number | null }>(
     sb, 'insider_classifications',
     'insider_cik, classification, classified_year',
@@ -179,7 +178,7 @@ async function main(): Promise<void> {
   }`)
 
   // ── 2. Load market caps ───────────────────────────────────────────────────
-  console.log('\n[2/3] Loading market caps...')
+  console.log('\n[2/4] Loading market caps...')
   const tickerRows = await fetchAll<{ symbol: string; market_cap: number | null }>(
     sb, 'tickers', 'symbol, market_cap',
     q => q, 'tickers'
@@ -187,8 +186,32 @@ async function main(): Promise<void> {
   const marketCapMap: Record<string, number | null> = {}
   for (const t of tickerRows) marketCapMap[t.symbol] = t.market_cap ?? null
 
-  // ── 3. Count backlog ──────────────────────────────────────────────────────
-  console.log('\n[3/3] Scoring unscored rows...')
+  // ── 3. Pre-compute tranche group sums ────────────────────────────────────
+  // A CEO who bought $2M across five $400K tranches must clear $1M as a group.
+  // Load all unscored P rows now so group sums are accurate even across batch boundaries.
+  console.log('\n[3/4] Computing tranche group sums...')
+  const groupSumRows = await fetchAll<{
+    accession_number: string | null
+    insider_cik:      string | null
+    transaction_date: string
+    total_value:      number | null
+  }>(
+    sb, 'insider_transactions',
+    'accession_number, insider_cik, transaction_date, total_value',
+    q => q.eq('transaction_code', 'P').is('conviction_score', null),
+    'group sum rows'
+  )
+  const groupValueMap = new Map<string, number>()
+  for (const r of groupSumRows) {
+    if (!r.accession_number || !r.insider_cik) continue
+    const k = `${r.accession_number}|${r.insider_cik}|${r.transaction_date}`
+    groupValueMap.set(k, (groupValueMap.get(k) ?? 0) + (r.total_value ?? 0))
+  }
+  const multiTrancheGroups = [...groupValueMap.values()].filter(v => v !== 0).length
+  console.log(`  ${groupValueMap.size.toLocaleString()} distinct groups (${multiTrancheGroups.toLocaleString()} non-zero)`)
+
+  // ── 4. Count backlog ──────────────────────────────────────────────────────
+  console.log('\n[4/4] Scoring unscored rows...')
   const { count: totalNull } = await sb
     .from('insider_transactions')
     .select('id', { count: 'exact', head: true })
@@ -203,7 +226,7 @@ async function main(): Promise<void> {
   if (DRY_RUN) {
     const { data: sample } = await sb
       .from('insider_transactions')
-      .select('id, ticker, insider_name, insider_cik, officer_title, role, total_value, price_per_share, shares, shares_owned_after, transaction_date')
+      .select('id, ticker, insider_name, insider_cik, officer_title, role, total_value, price_per_share, shares, shares_owned_after, transaction_date, accession_number')
       .eq('transaction_code', 'P')
       .is('conviction_score', null)
       .order('transaction_date', { ascending: false })
@@ -217,7 +240,10 @@ async function main(): Promise<void> {
     console.log('  ' + '-'.repeat(hdr.length - 2))
 
     for (const row of (sample as any[]).slice(0, 20)) {
-      const cls    = resolveClassification(row, classMap, classifiedCiks)
+      const drKey  = (row.accession_number as string | null) && row.insider_cik
+        ? `${row.accession_number}|${row.insider_cik}|${row.transaction_date}` : null
+      const effectiveValue = (drKey ? groupValueMap.get(drKey) : null) ?? (row.total_value ?? 0)
+      const cls    = resolveClassification(row, effectiveValue, classMap, classifiedCiks)
       const mc     = marketCapMap[row.ticker] ?? null
       const trade  = buildConvictionTrade(row, cls, mc)
       const result = computeConvictionScore(trade, [], [], null)
@@ -234,7 +260,10 @@ async function main(): Promise<void> {
     // Score distribution of the full 1,000-row sample
     const dist: Record<string, number> = { green: 0, yellow: 0, red: 0, gray: 0 }
     for (const row of sample as any[]) {
-      const cls    = resolveClassification(row, classMap, classifiedCiks)
+      const drKey2 = (row.accession_number as string | null) && row.insider_cik
+        ? `${row.accession_number}|${row.insider_cik}|${row.transaction_date}` : null
+      const effectiveValue = (drKey2 ? groupValueMap.get(drKey2) : null) ?? (row.total_value ?? 0)
+      const cls    = resolveClassification(row, effectiveValue, classMap, classifiedCiks)
       const mc     = marketCapMap[row.ticker] ?? null
       const trade  = buildConvictionTrade(row, cls, mc)
       const result = computeConvictionScore(trade, [], [], null)
@@ -258,7 +287,7 @@ async function main(): Promise<void> {
     // Always fetch from the head of the null set — scored rows fall out naturally.
     const { data: rows, error: fetchErr } = await sb
       .from('insider_transactions')
-      .select('id, ticker, insider_name, insider_cik, officer_title, role, total_value, price_per_share, shares, shares_owned_after, transaction_date')
+      .select('id, ticker, insider_name, insider_cik, officer_title, role, total_value, price_per_share, shares, shares_owned_after, transaction_date, accession_number')
       .eq('transaction_code', 'P')
       .is('conviction_score', null)
       .order('transaction_date', { ascending: false })
@@ -273,7 +302,10 @@ async function main(): Promise<void> {
     if (!rows || rows.length === 0) break
 
     const updates = (rows as any[]).map(row => {
-      const cls    = resolveClassification(row, classMap, classifiedCiks)
+      const bk = (row.accession_number as string | null) && row.insider_cik
+        ? `${row.accession_number}|${row.insider_cik}|${row.transaction_date}` : null
+      const effectiveValue = (bk ? groupValueMap.get(bk) : null) ?? (row.total_value ?? 0)
+      const cls    = resolveClassification(row, effectiveValue, classMap, classifiedCiks)
       const mc     = marketCapMap[row.ticker] ?? null
       const trade  = buildConvictionTrade(row, cls, mc)
       const result = computeConvictionScore(trade, [], [], null)

@@ -136,13 +136,43 @@ export async function GET(req: Request) {
   // distinct from being classified ROUTINE or UNCLASSIFIABLE and failing.
   const classifiedCikSet = new Set(Object.keys(classMap))
 
+  // Fetch last month's transactions for all tracked tickers in one query.
+  // officer_title, role, and accession_number are needed for inferred-opportunistic detection.
+  const { data: allTx, error: txErr } = await supabase
+    .from('insider_transactions')
+    .select('ticker, insider_cik, insider_name, officer_title, role, transaction_direction, transaction_date, total_value, shares, shares_owned_after, is_local, accession_number')
+    .in('ticker', tickers)
+    .gte('transaction_date', rangeFrom)
+    .lte('transaction_date', rangeTo)
+    .not('transaction_direction', 'is', null)
+    .neq('is_plan_sale', true)
+    .neq('is_issuer_buyback', true)
+
+  if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
+
+  // Sum total_value by (accession_number, insider_cik, transaction_date) for buy transactions.
+  // A CEO who bought $2M across five $400K tranches must clear the $1M threshold as a group.
+  const groupValueMap = new Map<string, number>()
+  for (const tx of allTx ?? []) {
+    if ((tx as any).transaction_direction !== 'buy') continue
+    const an  = (tx as any).accession_number as string | null
+    const cik = (tx as any).insider_cik as string | null
+    const dt  = (tx as any).transaction_date as string | null
+    if (an && cik && dt) {
+      const k = `${an}|${cik}|${dt}`
+      groupValueMap.set(k, (groupValueMap.get(k) ?? 0) + ((tx as any).total_value ?? 0))
+    }
+  }
+
   // Returns true when a transaction should be treated as inferred-opportunistic.
+  // Uses group-summed total_value so multi-tranche buys correctly clear the $1M threshold.
   // Mirrors the same criteria used in app/api/insider/conviction/[ticker]/route.ts.
-  // ROUTINE insiders are explicitly excluded — never infer opportunistic from a
-  // confirmed routine trader regardless of title or size.
   function inferredOpportunistic(tx: any): boolean {
     const cik  = tx.insider_cik as string | null
-    const val  = (tx.total_value ?? 0) as number
+    const an   = tx.accession_number as string | null
+    const dt   = tx.transaction_date as string | null
+    const key  = an && cik && dt ? `${an}|${cik}|${dt}` : null
+    const val  = (key ? groupValueMap.get(key) : null) ?? ((tx.total_value ?? 0) as number)
     const text = ((tx.officer_title ?? '') + ' ' + (tx.role ?? '')).toLowerCase()
     const cls  = cik ? (classMap[cik] ?? null) : null
     return (
@@ -155,20 +185,6 @@ export async function GET(req: Request) {
        text.includes('president') || text.includes('10%'))
     )
   }
-
-  // Fetch last month's transactions for all tracked tickers in one query.
-  // officer_title and role are needed for inferred-opportunistic detection.
-  const { data: allTx, error: txErr } = await supabase
-    .from('insider_transactions')
-    .select('ticker, insider_cik, insider_name, officer_title, role, transaction_direction, transaction_date, total_value, shares, shares_owned_after, is_local')
-    .in('ticker', tickers)
-    .gte('transaction_date', rangeFrom)
-    .lte('transaction_date', rangeTo)
-    .not('transaction_direction', 'is', null)
-    .neq('is_plan_sale', true)
-    .neq('is_issuer_buyback', true)
-
-  if (txErr) return NextResponse.json({ error: txErr.message }, { status: 500 })
 
   const mgmTrades = (allTx ?? []).filter((t: any) => t.ticker === 'MGM')
   console.log('[debug] MGM trades found:', mgmTrades.length, JSON.stringify(mgmTrades.map((t: any) => ({ cik: t.insider_cik, value: t.total_value, title: t.officer_title, role: t.role, direction: t.transaction_direction }))))

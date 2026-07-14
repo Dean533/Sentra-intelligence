@@ -31,7 +31,7 @@ export async function GET(
     .select(
       'id, ticker, insider_name, insider_cik, officer_title, role, ' +
       'transaction_date, transaction_code, transaction_direction, ' +
-      'total_value, price_per_share, shares, shares_owned_after, is_local'
+      'total_value, price_per_share, shares, shares_owned_after, is_local, accession_number'
     )
     .eq('ticker', TK)
     .eq('transaction_direction', 'buy')
@@ -61,6 +61,20 @@ export async function GET(
 
   for (const r of txRows as any[]) {
     console.log(`[conviction/${TK}] tx: ${r.insider_name} | code="${r.transaction_code}" | val=${r.total_value} | date=${r.transaction_date} | cik=${r.insider_cik ?? 'NULL'}`)
+  }
+
+  // Build group-value map: sum total_value by (accession_number, insider_cik, transaction_date).
+  // A CEO who bought $2M across five $400K tranches should clear the $1M inference threshold;
+  // per-row value would miss all five tranches.
+  const groupValueMap = new Map<string, number>()
+  for (const tx of txRows as any[]) {
+    const an  = tx.accession_number as string | null
+    const cik = tx.insider_cik as string | null
+    const dt  = tx.transaction_date as string | null
+    if (an && cik && dt) {
+      const k = `${an}|${cik}|${dt}`
+      groupValueMap.set(k, (groupValueMap.get(k) ?? 0) + (tx.total_value ?? 0))
+    }
   }
 
   // ── 2. Classification flags ────────────────────────────────────────────────
@@ -154,11 +168,10 @@ export async function GET(
   // run through the annual classify job. Criteria: ≥$1M trade AND CEO/President role.
   // Insiders classified as ROUTINE or UNCLASSIFIABLE are never inferred — they had their
   // chance and lost. Only truly unclassified (absent from the table) qualify.
-  function isEligibleForInference(tx: any): boolean {
-    const val  = (tx.total_value ?? 0) as number
+  function isEligibleForInference(tx: any, groupValue: number): boolean {
     const text = ((tx.role ?? '') + ' ' + (tx.officer_title ?? '')).toLowerCase()
     return (
-      val >= 1_000_000 &&
+      groupValue >= 1_000_000 &&
       (text.includes('ceo') || text.includes('chief executive') || text.includes('president'))
     )
   }
@@ -190,7 +203,10 @@ export async function GET(
     const cik              = tx.insider_cik as string | null
     const isConfirmed      = cik ? opportunisticCiks.has(cik) : false
     const isKnownNonOpport = cik ? (classifiedCiks.has(cik) && !opportunisticCiks.has(cik)) : false
-    const isInferred       = !isConfirmed && !isKnownNonOpport && !!cik && isEligibleForInference(tx)
+    const txAn     = tx.accession_number as string | null
+    const txGKey   = txAn && cik && tx.transaction_date ? `${txAn}|${cik}|${tx.transaction_date}` : null
+    const txGValue = (txGKey ? groupValueMap.get(txGKey) : null) ?? (tx.total_value ?? 0)
+    const isInferred       = !isConfirmed && !isKnownNonOpport && !!cik && isEligibleForInference(tx, txGValue)
     const isOpportunistic  = isConfirmed || isInferred
 
     const inferTag = isInferred ? ' [INFERRED]' : isConfirmed ? ' [CONFIRMED]' : ' [NOT_OPPORTUNISTIC]'
