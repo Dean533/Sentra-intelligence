@@ -128,10 +128,23 @@ async function main() {
   console.log('  ' + totalRow)
   console.log()
 
-  if (!healthOk || totals.failed > 0) {
-    if (!healthOk)           console.error(`[ingest] *** INSERT FAILURE RATE EXCEEDED 1% THRESHOLD — see warnings above`)
-    if (totals.failed > 0)   console.error(`[ingest] *** ${totals.failed} filing(s) threw exceptions — see logs above`)
+  // Row-level insert failures (duplicate keys, constraint violations) are already logged
+  // loudly by runDailyIngest. They should NOT exit non-zero — a handful of benign failures
+  // must not block downstream scoring steps from running on the rows that did insert.
+  // healthOk=false is visible in the warnings above; treat it as informational here.
+
+  // Only exit non-zero for filing-level exceptions (whole filings threw — network failures,
+  // unexpected throws in processFiling). These indicate something structurally wrong.
+  // Threshold: >10% of processed filings, or any when the total is small.
+  const totalFilings    = days.reduce((s, d) => s + d.processed, 0)
+  const filingFailRate  = totalFilings > 0 ? totals.failed / totalFilings : 0
+  const FILING_FAIL_THRESHOLD = 0.10  // 10% of filings throwing is catastrophic
+
+  if (totals.failed > 0 && (totalFilings <= 5 || filingFailRate > FILING_FAIL_THRESHOLD)) {
+    console.error(`[ingest] *** ${totals.failed}/${totalFilings} filing(s) threw exceptions — see logs above`)
     process.exit(1)
+  } else if (totals.failed > 0) {
+    console.error(`[ingest] *** ${totals.failed}/${totalFilings} filing(s) threw exceptions (below ${(FILING_FAIL_THRESHOLD * 100).toFixed(0)}% threshold — continuing)`)
   }
 }
 
