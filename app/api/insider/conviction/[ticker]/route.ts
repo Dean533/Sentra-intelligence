@@ -63,20 +63,6 @@ export async function GET(
     console.log(`[conviction/${TK}] tx: ${r.insider_name} | code="${r.transaction_code}" | val=${r.total_value} | date=${r.transaction_date} | cik=${r.insider_cik ?? 'NULL'}`)
   }
 
-  // Build group-value map: sum total_value by (accession_number, insider_cik, transaction_date).
-  // A CEO who bought $2M across five $400K tranches should clear the $1M inference threshold;
-  // per-row value would miss all five tranches.
-  const groupValueMap = new Map<string, number>()
-  for (const tx of txRows as any[]) {
-    const an  = tx.accession_number as string | null
-    const cik = tx.insider_cik as string | null
-    const dt  = tx.transaction_date as string | null
-    if (an && cik && dt) {
-      const k = `${an}|${cik}|${dt}`
-      groupValueMap.set(k, (groupValueMap.get(k) ?? 0) + (tx.total_value ?? 0))
-    }
-  }
-
   // ── 2. Classification flags ────────────────────────────────────────────────
   // Fetch ALL classification rows for these CIKs (not just OPPORTUNISTIC) so we can
   // distinguish "classified ROUTINE/UNCLASSIFIABLE" from "not in table yet".
@@ -164,22 +150,9 @@ export async function GET(
 
   // ── 7. Score every transaction, keep the best ──────────────────────────────
 
-  // Infer opportunistic status for insiders who have a CIK but have never been
-  // run through the annual classify job. Criteria: ≥$1M trade AND CEO/President role.
-  // Insiders classified as ROUTINE or UNCLASSIFIABLE are never inferred — they had their
-  // chance and lost. Only truly unclassified (absent from the table) qualify.
-  function isEligibleForInference(tx: any, groupValue: number): boolean {
-    const text = ((tx.role ?? '') + ' ' + (tx.officer_title ?? '')).toLowerCase()
-    return (
-      groupValue >= 1_000_000 &&
-      (text.includes('ceo') || text.includes('chief executive') || text.includes('president'))
-    )
-  }
-
   let bestScore   = -1
   let bestResult: ReturnType<typeof computeConvictionScore> | null = null
   let bestTx:     any   = null
-  let bestInferred = false
 
   for (const tx of txRows as any[]) {
     const txCik = tx.insider_cik as string | null
@@ -199,31 +172,22 @@ export async function GET(
     const insiderData = insiderHistoryMap.get(tx.insider_cik) ??
       { outcomes: [], medianValue: null }
 
-    // Determine opportunistic status, with inference fallback
-    const cik              = tx.insider_cik as string | null
-    const isConfirmed      = cik ? opportunisticCiks.has(cik) : false
-    const isKnownNonOpport = cik ? (classifiedCiks.has(cik) && !opportunisticCiks.has(cik)) : false
-    const txAn     = tx.accession_number as string | null
-    const txGKey   = txAn && cik && tx.transaction_date ? `${txAn}|${cik}|${tx.transaction_date}` : null
-    const txGValue = (txGKey ? groupValueMap.get(txGKey) : null) ?? (tx.total_value ?? 0)
-    const isInferred       = !isConfirmed && !isKnownNonOpport && !!cik && isEligibleForInference(tx, txGValue)
-    const isOpportunistic  = isConfirmed || isInferred
+    // CMP classification — read from insider_classifications only. No size/role inference.
+    const cik         = tx.insider_cik as string | null
+    const isConfirmed = cik ? opportunisticCiks.has(cik) : false
 
-    const inferTag = isInferred ? ' [INFERRED]' : isConfirmed ? ' [CONFIRMED]' : ' [NOT_OPPORTUNISTIC]'
     console.log(
-      `[conviction/${TK}] scored ${tx.insider_name}${inferTag}: ` +
+      `[conviction/${TK}] scored ${tx.insider_name} [${isConfirmed ? 'CONFIRMED_OPP' : 'NOT_OPPORTUNISTIC'}]: ` +
       `val=${tx.total_value} | sector="${sector}" | ` +
       `cluster=${clusterCount} ($${(clusterTotalValue / 1e6).toFixed(1)}M) | ` +
       `history=${insiderData.outcomes.length} trades`
     )
 
-    // Resolve three-way CMP classification for the new scoring engine.
-    // Prefer confirmed classification; fall back to inferred-opportunistic; else null.
+    // Resolve three-way CMP classification from confirmed table entries only.
     const txCls: 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE' | null =
       cik && opportunisticCiks.has(cik) ? 'OPPORTUNISTIC'
-      : isInferred                       ? 'OPPORTUNISTIC'
-      : cik && routineCiks.has(cik)      ? 'ROUTINE'
-      : cik && classifiedCiks.has(cik)   ? 'UNCLASSIFIABLE'
+      : cik && routineCiks.has(cik)     ? 'ROUTINE'
+      : cik && classifiedCiks.has(cik)  ? 'UNCLASSIFIABLE'
       : null
 
     const convTrade: ConvictionTrade = {
@@ -234,7 +198,7 @@ export async function GET(
       total_value:          tx.total_value ?? null,
       price_per_share:      tx.price_per_share ?? null,
       transaction_date:     tx.transaction_date,
-      is_opportunistic:     isOpportunistic,
+      is_opportunistic:     isConfirmed,
       is_local:             tx.is_local ?? null,
       sector,
       cluster_count:        clusterCount,
@@ -256,10 +220,9 @@ export async function GET(
     )
 
     if (result.score > bestScore) {
-      bestScore    = result.score
-      bestResult   = result
-      bestTx       = tx
-      bestInferred = isInferred
+      bestScore  = result.score
+      bestResult = result
+      bestTx     = tx
     }
   }
 
@@ -284,8 +247,7 @@ export async function GET(
         total_value:               bestTx.total_value ?? null,
         price_per_share:           bestTx.price_per_share ?? null,
         shares:                    bestTx.shares ?? null,
-        is_opportunistic:          opportunisticCiks.has(bestTx.insider_cik ?? '') || bestInferred,
-        is_inferred_opportunistic: bestInferred,
+        is_opportunistic:          opportunisticCiks.has(bestTx.insider_cik ?? ''),
       },
     },
   })

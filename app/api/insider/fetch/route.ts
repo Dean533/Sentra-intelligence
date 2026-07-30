@@ -10,23 +10,15 @@ const SELECT_COLS =
   'id, ticker, insider_name, insider_cik, role, is_director, is_officer, officer_title, ' +
   'transaction_date, transaction_code, transaction_direction, ' +
   'shares, price_per_share, total_value, shares_owned_after, purchase_pct_market_cap, ' +
-  'filed_date, source_url, conviction_score'
+  'filed_date, source_url, conviction_score, classification'
 
-// Attach classification string to every row. Rows with no matching CIK → UNCLASSIFIABLE.
-async function attachClassifications(rows: any[]): Promise<any[]> {
-  if (rows.length === 0) return rows
-  const ciks = [...new Set(rows.map((r: any) => r.insider_cik).filter(Boolean))]
-  let cikClassMap = new Map<string, string>()
-  if (ciks.length > 0) {
-    const { data: clsRows } = await supabase
-      .from('insider_classifications')
-      .select('insider_cik, classification')
-      .in('insider_cik', ciks)
-    cikClassMap = new Map((clsRows ?? []).map((c: any) => [c.insider_cik, c.classification as string]))
-  }
+// classification is now a stored column on insider_transactions, written by the cron.
+// Rows not yet scored by the cron have classification = null; treat them as UNCLASSIFIABLE
+// for display purposes, matching what the cron will write once it processes them.
+function attachClassifications(rows: any[]): any[] {
   return rows.map((r: any) => ({
     ...r,
-    classification: cikClassMap.get(r.insider_cik) ?? 'UNCLASSIFIABLE',
+    classification: r.classification ?? 'UNCLASSIFIABLE',
   }))
 }
 
@@ -131,26 +123,9 @@ export async function GET(req: Request) {
     ? (startDate ?? new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
     : null
 
-  // ── 1. Classification pre-fetch ───────────────────────────────────────────────
-  let classificationCiks: string[] | null = null
-  if (classification && classification !== 'all') {
-    if (classification === 'OPPORTUNISTIC' || classification === 'ROUTINE') {
-      const { data: clsRows } = await supabase
-        .from('insider_classifications')
-        .select('insider_cik')
-        .eq('classification', classification)
-      classificationCiks = (clsRows ?? []).map((r: any) => r.insider_cik as string).filter(Boolean)
-      if (classificationCiks.length === 0) {
-        return NextResponse.json({ rows: [], total: 0, page, pages: 0, clusterCounts })
-      }
-    } else if (classification === 'UNCLASSIFIABLE') {
-      const { data: clsRows } = await supabase
-        .from('insider_classifications')
-        .select('insider_cik')
-        .eq('classification', 'UNCLASSIFIABLE')
-      classificationCiks = (clsRows ?? []).map((r: any) => r.insider_cik as string).filter(Boolean)
-    }
-  }
+  // ── 1. Classification pre-fetch — replaced by stored column ──────────────────
+  // No pre-fetch needed: classification is stored on insider_transactions directly.
+  // The filter in buildBaseQuery reads the column with a simple WHERE clause + index.
 
   // ── 2. Cluster pre-fetch — paginate through all purchases in the window ────────
   // Supabase PostgREST caps responses at 1 000 rows by default, so the page size
@@ -231,15 +206,13 @@ export async function GET(req: Request) {
       q = q.in('ticker', tickersList)
     }
 
-    // Classification
+    // Classification — direct column filter; no pre-fetch, no CIK list, no pagination issue.
     if (classification === 'OPPORTUNISTIC' || classification === 'ROUTINE') {
-      q = q.in('insider_cik', classificationCiks!)
+      q = q.eq('classification', classification)
     } else if (classification === 'UNCLASSIFIABLE') {
-      if (classificationCiks && classificationCiks.length > 0) {
-        q = q.or(`insider_cik.is.null,insider_cik.in.(${classificationCiks.join(',')})`)
-      } else {
-        q = q.is('insider_cik', null)
-      }
+      // Include rows the cron classified as UNCLASSIFIABLE AND rows not yet scored (NULL).
+      // Both display as UNCLASSIFIABLE in the feed.
+      q = q.or('classification.is.null,classification.eq.UNCLASSIFIABLE')
     }
 
     // Role
@@ -322,7 +295,7 @@ export async function GET(req: Request) {
     const pageRows = matching.slice(offset, offset + limit)
 
     return NextResponse.json({
-      rows:  await attachClassifications(pageRows),
+      rows:  attachClassifications(pageRows),
       total,
       page,
       pages,
@@ -340,7 +313,7 @@ export async function GET(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const t1 = performance.now()
-  const classified = await attachClassifications(data ?? [])
+  const classified = attachClassifications(data ?? [])
   const tCls = performance.now() - t1
 
   console.log(

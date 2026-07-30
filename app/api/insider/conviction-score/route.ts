@@ -13,25 +13,16 @@ const supabase = createClient(
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Mirrors the classification resolution in the backfill script and conviction/[ticker] route.
+// Returns the CMP-derived classification for this CIK, or null if the CIK is absent
+// from insider_classifications (not enough trading history for CMP to classify).
+// Dollar value, trade size, and role are NOT considered — those belong in scoring only.
 function resolveClassification(
-  row: { insider_cik: string | null; officer_title: string | null; role: string | null; total_value: number | null },
-  classMap:       Map<string, string>,
-  classifiedCiks: Set<string>
+  cik: string | null,
+  classMap: Map<string, string>,
 ): 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE' | null {
-  const cik = row.insider_cik
   if (!cik) return null
   const confirmed = classMap.get(cik)
-  if (confirmed) return confirmed as 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE'
-  if (classifiedCiks.has(cik)) return null
-  const val  = row.total_value ?? 0
-  const text = ((row.officer_title ?? '') + ' ' + (row.role ?? '')).toLowerCase()
-  if (
-    val >= 1_000_000 &&
-    (text.includes('ceo') || text.includes('chief executive') ||
-     text.includes('president') || text.includes('10%'))
-  ) return 'OPPORTUNISTIC'
-  return null
+  return confirmed ? (confirmed as 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE') : null
 }
 
 export async function GET(req: Request) {
@@ -52,8 +43,7 @@ export async function GET(req: Request) {
 
   // ── 2. Bulk-fetch classifications for unique CIKs in this batch ───────────
   const cikSet = [...new Set((rows as any[]).map((r) => r.insider_cik).filter(Boolean))]
-  const classMap     = new Map<string, string>()
-  const classifiedCiks = new Set<string>()
+  const classMap = new Map<string, string>()
   if (cikSet.length > 0) {
     const { data: clsRows } = await supabase
       .from('insider_classifications')
@@ -63,7 +53,6 @@ export async function GET(req: Request) {
     for (const r of clsRows ?? []) {
       const cik = (r as any).insider_cik as string
       if (!classMap.has(cik)) classMap.set(cik, (r as any).classification)
-      classifiedCiks.add(cik)
     }
   }
 
@@ -84,7 +73,7 @@ export async function GET(req: Request) {
 
   for (const row of rows as any[]) {
     try {
-      const cls = resolveClassification(row, classMap, classifiedCiks)
+      const cls = resolveClassification(row.insider_cik, classMap)
       const mc  = marketCapMap[row.ticker] ?? null
 
       const trade: ConvictionTrade = {
@@ -112,7 +101,7 @@ export async function GET(req: Request) {
 
       const { error: updateErr } = await supabase
         .from('insider_transactions')
-        .update({ conviction_score: result.score })
+        .update({ conviction_score: result.score, classification: cls ?? 'UNCLASSIFIABLE' })
         .eq('id', row.id)
 
       if (updateErr) { failed++; continue }
