@@ -143,20 +143,25 @@ async function main() {
   if (LIMIT) console.log(`  limit: first ${LIMIT} tickers`)
   console.log('═'.repeat(60))
 
-  // Load all ticker symbols
+  // Load all ticker symbols — paginated to bypass PostgREST's 1,000-row default cap.
   process.stdout.write('\nLoading tickers from DB... ')
-  const { data: tickerRows, error: tickerErr } = await sb
-    .from('tickers')
-    .select('symbol')
-    .order('symbol', { ascending: true })
-
-  if (tickerErr) {
-    console.error(`\nFailed to load tickers: ${tickerErr.message}`)
-    process.exit(1)
+  const allSymbols: string[] = []
+  const TICKER_PAGE = 1_000
+  for (let from = 0; ; from += TICKER_PAGE) {
+    const { data: chunk, error: tickerErr } = await sb
+      .from('tickers')
+      .select('symbol')
+      .order('symbol', { ascending: true })
+      .range(from, from + TICKER_PAGE - 1)
+    if (tickerErr) {
+      console.error(`\nFailed to load tickers: ${tickerErr.message}`)
+      process.exit(1)
+    }
+    if (!chunk || chunk.length === 0) break
+    for (const r of chunk as any[]) allSymbols.push(r.symbol as string)
+    if (chunk.length < TICKER_PAGE) break
   }
-
-  let symbols = (tickerRows ?? []).map((r: any) => r.symbol as string)
-  if (LIMIT) symbols = symbols.slice(0, LIMIT)
+  let symbols = LIMIT ? allSymbols.slice(0, LIMIT) : allSymbols
   console.log(`${symbols.length} tickers`)
 
   const totalBatches = Math.ceil(symbols.length / BATCH_SIZE)
