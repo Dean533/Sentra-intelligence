@@ -81,16 +81,10 @@ function computeClusters(
   return { counts, tradeSets }
 }
 
-function passesHoldingsFilter(row: any, min: number): boolean {
-  const s     = row.shares as number | null
-  const after = row.shares_owned_after as number | null
-  const code  = (row.transaction_code ?? '').toUpperCase()
-  if (s == null || after == null) return false
-  const denom = code === 'S' ? after + s : after - s
-  if (denom <= 0) return false
-  const pct = Math.min((s / denom) * 100, 999)
-  return pct >= min
-}
+// Holdings-% filter is now computed in Postgres by the stored generated column
+// holdings_pct_change (see migration 20261109_add_holdings_pct_change.sql), applied
+// in buildBaseQuery via .gte(). This function is kept only as a reference for the
+// formula it replaces: denom = code === 'S' ? after + s : after - s; pct = min(s/denom*100, 999).
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -238,6 +232,9 @@ export async function GET(req: Request) {
       }
     }
 
+    // Holdings % change — computed in Postgres by the generated column, indexed.
+    if (holdingsMin !== null) q = q.gte('holdings_pct_change', holdingsMin)
+
     // Minimum trade value
     if (minValue !== null) q = q.gte('total_value', minValue)
 
@@ -253,8 +250,10 @@ export async function GET(req: Request) {
     return q
   }
 
-  // ── 4a. Batch path — JS filtering needed for holdings formula or cluster trades ─
-  if (holdingsMin !== null || clusterMin >= 2) {
+  // ── 4a. Batch path — JS filtering needed for cluster trade membership ─────────
+  // Holdings-% filtering is now applied in SQL inside buildBaseQuery, so it no
+  // longer forces this path on its own.
+  if (clusterMin >= 2) {
     const base = buildBaseQuery(false)
     if (!base) return NextResponse.json({ rows: [], total: 0, page, pages: 0, clusterCounts })
 
@@ -271,24 +270,18 @@ export async function GET(req: Request) {
 
     console.log(`[cluster] batch fetched ${allData.length} rows for tickers: ${[...new Set(allData.map((r: any) => r.ticker))].join(', ')}`)
 
-    let matching: any[] = allData
-    if (holdingsMin !== null) {
-      matching = matching.filter((row: any) => passesHoldingsFilter(row, holdingsMin))
-    }
-    if (clusterMin >= 2) {
-      let clusterMatchCount = 0
-      let clusterMissCount  = 0
-      matching = matching.filter((row: any) => {
-        const set = clusterTradeMap.get(row.ticker)
-        if (!set) { clusterMissCount++; return false }
-        const date = (row.transaction_date ?? '').slice(0, 10)
-        const id   = row.insider_cik ?? row.insider_name
-        const hit  = set.has(`${id}|${date}`)
-        if (hit) clusterMatchCount++; else clusterMissCount++
-        return hit
-      })
-      console.log(`[cluster] batch filter: ${clusterMatchCount} matched, ${clusterMissCount} excluded`)
-    }
+    let clusterMatchCount = 0
+    let clusterMissCount  = 0
+    const matching: any[] = allData.filter((row: any) => {
+      const set = clusterTradeMap.get(row.ticker)
+      if (!set) { clusterMissCount++; return false }
+      const date = (row.transaction_date ?? '').slice(0, 10)
+      const id   = row.insider_cik ?? row.insider_name
+      const hit  = set.has(`${id}|${date}`)
+      if (hit) clusterMatchCount++; else clusterMissCount++
+      return hit
+    })
+    console.log(`[cluster] batch filter: ${clusterMatchCount} matched, ${clusterMissCount} excluded`)
 
     const total    = matching.length
     const pages    = Math.ceil(total / limit) || 1
