@@ -38,5 +38,12 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_it_officer_title_trgm
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_published_at
   ON events (published_at DESC);
 
+-- cleanup-news filters by event_type + published_at across ALL tickers, so it
+-- needs ticker out of the way (not sandwiched in the middle of a composite
+-- index) to actually use an index for that scan.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_type_published
+  ON events (event_type, published_at DESC);
+
+-- Used by /api/signals when a ticker filter is also applied.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_type_ticker_published
   ON events (event_type, ticker, published_at DESC);
