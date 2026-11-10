@@ -214,7 +214,7 @@ export async function GET(req: Request) {
       if (role === 'ceo')           q = q.or('officer_title.ilike.%Chief Executive%,officer_title.ilike.%CEO%,role.ilike.%Chief Executive%,role.ilike.%CEO%')
       else if (role === 'cfo')      q = q.or('officer_title.ilike.%Chief Financial%,officer_title.ilike.%CFO%,role.ilike.%Chief Financial%,role.ilike.%CFO%')
       else if (role === 'director') q = q.eq('is_director', true)
-      else if (role === '10pct')    q = q.ilike('officer_title', '%10%')
+      else if (role === '10pct')    q = q.ilike('role', '%10%')
       else if (role === 'other') {
         // Exclude rows matching any senior-role pattern in either column.
         q = q
@@ -229,6 +229,7 @@ export async function GET(req: Request) {
           .not('role', 'ilike', '%Chief Financial%')
           .not('role', 'ilike', '%CFO%')
           .not('role', 'ilike', '%Director%')
+          .not('role', 'ilike', '%10%')
       }
     }
 

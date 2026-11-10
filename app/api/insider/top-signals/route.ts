@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   if (role === 'ceo')      confirmedQ = confirmedQ.ilike('officer_title', '%Chief Executive%')
   if (role === 'cfo')      confirmedQ = confirmedQ.ilike('officer_title', '%Chief Financial%')
   if (role === 'director') confirmedQ = confirmedQ.eq('is_director', true)
-  if (role === '10pct')    confirmedQ = confirmedQ.ilike('officer_title', '%10%')
+  if (role === '10pct')    confirmedQ = confirmedQ.ilike('role', '%10%')
 
   // 2b. Inferred: $1M+ purchases by CEO/CFO/10% owners not already confirmed OPPORTUNISTIC.
   // Director role filter has no inferred results by definition, so skip that query.
@@ -50,14 +50,14 @@ export async function GET(req: Request) {
     .select(SELECT)
     .eq('transaction_code', 'P')
     .gte('total_value', 1_000_000)
-    .or('officer_title.ilike.%Chief Executive%,officer_title.ilike.%Chief Financial%,officer_title.ilike.%10%')
+    .or('officer_title.ilike.%Chief Executive%,officer_title.ilike.%Chief Financial%,role.ilike.%10%')
     .order('transaction_date', { ascending: false })
     .limit(100)
 
   if (cutoff)           inferredQ = inferredQ.gte('transaction_date', cutoff)
   if (role === 'ceo')   inferredQ = inferredQ.ilike('officer_title', '%Chief Executive%')
   if (role === 'cfo')   inferredQ = inferredQ.ilike('officer_title', '%Chief Financial%')
-  if (role === '10pct') inferredQ = inferredQ.ilike('officer_title', '%10%')
+  if (role === '10pct') inferredQ = inferredQ.ilike('role', '%10%')
 
   const [confirmedRes, inferredRes] = await Promise.all([
     opportunisticCiks.size > 0 ? confirmedQ : Promise.resolve({ data: [], error: null }),
