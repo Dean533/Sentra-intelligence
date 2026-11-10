@@ -3,12 +3,12 @@ name: EDGAR Ingestion Pipeline
 on:
   schedule:
     - cron: '0 11 * * *'
-    # Schedules for the disabled Alpaca jobs (execute, monitor). Commented out so
-    # the workflow does not spin up empty runs at these times. Uncomment together
-    # with the matching job's original `if:` below to re-enable.
+    # Schedules for the disabled jobs below (execute, monitor, cleanup-news).
+    # Commented out so the workflow does not spin up empty runs at these times.
+    # Uncomment together with the matching job's original `if:` to re-enable.
     # - cron: '30 14 * * *'
     # - cron: '0 16 * * *'
-    - cron: '0 10 * * 0'
+    # - cron: '0 10 * * 0'
   workflow_dispatch:
 
 jobs:
@@ -73,9 +73,14 @@ jobs:
           curl -f -X GET "${{ secrets.VERCEL_URL }}/api/insider/conviction-score" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
+  # Disabled 2026-11-09 until the batched cleanup-news redesign lands. The old
+  # route must not delete news before scoring catches up on the Sep 28 to Nov 9
+  # backfill, or those trades lose the news their narrative score depends on.
+  # Re-enable the same way as the jobs above.
   cleanup-news:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 10 * * 0'
+    if: ${{ false }}
+    # if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 10 * * 0'
     steps:
       - name: Delete old news events
         run: |
