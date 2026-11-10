@@ -3,24 +3,34 @@ name: EDGAR Ingestion Pipeline
 on:
   schedule:
     - cron: '0 11 * * *'
-    - cron: '30 14 * * *'
-    - cron: '0 16 * * *'
+    # Schedules for the disabled Alpaca jobs (execute, monitor). Commented out so
+    # the workflow does not spin up empty runs at these times. Uncomment together
+    # with the matching job's original `if:` below to re-enable.
+    # - cron: '30 14 * * *'
+    # - cron: '0 16 * * *'
     - cron: '0 10 * * 0'
   workflow_dispatch:
 
 jobs:
+  # Disabled 2026-11-09 so no trades fire on stale logic when the workflow is
+  # re-enabled after GitHub's inactivity shutoff. `if: false` also blocks manual
+  # workflow_dispatch runs from triggering it. To re-enable, restore the
+  # commented-out `if:` and uncomment its schedule above.
   execute:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 14 * * *'
+    if: ${{ false }}
+    # if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 14 * * *'
     steps:
       - name: Execute trades
         run: |
           curl -f -X POST "${{ secrets.VERCEL_URL }}/api/trading/execute" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
+  # Disabled 2026-11-09, same reason and same re-enable steps as `execute`.
   monitor:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * *'
+    if: ${{ false }}
+    # if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 16 * * *'
     steps:
       - name: Monitor positions
         run: |
