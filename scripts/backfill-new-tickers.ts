@@ -48,7 +48,7 @@ const supabase = createClient(
 
 const CUTOFF_DATE     = '2023-06-16'   // 3 years back
 const PROGRESS_PATH   = path.join(__dirname, '..', 'output', 'new-tickers-backfill-progress.json')
-const SEC_HEADERS     = { 'User-Agent': 'Sentra contact@sentra.com', Accept: 'application/json, text/xml, */*' }
+const SEC_HEADERS     = { 'User-Agent': 'Sentra Signals deangans815@gmail.com', Accept: 'application/json, text/xml, */*' }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

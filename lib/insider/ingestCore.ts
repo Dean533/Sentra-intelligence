@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { isIssuerBuyback } from '@/lib/insiderBuybackDetector'
 
 export const SEC_HEADERS = {
-  'User-Agent': 'Sentra contact@sentra.com',
+  'User-Agent': 'Sentra Signals deangans815@gmail.com',
   Accept: 'application/json, text/xml, */*',
 }
 

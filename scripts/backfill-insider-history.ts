@@ -42,7 +42,7 @@ const FILING_DELAY_MS = 100   // between XML fetches within a ticker
 const PROGRESS_PATH   = path.join(process.cwd(), 'output', 'backfill-progress.json')
 
 const SEC_HEADERS = {
-  'User-Agent': 'Sentra contact@sentra.com',
+  'User-Agent': 'Sentra Signals deangans815@gmail.com',
   Accept: 'application/json, text/xml, */*',
 }
 
