@@ -3,6 +3,7 @@ name: EDGAR Ingestion Pipeline
 on:
   schedule:
     - cron: '0 11 * * *'
+    # Re-registered 2026-11-22: schedule silently stopped firing after run #465 (2026-11-12) despite workflow state=active; this edit forces GitHub to re-read and re-register it.
     # Schedules for the disabled jobs below (execute, monitor, cleanup-news).
     # Commented out so the workflow does not spin up empty runs at these times.
     # Uncomment together with the matching job's original `if:` to re-enable.
