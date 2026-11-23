@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sentra homepage v3</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0E11}
+a{color:#E8EAED}a:hover{color:#FFFFFF}
+table{border-collapse:collapse;width:100%}
+th{font-weight:500;text-align:left}
+tbody tr:hover{background:#12171C}
+</style>
+</helmet>
+<div style="background: #0B0E11; color: #E8EAED; font-family: 'IBM Plex Sans', system-ui, sans-serif; min-height: 100%;">
+
+<!-- NAV -->
+<header style="border-bottom: 1px solid #1F262D;">
+<nav style="max-width: 1240px; margin: 0 auto; padding: 0 32px; height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;">
+<div style="display: flex; align-items: center; gap: 40px; flex-wrap: wrap;">
+<a href="#" style="font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; letter-spacing: 0.12em; text-decoration: none; color: #E8EAED;">SENTRA<span style="color: #8B949E; font-weight: 400;">/SIGNALS</span></a>
+<div style="display: flex; gap: 28px; font-size: 14px; flex-wrap: wrap;">
+<a href="#" style="text-decoration: none; color: #C9D1D9;">Screener</a>
+<a href="#" style="text-decoration: none; color: #C9D1D9;">Tickers</a>
+<a href="#" style="text-decoration: none; color: #C9D1D9;">Methodology</a>
+</div>
+</div>
+<label style="display: flex; align-items: center; gap: 8px; border: 1px solid #2A323B; border-radius: 4px; padding: 0 10px; height: 36px; background: #0F1318; min-width: 220px;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B949E" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Search a ticker</span>
+<input type="text" placeholder="Search a ticker" style="background: transparent; border: none; outline: none; color: #E8EAED; font-family: 'IBM Plex Mono', monospace; font-size: 13px; flex: 1;">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8B949E; border: 1px solid #2A323B; border-radius: 3px; padding: 1px 5px;">/</span>
+</label>
+</nav>
+</header>
+
+<main style="max-width: 1240px; margin: 0 auto; padding: 0 32px;">
+
+<!-- HERO -->
+<section style="display: flex; flex-wrap: wrap; gap: 64px; align-items: center; padding: 80px 0 56px;">
+<div style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 24px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.08em; color: #8B949E;">SEC FORM 4 &#183; RUSSELL 3000 &#183; UPDATED EACH TRADING DAY</div>
+<h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 62px; line-height: 1.04; letter-spacing: -0.015em; color: #F2F4F6;">The insider buys<br>that actually matter.</h1>
+<p style="margin: 0; max-width: 560px; font-size: 17px; line-height: 1.6; color: #C9D1D9;">Most insider trades are routine: scheduled sales, grants, habit. Sentra reads every filing across the Russell 3000, filters out the routine, and ranks the buys where an insider broke their own pattern.</p>
+<div style="display: flex; gap: 12px; flex-wrap: wrap;">
+<a href="#top10" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; background: #E8EAED; color: #0B0E11; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 4px;">See this week's buys</a>
+<a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border: 1px solid #2A323B; color: #E8EAED; text-decoration: none; font-weight: 500; font-size: 14px; border-radius: 4px;">How it works</a>
+</div>
+</div>
+
+<!-- Example signal card -->
+<div style="flex: 1 1 380px; min-width: 0; border: 1px solid #1F262D; border-radius: 6px; background: #0F1318; padding: 24px; display: flex; flex-direction: column; gap: 20px;">
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+<div style="display: flex; flex-direction: column; gap: 6px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">TOP SIGNAL THIS WEEK</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 24px; font-weight: 600; color: #F2F4F6;">[TICKER]</div>
+<div style="font-size: 14px; color: #C9D1D9;">[Insider name], CEO</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 52px; font-weight: 500; line-height: 1; color: #3FB950;">92</div>
+<span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #3FB950;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #3FB950;"></span>Opportunistic &#183; Very high signal</span>
+</div>
+</div>
+<div style="display: flex; gap: 28px; padding: 14px 0; border-top: 1px solid #1F262D; border-bottom: 1px solid #1F262D; flex-wrap: wrap;">
+<div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">BOUGHT</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F2F4F6;">$[X.X]M</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">STAKE &#916;</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F2F4F6;">+[XX]%</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">FILED</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F2F4F6;">[Date]</span></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 14px;">
+<div style="display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">WHY IT SCORED 92</div><div style="font-size: 12px; color: #8B949E;">Beats 92% of opportunistic buys</div></div>
+<sc-for list="{{breakdown}}" as="b" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 6px;">
+<div style="display: flex; justify-content: space-between; font-size: 13px;"><span style="color: #C9D1D9;">{{b.label}}</span><span style="font-family: 'IBM Plex Mono', monospace; color: #8B949E;">{{b.pts}}</span></div>
+<div style="height: 4px; background: #1A2026; border-radius: 2px;"><div style="height: 4px; width: {{b.w}}; background: #C9D1D9; border-radius: 2px;"></div></div>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+
+<!-- TOP 10 -->
+<section id="top10" style="padding: 32px 0 24px; border-top: 1px solid #1F262D; display: flex; flex-direction: column; gap: 20px;">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 34px; color: #F2F4F6;">This week's top 10 insider buys</h2>
+<div style="font-size: 14px; color: #8B949E;">Opportunistic purchases only, ranked by conviction score.</div>
+</div>
+<a href="#" style="font-size: 14px; color: #C9D1D9;">Open full screener</a>
+</div>
+
+<div style="overflow-x: auto; border: 1px solid #1F262D; border-radius: 6px;">
+<table style="font-size: 14px; min-width: 880px;">
+<thead>
+<tr style="border-bottom: 1px solid #1F262D; background: #0F1318;">
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E; width: 40px;">#</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">TICKER</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">INSIDER</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E; text-align: right;">BOUGHT</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E; text-align: right;">STAKE &#916;</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">SCORE</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E; text-align: right;">FILED</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+<tr style="border-bottom: 1px solid #161B21;">
+<td style="padding: 13px 16px; font-family: 'IBM Plex Mono', monospace; color: #8B949E;">{{r.rank}}</td>
+<td style="padding: 13px 16px;"><a href="#" style="font-family: 'IBM Plex Mono', monospace; font-weight: 600; text-decoration: none; color: #F2F4F6;">{{r.ticker}}</a><span style="color: #8B949E; padding-left: 10px;">[Company]</span></td>
+<td style="padding: 13px 16px; color: #C9D1D9;">[Insider name]<span style="color: #8B949E;"> · {{r.role}}</span></td>
+<td style="padding: 13px 16px; font-family: 'IBM Plex Mono', monospace; text-align: right; color: #E8EAED;">{{r.value}}</td>
+<td style="padding: 13px 16px; font-family: 'IBM Plex Mono', monospace; text-align: right; color: #C9D1D9;">{{r.stake}}</td>
+<td style="padding: 13px 16px;"><div style="display: flex; align-items: center; gap: 10px;"><span style="font-family: 'IBM Plex Mono', monospace; font-weight: 600; width: 22px; color: #F2F4F6;">{{r.score}}</span><div style="width: 72px; height: 4px; background: #1A2026; border-radius: 2px;"><div style="height: 4px; width: {{r.w}}; background: #C9D1D9; border-radius: 2px;"></div></div></div></td>
+<td style="padding: 13px 16px; font-family: 'IBM Plex Mono', monospace; text-align: right; color: #8B949E;">[Date]</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+
+<!-- HOW TO READ -->
+<section style="padding: 48px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 48px; border-bottom: 1px solid #1F262D;">
+<div style="display: flex; flex-direction: column; gap: 12px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">STEP 1 &#183; CLASSIFICATION</div>
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 26px; color: #F2F4F6;">Is this insider trading out of habit?</div>
+<div style="font-size: 15px; line-height: 1.6; color: #C9D1D9;">Insiders who trade in the same month every year are routine. When one breaks that pattern, the trade is opportunistic. Based on Cohen, Malloy &amp; Pomorski (2012).</div>
+<div style="display: flex; gap: 18px; font-size: 13px; flex-wrap: wrap; padding-top: 4px;">
+<span style="display: inline-flex; align-items: center; gap: 6px; color: #3FB950;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #3FB950;"></span>Opportunistic</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; color: #D4A72C;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #D4A72C;"></span>Unclassifiable</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; color: #F0716A;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #F0716A;"></span>Routine</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">STEP 2 &#183; SCORE</div>
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 26px; color: #F2F4F6;">How much conviction is behind the buy?</div>
+<div style="font-size: 15px; line-height: 1.6; color: #C9D1D9;">Every open-market purchase gets a 0 to 100 percentile rank within its class, built from four walk-forward validated factors: stake increase, price momentum, insider role, and company size. Sales aren't scored.</div>
+<a href="#" style="font-size: 14px; color: #C9D1D9; padding-top: 4px;">Read the methodology</a>
+</div>
+</section>
+
+<!-- ACADEMIC BACKING -->
+<section style="padding: 56px 0; display: flex; flex-direction: column; gap: 24px; border-bottom: 1px solid #1F262D;">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">ACADEMIC FOUNDATION</div>
+<h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 34px; color: #F2F4F6;">Built on published research</h2>
+</div>
+<a href="#" style="font-size: 14px; color: #C9D1D9;">Full methodology</a>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px;">
+<article style="border: 1px solid #1F262D; border-radius: 6px; padding: 24px; display: flex; flex-direction: column; gap: 12px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">JOURNAL OF FINANCE &#183; 2012</div>
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 22px; color: #F2F4F6;">Decoding Inside Information</div>
+<div style="font-size: 13px; color: #8B949E;">Cohen, Malloy &amp; Pomorski</div>
+<div style="font-size: 15px; line-height: 1.6; color: #C9D1D9;">Insiders who trade outside their usual calendar pattern earn significant abnormal returns. Those on predictable schedules earn essentially none.</div>
+<div style="font-size: 14px; line-height: 1.55; color: #8B949E; border-top: 1px solid #1F262D; padding-top: 12px;"><span style="color: #C9D1D9;">How Sentra uses it:</span> the core classification. Every insider is judged against their own history.</div>
+</article>
+<article style="border: 1px solid #1F262D; border-radius: 6px; padding: 24px; display: flex; flex-direction: column; gap: 12px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">REVIEW OF ECONOMICS &amp; STATISTICS &#183; 2003</div>
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 22px; color: #F2F4F6;">Estimating the Returns to Insider Trading</div>
+<div style="font-size: 13px; color: #8B949E;">Jeng, Metrick &amp; Zeckhauser</div>
+<div style="font-size: 15px; line-height: 1.6; color: #C9D1D9;">Insider purchases earn roughly 6% abnormal return over six months. Insider sales show no significant predictive power.</div>
+<div style="font-size: 14px; line-height: 1.55; color: #8B949E; border-top: 1px solid #1F262D; padding-top: 12px;"><span style="color: #C9D1D9;">How Sentra uses it:</span> only purchases are scored. Sales are too noisy to mean much.</div>
+</article>
+</div>
+</section>
+
+<!-- EVIDENCE -->
+<section style="padding: 56px 0; display: flex; flex-direction: column; gap: 24px; border-bottom: 1px solid #1F262D;">
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">EVIDENCE</div>
+<h2 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 34px; color: #F2F4F6;">Does it work?</h2>
+<div style="font-size: 14px; color: #8B949E; max-width: 640px; line-height: 1.6;">Backtest of opportunistic buys against a matched benchmark. Shown with its limits.</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); border: 1px solid #1F262D; border-radius: 6px;">
+<div style="padding: 22px 24px; border-right: 1px solid #1F262D; display: flex; flex-direction: column; gap: 6px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 500; color: #F2F4F6;">[X.X%]</div><div style="font-size: 13px; color: #8B949E;">Avg. excess return, 6 months</div></div>
+<div style="padding: 22px 24px; border-right: 1px solid #1F262D; display: flex; flex-direction: column; gap: 6px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 500; color: #F2F4F6;">[XX%]</div><div style="font-size: 13px; color: #8B949E;">Beat the benchmark</div></div>
+<div style="padding: 22px 24px; border-right: 1px solid #1F262D; display: flex; flex-direction: column; gap: 6px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 500; color: #F2F4F6;">[N,NNN]</div><div style="font-size: 13px; color: #8B949E;">Trades tested</div></div>
+<div style="padding: 22px 24px; display: flex; flex-direction: column; gap: 6px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 500; color: #F2F4F6;">[YYYY to YYYY]</div><div style="font-size: 13px; color: #8B949E;">Test period</div></div>
+</div>
+<div style="font-size: 14px; line-height: 1.6; color: #8B949E; max-width: 760px;">Caveats: [main caveat, e.g. no trading costs modeled]. <a href="#" style="color: #C9D1D9;">Full backtest</a></div>
+</section>
+
+<!-- BUILT BY -->
+<section style="padding: 48px 0 64px; display: flex; justify-content: space-between; gap: 32px; flex-wrap: wrap; align-items: center;">
+<div style="display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">BUILT BY</div>
+<div style="font-family: 'Newsreader', Georgia, serif; font-size: 28px; color: #F2F4F6;">Dean Gans</div>
+<div style="font-size: 15px; line-height: 1.6; color: #C9D1D9;">Finance and Applied Math student. I built Sentra solo to test whether academic insider research holds up on live filings. Happy to talk about how it works.</div>
+</div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap;">
+<a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 18px; border: 1px solid #2A323B; border-radius: 4px; text-decoration: none; font-size: 14px; color: #E8EAED;">LinkedIn</a>
+<a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 18px; background: #E8EAED; border-radius: 4px; text-decoration: none; font-size: 14px; font-weight: 600; color: #0B0E11;">Email me</a>
+</div>
+</section>
+</main>
+
+<footer style="border-top: 1px solid #1F262D; background: #080A0D;">
+<div style="max-width: 1240px; margin: 0 auto; padding: 56px 32px 32px; display: flex; flex-direction: column; gap: 40px;">
+<div style="display: flex; justify-content: space-between; gap: 48px; flex-wrap: wrap;">
+<div style="display: flex; flex-direction: column; gap: 14px; max-width: 380px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; letter-spacing: 0.12em; color: #E8EAED;">SENTRA<span style="color: #8B949E; font-weight: 400;">/SIGNALS</span></div>
+<div style="font-size: 14px; line-height: 1.6; color: #8B949E;">Sentra Signals is an insider-activity radar. It tracks SEC Form 4 filings across the Russell 3000 and surfaces the trades that carry real signal.</div>
+</div>
+<div style="display: flex; gap: 96px; flex-wrap: wrap;">
+<div style="display: flex; flex-direction: column; gap: 12px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">COMMUNITY</div>
+<a href="#" style="font-size: 14px; text-decoration: none; color: #C9D1D9;">X / Twitter</a>
+<a href="#" style="font-size: 14px; text-decoration: none; color: #C9D1D9;">LinkedIn</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">LEGAL</div>
+<a href="#" style="font-size: 14px; text-decoration: none; color: #C9D1D9;">Privacy Policy</a>
+<a href="#" style="font-size: 14px; text-decoration: none; color: #C9D1D9;">Terms of Service</a>
+<a href="#" style="font-size: 14px; text-decoration: none; color: #C9D1D9;">Sitemap</a>
+</div>
+</div>
+</div>
+<div style="border-top: 1px solid #1F262D; padding-top: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; line-height: 1.6; color: #8B949E;">
+<span>Sentra Signals 2026</span>
+<span style="max-width: 820px;">Sentra Signals provides informational data only and is not a registered investment advisor. Nothing on this site is investment advice. Insider trading data is sourced from public SEC filings. Do your own research before making any investment decision.</span>
+</div>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2850}}'>
+class Component extends DCLogic {
+renderVals() {
+var breakdown = [
+{ label: 'Stake increase', pts: '[XX]/30', w: '85%' },
+{ label: 'Insider role (CEO)', pts: '9/12', w: '75%' },
+{ label: 'Size tilt', pts: '[X]/8', w: '60%' },
+{ label: 'Price momentum (not used for Opportunistic)', pts: 'n/a', w: '0%' }
+];
+var raw = [
+['CEO', '$2.4M', '+18%', 92], ['Director', '$1.1M', '+42%', 88], ['CFO', '$640K', '+9%', 84],
+['Director', '$510K', '+25%', 79], ['10% Owner', '$3.9M', '+4%', 76], ['COO', '$280K', '+11%', 72],
+['Director', '$150K', '+6%', 69], ['CEO', '$900K', '+7%', 66], ['Director', '$220K', '+14%', 63],
+['President', '$410K', '+5%', 61]
+];
+var rows = raw.map(function (x, i) {
+return { rank: i + 1, ticker: '[TICKER]', role: x[0], value: x[1], stake: x[2], score: x[3], w: x[3] + '%' };
+});
+return { breakdown: breakdown, rows: rows };
+}
+}
+</script>
+</body>
+</html>

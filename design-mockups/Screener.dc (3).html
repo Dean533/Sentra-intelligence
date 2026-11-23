@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sentra insider screener</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0E11}
+a{color:#E8EAED}a:hover{color:#FFFFFF}
+table{border-collapse:collapse;width:100%}
+th{font-weight:500;text-align:left}
+tbody tr:hover{background:#12171C}
+select{appearance:none;-webkit-appearance:none}
+</style>
+</helmet>
+<div style="background: #0B0E11; color: #E8EAED; font-family: 'IBM Plex Sans', system-ui, sans-serif; min-height: 100%;">
+
+<!-- NAV -->
+<header style="border-bottom: 1px solid #1F262D;">
+<nav style="max-width: 1240px; margin: 0 auto; padding: 0 32px; height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;">
+<div style="display: flex; align-items: center; gap: 40px; flex-wrap: wrap;">
+<a href="#" style="font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; letter-spacing: 0.12em; text-decoration: none; color: #E8EAED;">SENTRA<span style="color: #8B949E; font-weight: 400;">/SIGNALS</span></a>
+<div style="display: flex; gap: 28px; font-size: 14px; flex-wrap: wrap;">
+<a href="#" style="text-decoration: none; color: #F2F4F6;">Screener</a>
+<a href="#" style="text-decoration: none; color: #C9D1D9;">Tickers</a>
+<a href="#" style="text-decoration: none; color: #C9D1D9;">Methodology</a>
+</div>
+</div>
+<label style="display: flex; align-items: center; gap: 8px; border: 1px solid #2A323B; border-radius: 4px; padding: 0 10px; height: 36px; background: #0F1318; min-width: 220px;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B949E" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Search a ticker</span>
+<input type="text" placeholder="Search a ticker" style="background: transparent; border: none; outline: none; color: #E8EAED; font-family: 'IBM Plex Mono', monospace; font-size: 13px; flex: 1;">
+</label>
+</nav>
+</header>
+
+<main style="max-width: 1240px; margin: 0 auto; padding: 0 32px 64px;">
+
+<!-- TITLE -->
+<section style="padding: 40px 0 24px; display: flex; flex-direction: column; gap: 10px;">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.08em; color: #8B949E;">INSIDER SCREENER</div>
+<h1 style="margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 46px; letter-spacing: -0.01em; color: #F2F4F6;">Every insider buy, sorted by signal</h1>
+<p style="margin: 0; max-width: 640px; font-size: 16px; line-height: 1.6; color: #C9D1D9;">Open-market purchases from SEC Form 4 filings across the Russell 3000, classified and scored. Filter down to what matters to you.</p>
+</section>
+
+<!-- TABS -->
+<div role="tablist" style="display: flex; gap: 4px; border-bottom: 1px solid #1F262D;">
+<button type="button" role="tab" aria-selected="{{tabInsiderSel}}" onClick="{{showInsider}}" style="height: 44px; padding: 0 16px; background: transparent; border: none; border-bottom: 2px solid {{tabInsiderLine}}; margin-bottom: -1px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 500; color: {{tabInsiderText}}; cursor: pointer;">Insider activity</button>
+<button type="button" role="tab" aria-selected="{{tabNewsSel}}" onClick="{{showNews}}" style="height: 44px; padding: 0 16px; background: transparent; border: none; border-bottom: 2px solid {{tabNewsLine}}; margin-bottom: -1px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 500; color: {{tabNewsText}}; cursor: pointer;">News</button>
+</div>
+
+<sc-if value="{{isInsider}}" hint-placeholder-val="{{ true }}">
+<!-- FILTER BAR -->
+<section style="padding: 20px 0 16px; display: flex; flex-direction: column; gap: 12px;">
+<div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+<label style="flex: 1 1 260px; display: flex; align-items: center; gap: 8px; border: 1px solid #2A323B; border-radius: 4px; padding: 0 12px; height: 40px; background: #0F1318;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B949E" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Filter by ticker or company</span>
+<input type="text" placeholder="Filter by ticker or company" style="background: transparent; border: none; outline: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; flex: 1;">
+</label>
+<label style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px; background: #0F1318;"><span style="font-size: 12px; color: #8B949E;">Class</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>All</option><option>Opportunistic</option><option>Unclassifiable</option><option>Routine</option></select></label>
+<label style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px; background: #0F1318;"><span style="font-size: 12px; color: #8B949E;">Role</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>All</option><option>CEO</option><option>CFO</option><option>Director</option><option>10% Owner</option></select></label>
+<label style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px; background: #0F1318;"><span style="font-size: 12px; color: #8B949E;">Value</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>Any</option><option>$100K+</option><option>$500K+</option><option>$1M+</option></select></label>
+<button type="button" aria-expanded="{{moreOpen}}" onClick="{{toggleMore}}" style="height: 40px; padding: 0 14px; background: transparent; border: 1px solid #2A323B; border-radius: 4px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; color: #C9D1D9; cursor: pointer;">{{moreLabel}}</button>
+</div>
+
+<sc-if value="{{showMore}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 12px; border: 1px solid #1F262D; border-radius: 6px; background: #0F1318;">
+<label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px;"><span style="font-size: 12px; color: #8B949E;">Min score</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>Any</option><option>50+</option><option>70+</option><option>90+</option></select></label>
+<label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px;"><span style="font-size: 12px; color: #8B949E;">Stake change</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>Any</option><option>+5%+</option><option>+10%+</option><option>+25%+</option></select></label>
+<label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px;"><span style="font-size: 12px; color: #8B949E;">Cluster</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>Any</option><option>2+ insiders</option><option>3+ insiders</option></select></label>
+<label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px;"><span style="font-size: 12px; color: #8B949E;">From</span><input type="date" style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Mono', monospace; font-size: 13px; outline: none; color-scheme: dark;"></label>
+<label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px;"><span style="font-size: 12px; color: #8B949E;">To</span><input type="date" style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Mono', monospace; font-size: 13px; outline: none; color-scheme: dark;"></label>
+</div>
+</sc-if>
+
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+<button type="button" role="switch" aria-checked="{{salesOn}}" onClick="{{toggleSales}}" style="display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 4px; background: transparent; border: none; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; color: #C9D1D9; cursor: pointer;">
+<span style="width: 34px; height: 20px; border-radius: 10px; background: {{switchBg}}; position: relative; display: inline-block;"><span style="position: absolute; top: 3px; left: {{knobLeft}}; width: 14px; height: 14px; border-radius: 50%; background: #F2F4F6;"></span></span>
+Include sales
+</button>
+<span style="font-size: 12px; color: #8B949E;">Sales are shown for context but not scored.</span>
+</div>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #8B949E;">Showing 1&#8211;50 of [N] {{countLabel}}</span>
+</div>
+</section>
+
+<!-- TABLE -->
+<div style="overflow-x: auto; border: 1px solid #1F262D; border-radius: 6px;">
+<table style="font-size: 14px; min-width: 980px;">
+<thead>
+<tr style="border-bottom: 1px solid #1F262D; background: #0F1318;">
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">TICKER</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">INSIDER</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">CLASS</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E; text-align: right;">VALUE</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E; text-align: right;">STAKE &#916;</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">SCORE &#8595;</th>
+<th style="padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E; text-align: right;">FILED</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+<tr style="border-bottom: 1px solid #161B21; opacity: {{r.opacity}};">
+<td style="padding: 13px 16px;"><a href="#" style="font-family: 'IBM Plex Mono', monospace; font-weight: 600; text-decoration: none; color: #F2F4F6;">[TICKER]</a></td>
+<td style="padding: 13px 16px; color: #E8EAED;">[Insider name]<span style="color: #8B949E;"> · {{r.role}}</span><sc-if value="{{r.isSale}}" hint-placeholder-val="{{ false }}"><span style="margin-left: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8B949E; border: 1px solid #2A323B; border-radius: 3px; padding: 1px 6px;">SALE</span></sc-if></td>
+<td style="padding: 13px 16px;"><span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {{r.color}};"><span style="width: 7px; height: 7px; border-radius: 50%; background: {{r.color}};"></span>{{r.cls}}</span></td>
+<td style="padding: 13px 16px; font-family: 'IBM Plex Mono', monospace; text-align: right; color: #E8EAED;">{{r.value}}</td>
+<td style="padding: 13px 16px; font-family: 'IBM Plex Mono', monospace; text-align: right; color: #C9D1D9;">{{r.stake}}</td>
+<td style="padding: 13px 16px;"><div style="display: flex; align-items: center; gap: 10px;"><span style="font-family: 'IBM Plex Mono', monospace; font-weight: 600; min-width: 22px; color: {{r.scoreColor}};">{{r.score}}</span><div style="width: 64px; height: 4px; background: #1A2026; border-radius: 2px;"><div style="height: 4px; width: {{r.w}}; background: #C9D1D9; border-radius: 2px;"></div></div></div></td>
+<td style="padding: 13px 16px; font-family: 'IBM Plex Mono', monospace; text-align: right; color: #8B949E;">[Date]</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+
+<!-- LEGEND -->
+<div style="margin-top: 16px; display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; padding: 16px 20px; border: 1px solid #1F262D; border-radius: 6px; background: #0F1318;">
+<div style="display: flex; gap: 18px; font-size: 13px; flex-wrap: wrap; align-items: center;">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: #8B949E;">CLASS</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; color: #3FB950;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #3FB950;"></span>Opportunistic</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; color: #D4A72C;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #D4A72C;"></span>Unclassifiable</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; color: #F0716A;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #F0716A;"></span>Routine</span>
+</div>
+<div style="font-size: 13px; color: #8B949E;">Class = is the insider trading out of habit. Score = percentile rank within that class. <a href="#" style="color: #C9D1D9;">Methodology</a></div>
+</div>
+</sc-if>
+
+<sc-if value="{{isNews}}" hint-placeholder-val="{{ false }}">
+<section style="padding: 20px 0; display: flex; flex-direction: column; gap: 12px;">
+<div style="display: flex; gap: 10px; flex-wrap: wrap;">
+<label style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px; background: #0F1318;"><span style="font-size: 12px; color: #8B949E;">Sentiment</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>All</option><option>Positive</option><option>Negative</option></select></label>
+<label style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #2A323B; border-radius: 4px; background: #0F1318;"><span style="font-size: 12px; color: #8B949E;">Source</span><select style="background: transparent; border: none; color: #E8EAED; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none;"><option>All</option></select></label>
+</div>
+<div style="border: 1px solid #1F262D; border-radius: 6px;">
+<sc-for list="{{news}}" as="n" hint-placeholder-count="6">
+<a href="#" style="display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-bottom: 1px solid #161B21; text-decoration: none;">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #F2F4F6; min-width: 56px;">[TICKER]</span>
+<span style="width: 7px; height: 7px; border-radius: 50%; background: {{n.color}}; flex: none;"></span>
+<span style="flex: 1; font-size: 14px; line-height: 1.45; color: #E8EAED;">[Headline]</span>
+<span style="font-size: 12px; color: #8B949E;">[Source] · [time]</span>
+</a>
+</sc-for>
+</div>
+</section>
+</sc-if>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+renderVals() {
+var self = this;
+var st = this.state || {};
+var tab = st.tab || 'insider';
+var sales = !!st.sales;
+var more = !!st.more;
+var G = '#3FB950', Y = '#D4A72C', R = '#F0716A';
+var buys = [
+['CEO', 'Opportunistic', G, '$2.4M', '+18%', 92],
+['Director', 'Opportunistic', G, '$1.1M', '+42%', 88],
+['10% Owner', 'Unclassifiable', Y, '$3.9M', '+4%', 81],
+['CFO', 'Opportunistic', G, '$640K', '+9%', 77],
+['Director', 'Unclassifiable', Y, '$510K', '+25%', 64],
+['President', 'Opportunistic', G, '$410K', '+5%', 58],
+['Director', 'Routine', R, '$150K', '+6%', 41],
+['COO', 'Routine', R, '$90K', '+2%', 22]
+];
+var rows = buys.map(function (x) {
+return { role: x[0], cls: x[1], color: x[2], value: x[3], stake: x[4], score: String(x[5]), w: x[5] + '%', scoreColor: '#F2F4F6', isSale: false, opacity: '1' };
+});
+if (sales) {
+var s = [['EVP', 'Routine', R, '$2.8M', '-12%'], ['Director', 'Unclassifiable', Y, '$1.7M', '-35%']];
+rows.splice(2, 0, { role: s[0][0], cls: s[0][1], color: s[0][2], value: s[0][3], stake: s[0][4], score: '--', w: '0%', scoreColor: '#8B949E', isSale: true, opacity: '0.75' });
+rows.splice(5, 0, { role: s[1][0], cls: s[1][1], color: s[1][2], value: s[1][3], stake: s[1][4], score: '--', w: '0%', scoreColor: '#8B949E', isSale: true, opacity: '0.75' });
+}
+var news = [{ color: G }, { color: R }, { color: G }, { color: G }, { color: R }, { color: G }];
+var ins = tab === 'insider';
+return {
+rows: rows, news: news,
+isInsider: ins, isNews: !ins,
+tabInsiderSel: ins ? 'true' : 'false', tabNewsSel: ins ? 'false' : 'true',
+tabInsiderLine: ins ? '#F2F4F6' : 'transparent', tabNewsLine: ins ? 'transparent' : '#F2F4F6',
+tabInsiderText: ins ? '#F2F4F6' : '#8B949E', tabNewsText: ins ? '#8B949E' : '#F2F4F6',
+showInsider: function () { self.setState({ tab: 'insider' }); },
+showNews: function () { self.setState({ tab: 'news' }); },
+showMore: more, moreOpen: more ? 'true' : 'false', moreLabel: more ? 'Fewer filters' : 'More filters',
+toggleMore: function () { self.setState({ more: !more }); },
+salesOn: sales ? 'true' : 'false', switchBg: sales ? '#3FB950' : '#2A323B', knobLeft: sales ? '17px' : '3px',
+toggleSales: function () { self.setState({ sales: !sales }); },
+countLabel: sales ? 'trades' : 'buys'
+};
+}
+}
+</script>
+</body>
+</html>

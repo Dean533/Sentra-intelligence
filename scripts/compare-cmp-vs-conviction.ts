@@ -180,6 +180,11 @@ async function main() {
       cluster_count:             cluster.count,
       cluster_total_value:       cluster.totalValue,
       insider_median_value:      medianValue,
+      classification:            'OPPORTUNISTIC',
+      shares:                    num(r.shares)          ?? null,
+      shares_owned_after:        num(r.shares_owned_after) ?? null,
+      market_cap:                null,  // not available in this script's dataset
+      momentum_90d:              null,
     }
 
     const { score } = computeConvictionScore(trade, insiderHist, [])

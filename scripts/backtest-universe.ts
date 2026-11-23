@@ -426,23 +426,36 @@ async function main() {
     console.log(`Loaded ${existingTrades.length} enriched trades from partial file`)
   }
 
-  // ── Step 1: fetch all P/S trades ─────────────────────────────────────────
+  // ── Step 1: fetch all P/S trades (year-by-year to avoid deep-OFFSET timeout) ─
+  // A single paginated scan over all years hits Supabase's statement timeout at
+  // ~160K rows. Chunking by calendar year keeps each chunk ≤~60K rows and safe.
 
-  console.log('\nFetching all P/S trades from insider_transactions...')
-  const rawTrades = await fetchAll<{
+  console.log('\nFetching all P/S trades from insider_transactions (by year)...')
+  type RawTrade = {
     id: string; ticker: string; insider_name: string | null; insider_cik: string | null
     officer_title: string | null; role: string | null; transaction_code: string
     transaction_date: string; total_value: number | null
     shares: number | null; price_per_share: number | null; shares_owned_after: number | null
-  }>(
-    'insider_transactions',
-    'id, ticker, insider_name, insider_cik, officer_title, role, transaction_code, transaction_date, total_value, shares, price_per_share, shares_owned_after',
-    q => q
-      .in('transaction_code', ['P', 'S'])
-      .gte('transaction_date', CUTOFF_DATE)
-      .order('transaction_date', { ascending: true })
-  )
-  console.log(`  ${rawTrades.length.toLocaleString()} total P/S trades fetched`)
+  }
+  const rawTrades: RawTrade[] = []
+  const cutoffYear = parseInt(CUTOFF_DATE.split('-')[0], 10)
+  const thisYear   = new Date().getUTCFullYear()
+  for (let yr = cutoffYear; yr <= thisYear; yr++) {
+    const from = `${yr}-01-01`
+    const to   = `${yr}-12-31`
+    const chunk = await fetchAll<RawTrade>(
+      'insider_transactions',
+      'id, ticker, insider_name, insider_cik, officer_title, role, transaction_code, transaction_date, total_value, shares, price_per_share, shares_owned_after',
+      q => q
+        .in('transaction_code', ['P', 'S'])
+        .gte('transaction_date', from)
+        .lte('transaction_date', to)
+        .order('transaction_date', { ascending: true })
+    )
+    console.log(`  ${yr}: ${chunk.length.toLocaleString()} P/S trades`)
+    rawTrades.push(...chunk)
+  }
+  console.log(`  Total: ${rawTrades.length.toLocaleString()} P/S trades fetched`)
 
   // ── Step 2: classification map (insider_cik → classification) ────────────
 

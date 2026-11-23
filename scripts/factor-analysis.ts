@@ -1,8 +1,16 @@
-import * as fs from 'fs'
+// Run with:  npx tsx scripts/factor-analysis.ts
+//
+// Factor analysis on OPPORTUNISTIC BUYS from output/backtest-universe.csv.
+// Joins market_cap from Supabase tickers table.
+//
+// Uses retroactive 2026 CMP classification (lookahead bias).
+// Optimistic ceiling for research, not a live signal.
+
+import * as fs   from 'fs'
 import * as path from 'path'
 import { createClient } from '@supabase/supabase-js'
 
-// ── env ───────────────────────────────────────────────────────────────────────
+// ─── Env ──────────────────────────────────────────────────────────────────────
 
 function loadEnvLocal() {
   const envPath = path.join(__dirname, '..', '.env.local')
@@ -12,11 +20,12 @@ function loadEnvLocal() {
     if (!t || t.startsWith('#')) continue
     const eq = t.indexOf('=')
     if (eq === -1) continue
-    const key = t.slice(0, eq).trim()
-    const val = t.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
-    if (!process.env[key]) process.env[key] = val
+    const k = t.slice(0, eq).trim()
+    const v = t.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
+    if (!process.env[k]) process.env[k] = v
   }
 }
+
 loadEnvLocal()
 
 const supabase = createClient(
@@ -24,434 +33,366 @@ const supabase = createClient(
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// ── output tee ────────────────────────────────────────────────────────────────
+// ─── CSV parser ───────────────────────────────────────────────────────────────
 
-const lines: string[] = []
-function out(s = '') { console.log(s); lines.push(s) }
-function hr(char = '─', len = 90) { out(char.repeat(len)) }
-
-// ── csv parser ────────────────────────────────────────────────────────────────
-
-function parseLine(line: string): string[] {
-  const res: string[] = []
-  let cur = '', q = false
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = []
+  let cur = '', inQ = false
   for (let i = 0; i < line.length; i++) {
-    const c = line[i]
-    if (c === '"') { if (q && line[i+1] === '"') { cur += '"'; i++ } else q = !q }
-    else if (c === ',' && !q) { res.push(cur); cur = '' }
-    else cur += c
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++ } else inQ = !inQ
+    } else if (ch === ',' && !inQ) { fields.push(cur); cur = '' }
+    else cur += ch
   }
-  res.push(cur)
-  return res
+  fields.push(cur)
+  return fields
 }
 
-function parseCSV(content: string): Record<string, string>[] {
-  const rows = content.split('\n').filter(l => l.trim())
-  const headers = parseLine(rows[0])
-  return rows.slice(1).map(line => {
-    const vals = parseLine(line)
-    const r: Record<string, string> = {}
-    headers.forEach((h, i) => { r[h] = (vals[i] ?? '').trim() })
-    return r
-  })
+function parseNum(v: string): number | null {
+  if (!v) return null
+  const f = parseFloat(v)
+  return isNaN(f) ? null : f
 }
 
-// ── types ─────────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Trade {
-  id: string
-  ticker: string
-  insider_name: string
-  insider_cik: string
-  officer_title: string
-  role: string
-  transaction_date: string
-  total_value: number
-  sector: string
-  return_90d:  number | null
-  return_180d: number | null
-  adjusted_return_90d:  number | null
-  adjusted_return_180d: number | null
-  spy_return_90d:  number | null
-  is_local?: boolean
+type Row = {
+  insider_cik:        string
+  insider_name:       string
+  direction:          string
+  classification:     string
+  transaction_date:   string
+  total_value:        number | null
+  shares:             number | null
+  shares_owned_after: number | null
+  ticker:             string
+  role_classified:    string
+  size_bucket:        string
+  return_180d:        number | null
+  alpha_180d:         number | null
 }
 
-// ── stats ─────────────────────────────────────────────────────────────────────
+// ─── Statistics ───────────────────────────────────────────────────────────────
 
-function n90(arr: Trade[])  { return arr.filter(t => t.adjusted_return_90d  != null).length }
-function n180(arr: Trade[]) { return arr.filter(t => t.adjusted_return_180d != null).length }
-
-function vals90a(arr: Trade[])  { return arr.map(t => t.adjusted_return_90d!).filter(x => x != null) }
-function vals180a(arr: Trade[]) { return arr.map(t => t.adjusted_return_180d!).filter(x => x != null) }
-function vals90r(arr: Trade[])  { return arr.map(t => t.return_90d!).filter(x => x != null) }
-function vals180r(arr: Trade[]) { return arr.map(t => t.return_180d!).filter(x => x != null) }
-
-function mean(v: number[]): number { return v.length ? v.reduce((s, x) => s + x, 0) / v.length : NaN }
-function hitRate(v: number[]): number { return v.length ? v.filter(x => x > 0).length / v.length : NaN }
-function variance(v: number[], m: number): number {
-  return v.length < 2 ? 0 : v.reduce((s, x) => s + (x - m) ** 2, 0) / (v.length - 1)
+function mean(arr: number[]): number | null {
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null
 }
-function tScore(a: number[], b: number[]): number | null {
-  if (a.length < 3 || b.length < 3) return null
-  const ma = mean(a), mb = mean(b)
-  const se = Math.sqrt(variance(a, ma) / a.length + variance(b, mb) / b.length)
-  return se === 0 ? null : (ma - mb) / se
-}
-function minOf(v: number[]): number { return v.length ? Math.min(...v) : NaN }
-function maxOf(v: number[]): number { return v.length ? Math.max(...v) : NaN }
-function median(v: number[]): number | null {
-  if (!v.length) return null
-  const s = v.slice().sort((a, b) => a - b)
+
+function median(arr: number[]): number | null {
+  if (!arr.length) return null
+  const s = [...arr].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
-  return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2
-}
-function fmt(n: number, d = 2): string {
-  if (isNaN(n)) return '   N/A'
-  return (n >= 0 ? '+' : '') + n.toFixed(d) + '%'
-}
-function fmtN(n: number, d = 2): string {
-  if (isNaN(n)) return '   N/A'
-  return (n >= 0 ? '+' : '') + n.toFixed(d)
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
-// ── role normalizer ───────────────────────────────────────────────────────────
-
-function normalizeRole(role: string, title: string): string {
-  const t = (role + ' ' + title).toLowerCase()
-  if (t.includes('10%') || (t.includes('owner') && !t.includes('co-owner'))) return '10% Owner'
-  if (t.includes('chief executive') || t.includes('ceo')) return 'CEO'
-  if (t.includes('president') && !t.includes('vice')) return 'President'
-  if (t.includes('chief financial') || t.includes('cfo')) return 'CFO'
-  if (t.includes('director')) return 'Director'
-  return 'Other'
+function r2(v: number | null): number | null {
+  return v == null ? null : Math.round(v * 100) / 100
 }
 
-// ── block printer ─────────────────────────────────────────────────────────────
+const LOW_SAMPLE = 30
 
-function printBlock(label: string, subset: Trade[], baseline: Trade[]) {
-  const a90 = vals90a(subset), a180 = vals180a(subset)
-  const r90 = vals90r(subset), r180 = vals180r(subset)
-  const ba90 = vals90a(baseline)
+// ─── Bucket builder ───────────────────────────────────────────────────────────
 
-  const t90 = tScore(a90, ba90)
-  out(
-    `  ${label.padEnd(30)}` +
-    `n=${subset.length.toString().padStart(4)}` +
-    `  n90=${n90(subset).toString().padStart(4)}` +
-    `  n180=${n180(subset).toString().padStart(4)}` +
-    `  hit90=${isNaN(hitRate(a90)) ? ' N/A ' : (hitRate(a90)*100).toFixed(1).padStart(4) + '%'}` +
-    `  hit180=${isNaN(hitRate(a180)) ? ' N/A ' : (hitRate(a180)*100).toFixed(1).padStart(4) + '%'}` +
-    `  raw90=${fmt(mean(r90))}` +
-    `  α90=${fmt(mean(a90))}` +
-    `  raw180=${fmt(mean(r180))}` +
-    `  α180=${fmt(mean(a180))}` +
-    `  t=${t90 != null ? fmtN(t90) : '  N/A'}` +
-    `  min_α90=${fmt(minOf(a90))}` +
-    `  max_α90=${fmt(maxOf(a90))}`
+type BucketStats = {
+  label:     string
+  n:         number
+  winRate:   number | null
+  meanRet:   number | null
+  medRet:    number | null
+  meanAlpha: number | null
+  medAlpha:  number | null
+  extra?:    string
+}
+
+function calcBucket(label: string, rows: Row[], extra?: string): BucketStats {
+  const rets   = rows.map(r => r.return_180d).filter((v): v is number => v != null)
+  const alphas = rows.map(r => r.alpha_180d).filter((v): v is number => v != null)
+  return {
+    label,
+    n:         rows.length,
+    winRate:   rets.length ? rets.filter(v => v > 0).length / rets.length : null,
+    meanRet:   r2(mean(rets)),
+    medRet:    r2(median(rets)),
+    meanAlpha: r2(mean(alphas)),
+    medAlpha:  r2(median(alphas)),
+    extra,
+  }
+}
+
+// ─── Formatting ───────────────────────────────────────────────────────────────
+
+function fp(v: number | null, dp = 1): string {
+  if (v == null) return 'N/A'
+  return (v >= 0 ? '+' : '') + v.toFixed(dp) + '%'
+}
+
+function fw(v: number | null): string {
+  return v == null ? 'N/A' : (v * 100).toFixed(1) + '%'
+}
+
+function printTable(title: string, buckets: BucketStats[], extraHeader?: string) {
+  const EW  = extraHeader ? 14 : 0
+  const LW  = 24
+  const SEP = '─'.repeat(LW + 6 + 7 + 12 + 12 + 12 + 12 + EW + 4)
+
+  console.log('\n── ' + title)
+  console.log(SEP)
+  console.log(
+    '  ' + 'Bucket'.padEnd(LW) +
+    'n'.padStart(5) + '  ' +
+    'win%'.padStart(6) + '  ' +
+    'ret mean'.padStart(10) + ' ret med'.padStart(9) + '  ' +
+    'a mean'.padStart(8) + ' a med'.padStart(7) +
+    (extraHeader ? '  ' + extraHeader.padStart(EW - 2) : '')
   )
+  console.log(SEP)
+
+  for (const b of buckets) {
+    const flag = b.n < LOW_SAMPLE ? '*' : ' '
+    console.log(
+      flag + ' ' + b.label.slice(0, LW - 1).padEnd(LW) +
+      String(b.n).padStart(5) + '  ' +
+      fw(b.winRate).padStart(6) + '  ' +
+      fp(b.meanRet).padStart(10) + fp(b.medRet).padStart(9) + '  ' +
+      fp(b.meanAlpha).padStart(8) + fp(b.medAlpha).padStart(7) +
+      (b.extra ? '  ' + b.extra.padStart(EW - 2) : '')
+    )
+  }
+
+  if (buckets.some(b => b.n < LOW_SAMPLE))
+    console.log('  * low sample (<' + LOW_SAMPLE + ' trades) — interpret with caution')
 }
 
-// ── main ──────────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const csvPath = path.join(__dirname, '..', 'output', 'deep_analysis_v2.csv')
-  if (!fs.existsSync(csvPath)) { console.error('ERROR: deep_analysis_v2.csv not found'); process.exit(1) }
 
-  const rawRows = parseCSV(fs.readFileSync(csvPath, 'utf-8'))
+  // ── Load CSV ───────────────────────────────────────────────────────────────
 
-  const allRows: Trade[] = rawRows
-    .filter(r => r.transaction_code === 'P' && r.transaction_direction === 'buy')
-    .map(r => ({
-      id:               r.id,
-      ticker:           r.ticker,
-      insider_name:     r.insider_name,
-      insider_cik:      r.insider_cik ?? '',
-      officer_title:    r.officer_title ?? '',
-      role:             r.role ?? '',
-      transaction_date: r.transaction_date,
-      total_value:      parseFloat(r.total_value) || 0,
-      sector:           r.sector || 'Unknown',
-      return_90d:       r.return_90d  ? parseFloat(r.return_90d)  : null,
-      return_180d:      r.return_180d ? parseFloat(r.return_180d) : null,
-      adjusted_return_90d:  r.adjusted_return_90d  ? parseFloat(r.adjusted_return_90d)  : null,
-      adjusted_return_180d: r.adjusted_return_180d ? parseFloat(r.adjusted_return_180d) : null,
-      spy_return_90d:   r.spy_return_90d ? parseFloat(r.spy_return_90d) : null,
-    }))
+  const csvPath = path.join(__dirname, '..', 'output', 'backtest-universe.csv')
+  const lines   = fs.readFileSync(csvPath, 'utf-8').split('\n').filter(Boolean)
+  const headers = parseCsvLine(lines[0])
+  const idx     = (name: string) => headers.indexOf(name)
 
-  // ── fetch is_local ───────────────────────────────────────────────────────────
-  const localMap = new Map<string, boolean>()
-  const ids = allRows.map(t => t.id).filter(Boolean)
-  for (let i = 0; i < ids.length; i += 500) {
-    const batch = ids.slice(i, i + 500)
-    const { data } = await supabase.from('insider_transactions').select('id, is_local').in('id', batch)
-    for (const row of data ?? []) { if (row.id) localMap.set(row.id, row.is_local ?? false) }
-  }
-  for (const t of allRows) { t.is_local = localMap.get(t.id) }
-
-  // ── compute insider medians for relative-size factor ─────────────────────────
-  const insiderVals = new Map<string, number[]>()
-  for (const t of allRows) {
-    if (!t.insider_cik) continue
-    if (!insiderVals.has(t.insider_cik)) insiderVals.set(t.insider_cik, [])
-    insiderVals.get(t.insider_cik)!.push(t.total_value)
-  }
-  const insiderMedians = new Map<string, number>()
-  for (const [cik, vals] of insiderVals) {
-    const m = median(vals); if (m && m > 0) insiderMedians.set(cik, m)
+  const C = {
+    insider_cik:        idx('insider_cik'),
+    insider_name:       idx('insider_name'),
+    direction:          idx('direction'),
+    classification:     idx('classification'),
+    transaction_date:   idx('transaction_date'),
+    total_value:        idx('total_value'),
+    shares:             idx('shares'),
+    shares_owned_after: idx('shares_owned_after'),
+    ticker:             idx('ticker'),
+    role_classified:    idx('role_classified'),
+    size_bucket:        idx('size_bucket'),
+    return_180d:        idx('return_180d'),
+    alpha_180d:         idx('alpha_180d'),
   }
 
-  // ── compute cluster counts ────────────────────────────────────────────────────
-  const clusterMap = new Map<string, Set<string>>()
-  for (const t of allRows) {
-    const key = `${t.ticker}_${t.transaction_date.slice(0, 7)}`
-    if (!clusterMap.has(key)) clusterMap.set(key, new Set())
-    clusterMap.get(key)!.add(t.insider_name)
+  const missing = Object.entries(C).filter(([, v]) => v === -1).map(([k]) => k)
+  if (missing.length) { console.error('Missing CSV columns:', missing); process.exit(1) }
+
+  const allRows: Row[] = lines.slice(1).map(line => {
+    const f = parseCsvLine(line)
+    return {
+      insider_cik:        f[C.insider_cik]        ?? '',
+      insider_name:       f[C.insider_name]        ?? '',
+      direction:          f[C.direction]           ?? '',
+      classification:     f[C.classification]      ?? '',
+      transaction_date:   f[C.transaction_date]    ?? '',
+      total_value:        parseNum(f[C.total_value]),
+      shares:             parseNum(f[C.shares]),
+      shares_owned_after: parseNum(f[C.shares_owned_after]),
+      ticker:             f[C.ticker]              ?? '',
+      role_classified:    f[C.role_classified]     ?? '',
+      size_bucket:        f[C.size_bucket]         ?? '',
+      return_180d:        parseNum(f[C.return_180d]),
+      alpha_180d:         parseNum(f[C.alpha_180d]),
+    }
+  })
+
+  console.log('Loaded ' + allRows.length.toLocaleString() + ' rows from CSV')
+  const oppBuys  = allRows.filter(r => r.classification === 'OPPORTUNISTIC' && r.direction === 'buy')
+  const oppSells = allRows.filter(r => r.classification === 'OPPORTUNISTIC' && r.direction === 'sell')
+  console.log('Opportunistic buys: ' + oppBuys.length + '  opp sells: ' + oppSells.length)
+
+  // ── Fetch market caps ──────────────────────────────────────────────────────
+
+  console.log('Fetching market caps from tickers...')
+  const mcMap = new Map<string, number | null>()
+  const tickerSyms = Array.from(new Set(oppBuys.map(r => r.ticker)))
+  for (let i = 0; i < tickerSyms.length; i += 500) {
+    const chunk = tickerSyms.slice(i, i + 500)
+    const { data, error } = await supabase.from('tickers').select('symbol, market_cap').in('symbol', chunk)
+    if (error) { console.error('DB error:', error.message); process.exit(1) }
+    for (const r of data ?? []) mcMap.set((r as any).symbol, (r as any).market_cap ?? null)
   }
-  function clusterSize(t: Trade): number {
-    return clusterMap.get(`${t.ticker}_${t.transaction_date.slice(0, 7)}`)?.size ?? 1
+  console.log('Market cap data: ' + [...mcMap.values()].filter(v => v != null).length + ' / ' + tickerSyms.length + ' tickers')
+
+  // ── Header ─────────────────────────────────────────────────────────────────
+
+  console.log('\n' + '!'.repeat(80))
+  console.log('!! RETROACTIVE 2026 CMP CLASSIFICATION — LOOKAHEAD BIAS')
+  console.log('!! Optimistic ceiling. Not a live-signal guarantee.')
+  console.log('!'.repeat(80))
+  console.log('\n' + '='.repeat(80))
+  console.log('FACTOR ANALYSIS — OPPORTUNISTIC BUYS (180d hold)')
+  console.log(oppBuys.length + ' trades  ' + new Date().toISOString().split('T')[0])
+  console.log('='.repeat(80))
+
+  type SpreadEntry = { factor: string; buckets: BucketStats[] }
+  const spreads: SpreadEntry[] = []
+
+  // ── FACTOR 1: TRADE SIZE ───────────────────────────────────────────────────
+
+  const SIZE_ORDER = ['<$50K','$50K-100K','$100K-250K','$250K-500K','$500K-1M','$1M-5M','$5M-25M','$25M+','Unknown']
+  const f1 = SIZE_ORDER
+    .map(sz => calcBucket(sz, oppBuys.filter(r => r.size_bucket === sz)))
+    .filter(b => b.n > 0)
+  printTable('FACTOR 1: TRADE SIZE  (total_value)', f1)
+  spreads.push({ factor: 'Trade Size', buckets: f1 })
+
+  // ── FACTOR 2: INSIDER ROLE ─────────────────────────────────────────────────
+
+  const ROLE_ORDER = ['CEO','CFO','President','Director','10% Owner','Co-Founder/Partner','Insider (other)','Other/EVP']
+  const f2 = ROLE_ORDER
+    .map(role => calcBucket(role, oppBuys.filter(r => r.role_classified === role)))
+    .filter(b => b.n > 0)
+  printTable('FACTOR 2: INSIDER ROLE', f2)
+  spreads.push({ factor: 'Insider Role', buckets: f2 })
+
+  // ── FACTOR 3: MARKET CAP ──────────────────────────────────────────────────
+
+  function mcBucket(mc: number | null): string {
+    if (mc == null) return 'No data'
+    if (mc > 200e9) return 'Mega (>$200B)'
+    if (mc > 10e9)  return 'Large ($10-200B)'
+    if (mc > 2e9)   return 'Mid ($2-10B)'
+    return                  'Small (<$2B)'
   }
 
-  const oppo = allRows.filter(t => t.adjusted_return_90d != null && t.adjusted_return_180d != null)
+  const MC_ORDER = ['Mega (>$200B)','Large ($10-200B)','Mid ($2-10B)','Small (<$2B)','No data']
+  const f3 = MC_ORDER
+    .map(label => calcBucket(label, oppBuys.filter(r => mcBucket(mcMap.get(r.ticker) ?? null) === label)))
+    .filter(b => b.n > 0)
+  printTable('FACTOR 3: COMPANY MARKET CAP  (current)', f3)
+  spreads.push({ factor: 'Market Cap', buckets: f3.filter(b => b.label !== 'No data') })
 
-  // ═════════════════════════════════════════════════════════════════════════════
-  hr('═')
-  out('FULL FACTOR ANALYSIS — SENTRA CONVICTION SCORING')
-  out(`Generated: ${new Date().toISOString()}`)
-  hr('═')
+  // ── FACTOR 4: % STAKE INCREASE ────────────────────────────────────────────
+  // shares_owned_after includes the purchased shares
+  // position before purchase = shares_owned_after - shares
+  // pct increase = shares / before * 100
 
-  // ── 9. Dataset totals ────────────────────────────────────────────────────────
-  out()
-  out('━━ DATASET TOTALS')
-  out(`  Total rows in CSV (all codes):           ${rawRows.length}`)
-  out(`  Buy (code P) trades:                     ${allRows.length}`)
-  out(`  Trades with 90d outcome data:            ${allRows.filter(t => t.adjusted_return_90d != null).length}`)
-  out(`  Trades with 180d outcome data:           ${allRows.filter(t => t.adjusted_return_180d != null).length}`)
-  out(`  Trades with both 90d + 180d outcomes:    ${oppo.length}`)
-  out(`  is_local resolved from Supabase:         ${localMap.size}`)
-  out(`  Unique tickers:                          ${new Set(allRows.map(t => t.ticker)).size}`)
-  out(`  Unique insiders:                         ${new Set(allRows.map(t => t.insider_name)).size}`)
-  out(`  Date range:                              ${allRows.map(t => t.transaction_date).sort()[0]} → ${allRows.map(t => t.transaction_date).sort().at(-1)}`)
-
-  const ba90  = vals90a(oppo)
-  const ba180 = vals180a(oppo)
-  out()
-  out(`  BASELINE (all ${oppo.length} trades with outcomes):`)
-  out(`    hit rate 90d:   ${(hitRate(ba90)*100).toFixed(2)}%`)
-  out(`    hit rate 180d:  ${(hitRate(ba180)*100).toFixed(2)}%`)
-  out(`    avg raw 90d:    ${fmt(mean(vals90r(oppo)))}`)
-  out(`    avg alpha 90d:  ${fmt(mean(ba90))}`)
-  out(`    avg raw 180d:   ${fmt(mean(vals180r(oppo)))}`)
-  out(`    avg alpha 180d: ${fmt(mean(ba180))}`)
-  out(`    min alpha 90d:  ${fmt(minOf(ba90))}`)
-  out(`    max alpha 90d:  ${fmt(maxOf(ba90))}`)
-
-  const COL_HDR = '  ' + 'Label'.padEnd(30) +
-    'n    ' + 'n90  ' + 'n180 ' +
-    'hit90     ' + 'hit180    ' +
-    'raw90     ' + 'α90       ' +
-    'raw180    ' + 'α180      ' +
-    't         ' + 'min_α90   ' + 'max_α90'
-
-  // ═══ 1. ROLE ═══════════════════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('1. ROLE BREAKDOWN')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const roleMap = new Map<string, Trade[]>()
-  for (const t of oppo) {
-    const r = normalizeRole(t.role, t.officer_title)
-    if (!roleMap.has(r)) roleMap.set(r, [])
-    roleMap.get(r)!.push(t)
+  function holdBucket(shares: number | null, after: number | null): string | null {
+    if (shares == null || after == null || shares <= 0) return null
+    const before = after - shares
+    if (before <= 0) return null
+    const pct = (shares / before) * 100
+    if (pct < 10)  return '<10%'
+    if (pct < 25)  return '10-25%'
+    if (pct < 50)  return '25-50%'
+    if (pct < 100) return '50-100%'
+    return '>100% (doubled+)'
   }
-  for (const [role, trades] of [...roleMap.entries()].sort((a, b) => b[1].length - a[1].length)) {
-    printBlock(role, trades, oppo)
+
+  const HOLD_ORDER = ['<10%','10-25%','25-50%','50-100%','>100% (doubled+)']
+  const f4 = HOLD_ORDER
+    .map(label => calcBucket(label, oppBuys.filter(r => holdBucket(r.shares, r.shares_owned_after) === label)))
+    .filter(b => b.n > 0)
+  const f4null = oppBuys.filter(r => holdBucket(r.shares, r.shares_owned_after) == null).length
+  printTable('FACTOR 4: % STAKE INCREASE  (shares / prior position)', f4)
+  console.log('  (' + f4null + ' trades excluded: first purchase, null after, or shares <= 0)')
+  spreads.push({ factor: '% Stake Increase', buckets: f4 })
+
+  // ── FACTOR 5: INSIDER TRACK RECORD (leave-one-out) ────────────────────────
+
+  type TrackRow = Row & { looAvg: number | null; priorN: number }
+
+  const byCik = new Map<string, Row[]>()
+  for (const r of oppBuys) {
+    if (!r.insider_cik) continue
+    if (!byCik.has(r.insider_cik)) byCik.set(r.insider_cik, [])
+    byCik.get(r.insider_cik)!.push(r)
   }
-  out()
-  printBlock('BASELINE (all)', oppo, oppo)
 
-  // ═══ 2. TRADE SIZE ═════════════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('2. TRADE SIZE BREAKDOWN')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const sizeBuckets: [string, (v: number) => boolean][] = [
-    ['<$250K',       v => v < 250_000],
-    ['$250K–$500K',  v => v >= 250_000   && v < 500_000],
-    ['$500K–$1M',    v => v >= 500_000   && v < 1_000_000],
-    ['$1M–$5M',      v => v >= 1_000_000 && v < 5_000_000],
-    ['$5M–$25M',     v => v >= 5_000_000 && v < 25_000_000],
-    ['>$25M',        v => v >= 25_000_000],
-  ]
-  for (const [label, fn] of sizeBuckets) {
-    printBlock(label, oppo.filter(t => fn(t.total_value)), oppo)
-  }
-  out()
-  printBlock('BASELINE (all)', oppo, oppo)
-
-  // ═══ 3. SECTOR ═════════════════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('3. SECTOR BREAKDOWN')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const sectorMap = new Map<string, Trade[]>()
-  for (const t of oppo) {
-    if (!sectorMap.has(t.sector)) sectorMap.set(t.sector, [])
-    sectorMap.get(t.sector)!.push(t)
-  }
-  for (const [sector, trades] of [...sectorMap.entries()].sort((a, b) => b[1].length - a[1].length)) {
-    printBlock(sector, trades, oppo)
-  }
-  out()
-  printBlock('BASELINE (all)', oppo, oppo)
-
-  // ═══ 4. CLUSTER ════════════════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('4. CLUSTER SIZE BREAKDOWN')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const clusterBuckets: [string, (c: number) => boolean][] = [
-    ['1 insider',    c => c === 1],
-    ['2–3 insiders', c => c >= 2 && c <= 3],
-    ['4+ insiders',  c => c >= 4],
-  ]
-  for (const [label, fn] of clusterBuckets) {
-    printBlock(label, oppo.filter(t => fn(clusterSize(t))), oppo)
-  }
-  out()
-  printBlock('BASELINE (all)', oppo, oppo)
-
-  // ═══ 5. MARKET CONDITION ═══════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('5. MARKET CONDITION (SPY 90d return in same period)')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const mktBuckets: [string, (s: number) => boolean][] = [
-    ['SPY <−15%',    s => s < -15],
-    ['SPY −15%–−10%', s => s >= -15 && s < -10],
-    ['SPY −10%–−5%', s => s >= -10 && s < -5],
-    ['SPY −5%–0%',   s => s >= -5  && s < 0],
-    ['SPY 0%–5%',    s => s >= 0   && s < 5],
-    ['SPY 5%–10%',   s => s >= 5   && s < 10],
-    ['SPY >10%',     s => s >= 10],
-  ]
-  for (const [label, fn] of mktBuckets) {
-    const sub = oppo.filter(t => t.spy_return_90d != null && fn(t.spy_return_90d!))
-    printBlock(label, sub, oppo)
-  }
-  out()
-  printBlock('BASELINE (all)', oppo, oppo)
-
-  // ═══ 6. LOCAL VS NON-LOCAL ═════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('6. LOCAL INSIDER vs NON-LOCAL')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const localTrades    = oppo.filter(t => t.is_local === true)
-  const nonLocalTrades = oppo.filter(t => t.is_local === false)
-  const unknownLocal   = oppo.filter(t => t.is_local == null)
-  printBlock('Local',            localTrades, oppo)
-  printBlock('Non-local',        nonLocalTrades, oppo)
-  printBlock('is_local unknown', unknownLocal, oppo)
-  out()
-  printBlock('BASELINE (all)', oppo, oppo)
-
-  // ═══ 7. RELATIVE SIZE ══════════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('7. TRADE SIZE RELATIVE TO INSIDER\'S OWN MEDIAN')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const relBuckets: [string, (r: number) => boolean][] = [
-    ['<0.5× median',  r => r < 0.5],
-    ['0.5×–1× median', r => r >= 0.5 && r < 1],
-    ['1×–2× median',  r => r >= 1 && r < 2],
-    ['2×–5× median',  r => r >= 2 && r < 5],
-    ['>5× median',    r => r >= 5],
-  ]
-  for (const [label, fn] of relBuckets) {
-    const sub = oppo.filter(t => {
-      if (!t.insider_cik) return false
-      const med = insiderMedians.get(t.insider_cik)
-      if (!med) return false
-      return fn(t.total_value / med)
-    })
-    printBlock(label, sub, oppo)
-  }
-  const noMedian = oppo.filter(t => !t.insider_cik || !insiderMedians.get(t.insider_cik))
-  printBlock('No median (only 1 trade)', noMedian, oppo)
-  out()
-  printBlock('BASELINE (all)', oppo, oppo)
-
-  // ═══ 8. COMBINED FILTERS ═══════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('8. COMBINED FILTERS (n ≥ 5 only)')
-  hr('═')
-  out(COL_HDR)
-  hr()
-
-  const targetRoles = ['CEO', '10% Owner', 'CFO', 'Director', 'Other', 'President']
-  const sectors     = [...new Set(oppo.map(t => t.sector))].sort()
-
-  // Role × Sector
-  out()
-  out('  ── Role × Sector ──')
-  for (const role of targetRoles) {
-    for (const sector of sectors) {
-      const sub = oppo.filter(t => normalizeRole(t.role, t.officer_title) === role && t.sector === sector)
-      if (sub.length >= 5) printBlock(`${role} × ${sector}`, sub, oppo)
+  const trackRows: TrackRow[] = []
+  for (const [, trades] of byCik) {
+    for (let ti = 0; ti < trades.length; ti++) {
+      const t = trades[ti]
+      const otherRets = trades
+        .filter((_, oi) => oi !== ti)
+        .map(o => o.return_180d)
+        .filter((v): v is number => v != null)
+      const looAvg = otherRets.length > 0
+        ? r2(otherRets.reduce((a, b) => a + b, 0) / otherRets.length)
+        : null
+      trackRows.push({ ...t, looAvg, priorN: otherRets.length })
     }
   }
 
-  // Role × Size bucket
-  out()
-  out('  ── Role × Trade Size ──')
-  for (const role of targetRoles) {
-    for (const [sizeLabel, sizeFn] of sizeBuckets) {
-      const sub = oppo.filter(t => normalizeRole(t.role, t.officer_title) === role && sizeFn(t.total_value))
-      if (sub.length >= 5) printBlock(`${role} × ${sizeLabel}`, sub, oppo)
-    }
+  function trackBucket(loo: number | null): string {
+    if (loo == null) return 'No prior trades'
+    if (loo < 0)     return 'Negative avg'
+    if (loo < 10)    return 'Prior avg 0-10%'
+    if (loo < 25)    return 'Prior avg 10-25%'
+    return                   'Prior avg >25%'
   }
 
-  // Role × Cluster
-  out()
-  out('  ── Role × Cluster ──')
-  for (const role of targetRoles) {
-    for (const [cLabel, cFn] of clusterBuckets) {
-      const sub = oppo.filter(t => normalizeRole(t.role, t.officer_title) === role && cFn(clusterSize(t)))
-      if (sub.length >= 5) printBlock(`${role} × ${cLabel}`, sub, oppo)
-    }
+  const TRACK_ORDER = ['No prior trades','Negative avg','Prior avg 0-10%','Prior avg 10-25%','Prior avg >25%']
+  const f5: BucketStats[] = TRACK_ORDER.map(label => {
+    const sub = trackRows.filter(t => trackBucket(t.looAvg) === label)
+    const avgPrior = sub.length
+      ? r2(sub.reduce((a, t) => a + t.priorN, 0) / sub.length)
+      : null
+    return { ...calcBucket(label, sub), extra: avgPrior != null ? avgPrior.toFixed(1) : 'N/A' }
+  }).filter(b => b.n > 0)
+  printTable('FACTOR 5: INSIDER TRACK RECORD  (leave-one-out avg of other opp buys)', f5, 'avg prior n')
+  spreads.push({ factor: 'Track Record', buckets: f5.filter(b => b.label !== 'No prior trades') })
+
+  // ── FACTOR 6: DIRECTION SANITY ────────────────────────────────────────────
+
+  printTable('FACTOR 6: DIRECTION  (opp buy vs opp sell sanity baseline)', [
+    calcBucket('OPPORTUNISTIC buy',  oppBuys),
+    calcBucket('OPPORTUNISTIC sell', oppSells),
+  ])
+
+  // ── RANKING ───────────────────────────────────────────────────────────────
+
+  console.log('\n\n' + '='.repeat(80))
+  console.log('FACTOR RANKING  (best bucket med ret - worst bucket med ret, >=' + LOW_SAMPLE + ' trades)')
+  console.log('Bigger spread = more differentiation = more predictive.')
+  console.log('='.repeat(80))
+
+  type RankRow = { factor: string; spread: number; best: string; bestMed: number; worst: string; worstMed: number }
+  const ranking: RankRow[] = []
+
+  for (const { factor, buckets } of spreads) {
+    const elig = buckets.filter(b => b.n >= LOW_SAMPLE && b.medRet != null)
+    if (elig.length < 2) continue
+    const sorted = [...elig].sort((a, b) => b.medRet! - a.medRet!)
+    const best   = sorted[0]
+    const worst  = sorted[sorted.length - 1]
+    ranking.push({ factor, spread: r2(best.medRet! - worst.medRet!)!, best: best.label, bestMed: best.medRet!, worst: worst.label, worstMed: worst.medRet! })
+  }
+  ranking.sort((a, b) => b.spread - a.spread)
+
+  const RL = 20, BL = 22
+  console.log('\n  #  ' + 'Factor'.padEnd(RL) + 'Spread'.padStart(8) + '  ' + 'Best bucket'.padEnd(BL) + 'med'.padStart(8) + '  ' + 'Worst bucket'.padEnd(BL) + 'med'.padStart(8))
+  console.log('  ' + '-'.repeat(3 + RL + 8 + 2 + BL + 8 + 2 + BL + 8))
+
+  for (let i = 0; i < ranking.length; i++) {
+    const r = ranking[i]
+    console.log(
+      '  ' + String(i + 1).padEnd(3) +
+      r.factor.padEnd(RL) + fp(r.spread).padStart(8) + '  ' +
+      r.best.slice(0, BL - 1).padEnd(BL)  + fp(r.bestMed).padStart(8) + '  ' +
+      r.worst.slice(0, BL - 1).padEnd(BL) + fp(r.worstMed).padStart(8)
+    )
   }
 
-  // ═════════════════════════════════════════════════════════════════════════════
-  out()
-  hr('═')
-  out('END OF REPORT')
-  hr('═')
-
-  const outPath = path.join(__dirname, '..', 'output', 'full-factor-analysis.txt')
-  fs.writeFileSync(outPath, lines.join('\n') + '\n')
-  console.log(`\nSaved to output/full-factor-analysis.txt`)
+  console.log('\n' + '='.repeat(80) + '\n')
 }
 
-main().catch(err => { console.error(err); process.exit(1) })
+main().catch(err => { console.error('Fatal:', err); process.exit(1) })
