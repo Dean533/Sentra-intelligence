@@ -15,7 +15,8 @@
 // Usage:
 //   npx tsx scripts/backfill-price-enrich.ts            # full run
 //   npx tsx scripts/backfill-price-enrich.ts --dry-run  # enrich + print 20 of a 100-row sample, no writes
-//   npx tsx scripts/backfill-price-enrich.ts --until 2026-11-08  # only rows up through this date (skip the recent/urgent-only slice)
+//   npx tsx scripts/backfill-price-enrich.ts --until 2026-11-08            # only rows up through this date
+//   npx tsx scripts/backfill-price-enrich.ts --since 2026-09-29 --until 2026-11-15  # scope to one window
 
 import * as path from 'path'
 import * as fs   from 'fs'
@@ -91,6 +92,12 @@ const untilArg = process.argv.find(a => a.startsWith('--until='))
   ?? (process.argv.includes('--until') ? process.argv[process.argv.indexOf('--until') + 1] : null)
 const UNTIL_DATE = untilArg ? String(untilArg).replace('--until=', '') : null
 
+// Lower bound — scopes a run to a specific slice (e.g. just the window a
+// recent backfill landed) instead of the entire historical backlog.
+const sinceArg = process.argv.find(a => a.startsWith('--since='))
+  ?? (process.argv.includes('--since') ? process.argv[process.argv.indexOf('--since') + 1] : null)
+const SINCE_DATE = sinceArg ? String(sinceArg).replace('--since=', '') : null
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -109,9 +116,16 @@ async function main(): Promise<void> {
   cutoff.setUTCDate(cutoff.getUTCDate() - PRICE_ENRICH_CUTOFF_DAYS)
   const cutoffStr = UNTIL_DATE ?? cutoff.toISOString().split('T')[0]
 
+  // Applies --since (if given) on top of whatever filters the caller already set.
+  function withSince(q: any) {
+    return SINCE_DATE ? q.gte('transaction_date', SINCE_DATE) : q
+  }
+
   console.log('═'.repeat(70))
   console.log(DRY_RUN ? '[DRY RUN] Backfill price enrichment' : 'Backfill price enrichment')
-  console.log(`  rows with transaction_date <= ${cutoffStr} and price_on_day IS NULL`)
+  console.log(`  rows with transaction_date <= ${cutoffStr}` +
+    (SINCE_DATE ? ` and >= ${SINCE_DATE}` : '') +
+    ` and price_on_day IS NULL`)
   console.log('═'.repeat(70))
 
   // ── 1. Load market caps once ──────────────────────────────────────────────
@@ -124,12 +138,14 @@ async function main(): Promise<void> {
 
   // ── 2. Count backlog ───────────────────────────────────────────────────────
   console.log('\n[2/2] Enriching backlog...')
-  const { count: totalNull } = await sb
-    .from('insider_transactions')
-    .select('id', { count: 'exact', head: true })
-    .not('transaction_date', 'is', null)
-    .lte('transaction_date', cutoffStr)
-    .is('price_on_day', null)
+  const { count: totalNull } = await withSince(
+    sb
+      .from('insider_transactions')
+      .select('id', { count: 'exact', head: true })
+      .not('transaction_date', 'is', null)
+      .lte('transaction_date', cutoffStr)
+      .is('price_on_day', null)
+  )
 
   const total = totalNull ?? 0
   console.log(`  Backlog: ${total.toLocaleString()} rows`)
@@ -161,14 +177,16 @@ async function main(): Promise<void> {
 
   // ── Dry-run: sample 100, enrich + print 20, no writes ─────────────────────
   if (DRY_RUN) {
-    const { data: sample } = await sb
-      .from('insider_transactions')
-      .select('id, ticker, transaction_date, total_value')
-      .not('transaction_date', 'is', null)
-      .lte('transaction_date', cutoffStr)
-      .is('price_on_day', null)
-      .order('transaction_date', { ascending: false })
-      .limit(100)
+    const { data: sample } = await withSince(
+      sb
+        .from('insider_transactions')
+        .select('id, ticker, transaction_date, total_value')
+        .not('transaction_date', 'is', null)
+        .lte('transaction_date', cutoffStr)
+        .is('price_on_day', null)
+        .order('transaction_date', { ascending: false })
+        .limit(100)
+    )
 
     if (!sample || sample.length === 0) { console.log('  No rows found.'); return }
 
@@ -211,14 +229,16 @@ async function main(): Promise<void> {
   while (true) {
     batchNum++
 
-    const { data: rows, error: fetchErr } = await sb
-      .from('insider_transactions')
-      .select('id, ticker, transaction_date, total_value')
-      .not('transaction_date', 'is', null)
-      .lte('transaction_date', cutoffStr)
-      .is('price_on_day', null)
-      .order('transaction_date', { ascending: false })
-      .limit(BATCH_SIZE)
+    const { data: rows, error: fetchErr } = await withSince(
+      sb
+        .from('insider_transactions')
+        .select('id, ticker, transaction_date, total_value')
+        .not('transaction_date', 'is', null)
+        .lte('transaction_date', cutoffStr)
+        .is('price_on_day', null)
+        .order('transaction_date', { ascending: false })
+        .limit(BATCH_SIZE)
+    )
 
     if (fetchErr) {
       console.error(`\n  [batch ${batchNum}] fetch error: ${fetchErr.message}`)
