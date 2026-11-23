@@ -13,6 +13,10 @@ const supabase = createClient(
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Explicit insurance alongside the Vercel 60s ceiling this route was already
+// designed against (see header comment) — no behavior change.
+export const maxDuration = 60
+
 // Returns the CMP-derived classification for this CIK, or null if the CIK is absent
 // from insider_classifications (not enough trading history for CMP to classify).
 // Dollar value, trade size, and role are NOT considered — those belong in scoring only.
