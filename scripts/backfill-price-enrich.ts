@@ -1,5 +1,9 @@
-// Bulk-enriches all insider_transactions rows WHERE price_on_day IS NULL
-// (and old enough that every forward-return window has closed).
+// Bulk-enriches insider_transactions rows WHERE price_on_day IS NULL,
+// transaction_code IN ('P','S'), and old enough that every forward-return
+// window has closed. P/S-only because that's the entire set of codes any
+// consumer in the app ever reads a price field for (the user-facing feed in
+// app/api/insider/fetch/route.ts only ever serves P or S) — no point paying
+// Yahoo calls for awards/exercises/gifts/etc. that nothing displays.
 // Safe to re-run: only touches null rows, idempotent on already-enriched rows.
 //
 // Performance strategy — this is the one enrichment step that makes real
@@ -145,6 +149,7 @@ async function main(): Promise<void> {
       .not('transaction_date', 'is', null)
       .lte('transaction_date', cutoffStr)
       .is('price_on_day', null)
+      .in('transaction_code', ['P', 'S'])
   )
 
   const total = totalNull ?? 0
@@ -184,6 +189,7 @@ async function main(): Promise<void> {
         .not('transaction_date', 'is', null)
         .lte('transaction_date', cutoffStr)
         .is('price_on_day', null)
+        .in('transaction_code', ['P', 'S'])
         .order('transaction_date', { ascending: false })
         .limit(100)
     )
@@ -236,6 +242,7 @@ async function main(): Promise<void> {
         .not('transaction_date', 'is', null)
         .lte('transaction_date', cutoffStr)
         .is('price_on_day', null)
+        .in('transaction_code', ['P', 'S'])
         .order('transaction_date', { ascending: false })
         .limit(BATCH_SIZE)
     )

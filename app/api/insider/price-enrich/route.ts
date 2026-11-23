@@ -33,12 +33,16 @@ export async function GET(req: Request) {
   cutoff.setUTCDate(cutoff.getUTCDate() - PRICE_ENRICH_CUTOFF_DAYS)
   const cutoffStr = cutoff.toISOString().split('T')[0]
 
+  // Only P (buy) and S (sell) codes ever reach a price field anywhere in the
+  // app — the user-facing feed (app/api/insider/fetch/route.ts) only ever
+  // serves those two. Awards/exercises/gifts/etc. never need this data.
   const { data: rows, error } = await supabase
     .from('insider_transactions')
     .select('id, ticker, transaction_date, total_value')
     .not('transaction_date', 'is', null)
     .lte('transaction_date', cutoffStr)
     .is('price_on_day', null)
+    .in('transaction_code', ['P', 'S'])
     .order('transaction_date', { ascending: false })
     .limit(30)
 
