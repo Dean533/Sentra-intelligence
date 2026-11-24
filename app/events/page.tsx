@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { holdingsDeltaPct, convictionLabel } from '@/lib/insider/holdingsDelta'
 
 // ─── shared types ─────────────────────────────────────────────────────────────
 
@@ -368,26 +369,12 @@ function convictionColor(cls: string | null): string {
   return '#3a4a60'
 }
 
-// Bucket label: classification × score threshold of 50.
-function convictionLabel(cls: string | null, s: number): string {
-  if (cls === 'OPPORTUNISTIC')  return s >= 50 ? 'Very high signal' : 'Moderate signal'
-  if (cls === 'UNCLASSIFIABLE') return s >= 50 ? 'High signal'      : 'Low signal'
-  if (cls === 'ROUTINE')        return s >= 50 ? 'Low signal'       : 'No signal'
-  return 'No signal'
-}
 
 function holdingsDeltaDisplay(row: InsiderRow): { pct: number; color: string; capped: boolean } | null {
-  const s     = row.shares
-  const after = row.shares_owned_after
-  if (s == null || after == null) return null
+  const d = holdingsDeltaPct(row)
+  if (!d) return null
   const isBuy = row.transaction_code?.toUpperCase() === 'P'
-  const denom = isBuy ? after - s : after + s
-  // denom <= 0 means shares_owned_after <= shares (bought more than previously held, or bad data)
-  if (denom <= 0) return null
-  const raw    = (s / denom) * 100
-  const capped = raw > 500
-  const pct    = Math.min(raw, 500)
-  return { pct: isBuy ? pct : -pct, color: isBuy ? '#3fb950' : '#f85149', capped }
+  return { ...d, color: isBuy ? '#3fb950' : '#f85149' }
 }
 
 function InsiderActivityTable({ ticker }: { ticker?: string }) {
@@ -408,6 +395,12 @@ function InsiderActivityTable({ ticker }: { ticker?: string }) {
   const [scoreFilter,    setScoreFilter]    = useState('all')
   const [showScoreInfo,  setShowScoreInfo]  = useState(false)
   const router = useRouter()
+
+  // Honor ?classification= deep links (e.g. homepage "Open full screener")
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('classification')?.toUpperCase()
+    if (c === 'OPPORTUNISTIC' || c === 'ROUTINE' || c === 'UNCLASSIFIABLE') setClsFilter(c)
+  }, [])
 
   useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter])
 

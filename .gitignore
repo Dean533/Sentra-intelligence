@@ -42,3 +42,6 @@ next-env.d.ts
 
 # local analysis output (large files, not production code)
 /output/
+
+# playwright MCP screenshots/logs
+.playwright-mcp/

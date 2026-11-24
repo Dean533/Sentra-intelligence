@@ -5,12 +5,13 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { getSupabase } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
+import TickerSearch from './TickerSearch'
 
+// "Screener" temporarily points at /events until the /screener route ships (Phase 3).
 const NAV_LINKS = [
-  { label: 'Explore',   href: '/explore' },
-  { label: 'Events',    href: '/events' },
-  { label: 'Portfolio', href: '/watchlist' },
-  { label: 'About',     href: '/about' },
+  { label: 'Screener',    href: '/events' },
+  { label: 'Tickers',     href: '/explore' },
+  { label: 'Methodology', href: '/about' },
 ]
 
 export default function Navbar() {
@@ -32,7 +33,7 @@ export default function Navbar() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Solid background on scroll
+  // Translucent + blurred background once scrolled
   useEffect(() => {
     function onScroll() { setScrolled(window.scrollY > 10) }
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -62,183 +63,160 @@ export default function Navbar() {
   const email = user?.email ?? ''
   const initials = email ? email[0].toUpperCase() : '?'
 
-  const navBg = scrolled || mobileOpen ? 'rgba(10,13,18,0.97)' : 'transparent'
-  const navBlur = scrolled || mobileOpen ? 'blur(12px)' : 'none'
-  const navBorder = scrolled || mobileOpen ? '1px solid rgba(255,255,255,0.05)' : '1px solid transparent'
+  const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href))
 
   return (
     <>
-      <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 40px', height: '60px',
-        background: navBg,
-        backdropFilter: navBlur,
-        borderBottom: navBorder,
-        transition: 'background 0.3s, backdrop-filter 0.3s, border-color 0.3s',
-      }}>
-        {/* Logo — always visible */}
-        <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '16px', letterSpacing: '-0.3px', flexShrink: 0 }}>
-          Sentra
-        </Link>
+      <header
+        className={`fixed inset-x-0 top-0 z-[100] border-b border-border transition-[background-color,backdrop-filter] duration-300 ${
+          scrolled || mobileOpen ? 'bg-background/95 backdrop-blur-md' : 'bg-background'
+        }`}
+      >
+        <nav className="mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-6 px-4 md:px-8">
+          <div className="flex min-w-0 items-center gap-10">
+            <Link
+              href="/"
+              className="shrink-0 font-mono text-[15px] font-semibold tracking-[0.12em] text-text no-underline hover:text-white"
+            >
+              SENTRA<span className="font-normal text-muted">/SIGNALS</span>
+            </Link>
 
-        {/* Nav links — hidden on mobile via CSS */}
-        <div className="nav-links-desktop" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {NAV_LINKS.map(({ label, href }) => {
-            const active = pathname === href || (href !== '/' && pathname.startsWith(href))
-            return (
-              <Link key={href} href={href}
-                style={{ color: active ? '#fff' : '#6b7280', textDecoration: 'none', fontSize: '14px', fontWeight: active ? 500 : 400, padding: '6px 14px', borderRadius: '6px', transition: 'color 0.15s' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff' }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = '#6b7280' }}>
-                {label}
-              </Link>
-            )
-          })}
-        </div>
-
-        {/* Right side */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-
-          {/* Auth area — hidden on mobile via CSS */}
-          <div className="nav-auth-desktop" style={{ position: 'relative' }} ref={menuRef}>
-            {user ? (
-              <>
-                <button
-                  onClick={() => setShowMenu((v) => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    background: 'none', border: '1px solid #1e2530',
-                    borderRadius: '8px', padding: '5px 10px 5px 6px',
-                    cursor: 'pointer', color: '#c9d1d9', fontSize: '13px',
-                  }}
+            <div className="hidden gap-7 text-sm md:flex">
+              {NAV_LINKS.map(({ label, href }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`no-underline transition-colors hover:text-white ${isActive(href) ? 'text-heading' : 'text-text-secondary'}`}
                 >
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="" width={26} height={26}
-                      style={{ borderRadius: '50%', display: 'block' }} />
-                  ) : (
-                    <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#1a2d4a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#58a6ff' }}>
-                      {initials}
-                    </div>
-                  )}
-                  <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {email}
-                  </span>
-                  <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-                    <path d="M1 1l4 4 4-4" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                </button>
-
-                {showMenu && (
-                  <div style={{
-                    position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-                    background: '#0d1117', border: '1px solid #1e2530',
-                    borderRadius: '10px', padding: '6px', minWidth: '180px',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.5)', zIndex: 200,
-                  }}>
-                    <div style={{ padding: '8px 12px 10px', borderBottom: '1px solid #1e2530', marginBottom: '4px' }}>
-                      <div style={{ fontSize: '11px', color: '#4a5568', marginBottom: '2px', letterSpacing: '0.5px' }}>Signed in as</div>
-                      <div style={{ fontSize: '13px', color: '#c9d1d9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</div>
-                    </div>
-                    <button
-                      onClick={signOut}
-                      style={{
-                        display: 'block', width: '100%', textAlign: 'left',
-                        padding: '8px 12px', borderRadius: '6px',
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: '#f85149', fontSize: '13px', fontFamily: 'inherit',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(248,81,73,0.08)' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
-                    >
-                      Sign Out
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <Link href="/login"
-                style={{ fontSize: '13px', color: '#7b8498', textDecoration: 'none', padding: '6px 14px', border: '1px solid #1e2530', borderRadius: '8px', transition: 'color 0.15s, border-color 0.15s' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = '#c9d1d9'; e.currentTarget.style.borderColor = '#3a4a5a' }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = '#7b8498'; e.currentTarget.style.borderColor = '#1e2530' }}>
-                Sign In →
-              </Link>
-            )}
+                  {label}
+                </Link>
+              ))}
+            </div>
           </div>
 
-          {/* Hamburger — hidden on desktop via CSS, shown on mobile */}
-          <button
-            className="hamburger-btn"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-label="Toggle menu"
-            style={{
-              display: 'none', alignItems: 'center', justifyContent: 'center',
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: '#c9d1d9', padding: '4px',
-            }}
-          >
-            {mobileOpen ? (
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M3 3l14 14M17 3L3 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            ) : (
-              <svg width="20" height="16" viewBox="0 0 20 16" fill="none">
-                <rect x="0" y="0"  width="20" height="2" rx="1" fill="currentColor"/>
-                <rect x="0" y="7"  width="20" height="2" rx="1" fill="currentColor"/>
-                <rect x="0" y="14" width="20" height="2" rx="1" fill="currentColor"/>
-              </svg>
-            )}
-          </button>
-        </div>
-      </nav>
+          <div className="flex items-center gap-3">
+            <TickerSearch className="hidden w-[240px] md:block" />
 
-      {/* Mobile dropdown — rendered below the nav bar */}
+            {/* Auth area — desktop */}
+            <div className="relative hidden md:block" ref={menuRef}>
+              {user ? (
+                <>
+                  <button
+                    onClick={() => setShowMenu((v) => !v)}
+                    aria-label="Account menu"
+                    aria-expanded={showMenu}
+                    className="flex h-9 cursor-pointer items-center gap-2 rounded-sm border border-border-strong bg-transparent pl-1.5 pr-2.5 text-[13px] text-text-secondary hover:border-muted"
+                  >
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatarUrl} alt="" width={24} height={24} className="block rounded-full" />
+                    ) : (
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-border-strong font-mono text-[11px] font-semibold text-text">
+                        {initials}
+                      </span>
+                    )}
+                    <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                      <path d="M1 1l4 4 4-4" stroke="#8B949E" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+
+                  {showMenu && (
+                    <div className="absolute right-0 top-[calc(100%+6px)] z-[200] min-w-[200px] rounded-md border border-border-strong bg-surface p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+                      <div className="mb-1 border-b border-border px-3 pb-2.5 pt-2">
+                        <div className="label-mono mb-0.5">SIGNED IN AS</div>
+                        <div className="truncate text-[13px] text-text-secondary">{email}</div>
+                      </div>
+                      <Link
+                        href="/watchlist"
+                        onClick={() => setShowMenu(false)}
+                        className="block rounded-sm px-3 py-2 text-[13px] text-text-secondary no-underline hover:bg-surface-hover hover:text-white"
+                      >
+                        Watchlist
+                      </Link>
+                      <button
+                        onClick={signOut}
+                        className="block w-full cursor-pointer rounded-sm border-none bg-transparent px-3 py-2 text-left font-sans text-[13px] text-routine hover:bg-routine/10"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Link
+                  href="/login"
+                  className="flex h-9 items-center rounded-sm border border-border-strong px-3.5 text-[13px] text-text-secondary no-underline hover:border-muted hover:text-white"
+                >
+                  Sign in
+                </Link>
+              )}
+            </div>
+
+            {/* Hamburger — mobile only */}
+            <button
+              onClick={() => setMobileOpen((v) => !v)}
+              aria-label="Toggle menu"
+              aria-expanded={mobileOpen}
+              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-1 text-text-secondary md:hidden"
+            >
+              {mobileOpen ? (
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M3 3l14 14M17 3L3 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg width="20" height="16" viewBox="0 0 20 16" fill="none" aria-hidden="true">
+                  <rect x="0" y="0" width="20" height="2" rx="1" fill="currentColor" />
+                  <rect x="0" y="7" width="20" height="2" rx="1" fill="currentColor" />
+                  <rect x="0" y="14" width="20" height="2" rx="1" fill="currentColor" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </nav>
+      </header>
+
+      {/* Mobile dropdown */}
       {mobileOpen && (
-        <div style={{
-          position: 'fixed', top: '60px', left: 0, right: 0, zIndex: 99,
-          background: 'rgba(10,13,18,0.97)', backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(255,255,255,0.07)',
-          padding: '12px 24px 20px',
-        }}>
-          {NAV_LINKS.map(({ label, href }) => {
-            const active = pathname === href || (href !== '/' && pathname.startsWith(href))
-            return (
-              <Link key={href} href={href} onClick={() => setMobileOpen(false)}
-                style={{
-                  display: 'block', padding: '13px 0',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  color: active ? '#fff' : '#9ca3af',
-                  textDecoration: 'none', fontSize: '16px',
-                  fontWeight: active ? 600 : 400,
-                }}>
-                {label}
-              </Link>
-            )
-          })}
+        <div className="fixed inset-x-0 top-16 z-[99] border-b border-border bg-background/95 px-4 pb-5 pt-4 backdrop-blur-md md:hidden">
+          <TickerSearch shortcut={false} onNavigate={() => setMobileOpen(false)} className="mb-2" />
+          {NAV_LINKS.map(({ label, href }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={() => setMobileOpen(false)}
+              className={`block border-b border-border py-3.5 text-base no-underline ${isActive(href) ? 'font-medium text-heading' : 'text-text-secondary'}`}
+            >
+              {label}
+            </Link>
+          ))}
 
-          {/* Auth row */}
-          <div style={{ paddingTop: '16px' }}>
+          <div className="pt-4">
             {user ? (
               <div>
-                <div style={{ fontSize: '12px', color: '#4a5568', marginBottom: '12px' }}>
-                  Signed in as <span style={{ color: '#c9d1d9' }}>{email}</span>
+                <div className="mb-3 text-xs text-muted">
+                  Signed in as <span className="text-text-secondary">{email}</span>
                 </div>
-                <button onClick={signOut} style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#f85149', fontSize: '15px', fontFamily: 'inherit', padding: 0,
-                }}>
-                  Sign Out
+                <Link
+                  href="/watchlist"
+                  onClick={() => setMobileOpen(false)}
+                  className="mb-3 block text-[15px] text-text-secondary no-underline"
+                >
+                  Watchlist
+                </Link>
+                <button
+                  onClick={signOut}
+                  className="cursor-pointer border-none bg-transparent p-0 font-sans text-[15px] text-routine"
+                >
+                  Sign out
                 </button>
               </div>
             ) : (
-              <Link href="/login" onClick={() => setMobileOpen(false)}
-                style={{
-                  display: 'block', textAlign: 'center', padding: '12px',
-                  borderRadius: '8px', background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#fff', textDecoration: 'none', fontSize: '15px', fontWeight: 600,
-                }}>
-                Sign In
+              <Link
+                href="/login"
+                onClick={() => setMobileOpen(false)}
+                className="block rounded-sm border border-border-strong py-3 text-center text-[15px] font-semibold text-text no-underline"
+              >
+                Sign in
               </Link>
             )}
           </div>

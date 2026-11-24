@@ -1,545 +1,570 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { Newspaper, FileText, TrendingUp, ChevronDown, Plus, Minus, Search } from 'lucide-react'
-import { WebGLShader } from '@/components/ui/web-gl-shader'
+import { createClient } from '@supabase/supabase-js'
+import { classifyRole, computeConvictionScore } from '@/lib/scoring/convictionScore'
+import { holdingsDeltaPct, convictionLabel } from '@/lib/insider/holdingsDelta'
 
-// ─── animation helpers ────────────────────────────────────────────────────────
+// ISR: re-query Supabase at most once an hour.
+export const revalidate = 3600
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 28 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.6 } },
+// ─── Data ────────────────────────────────────────────────────────────────────
+
+type TxRow = {
+  id: string | number
+  ticker: string
+  insider_name: string | null
+  role: string | null
+  officer_title: string | null
+  total_value: number | null
+  price_per_share: number | null
+  shares: number | null
+  shares_owned_after: number | null
+  transaction_date: string
+  transaction_code: string | null
+  filed_date: string | null
+  conviction_score: number | null
+  classification: 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE' | null
 }
 
-function FadeUp({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
+type Breakdown = { label: string; pts: string; pct: number }
+
+type TopBuy = {
+  id: string | number
+  ticker: string
+  company: string | null
+  insider: string
+  role: string
+  value: number | null
+  stake: { pct: number; capped: boolean } | null
+  score: number
+  filed: string
+  breakdown: Breakdown[]
+}
+
+type Window = { days: 7 | 30 | 90; heading: string; eyebrow: string; cta: string }
+
+const WINDOWS: Window[] = [
+  { days: 7,  heading: "This week's top 10 insider buys",     eyebrow: 'TOP SIGNAL THIS WEEK',       cta: "See this week's buys" },
+  { days: 30, heading: "Last 30 days' top 10 insider buys",   eyebrow: 'TOP SIGNAL, LAST 30 DAYS',   cta: 'See the top buys' },
+  { days: 90, heading: "Last 90 days' top 10 insider buys",   eyebrow: 'TOP SIGNAL, LAST 90 DAYS',   cta: 'See the top buys' },
+]
+
+const SELECT_COLS =
+  'id, ticker, insider_name, role, officer_title, total_value, price_per_share, shares, ' +
+  'shares_owned_after, transaction_date, transaction_code, filed_date, conviction_score, classification'
+
+// Fetch enough rows that deduping (one row per insider per ticker) still leaves 10.
+const FETCH_LIMIT = 60
+
+function isoDaysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+}
+
+// One row per insider per ticker (multiple Form 4 lots for the same buy otherwise
+// crowd the list); rows arrive sorted by score, so the first seen is the best.
+function dedupe(rows: TxRow[]): TxRow[] {
+  const seen = new Set<string>()
+  const out: TxRow[] = []
+  for (const r of rows) {
+    const key = `${r.ticker}|${(r.insider_name ?? '').toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(r)
+  }
+  return out
+}
+
+async function getTopBuys(): Promise<{ window: Window; rows: TopBuy[] }> {
+  // Same server-side client/key convention as the /api/insider/* routes.
+  const sb = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } },
+  )
+  let picked: TxRow[] = []
+  let window = WINDOWS[WINDOWS.length - 1]
+
+  for (const w of WINDOWS) {
+    const { data, error } = await sb
+      .from('insider_transactions')
+      .select(SELECT_COLS)
+      .eq('transaction_code', 'P')
+      .eq('classification', 'OPPORTUNISTIC')
+      .gte('filed_date', isoDaysAgo(w.days))
+      .not('conviction_score', 'is', null)
+      .order('conviction_score', { ascending: false })
+      .order('total_value', { ascending: false, nullsFirst: false })
+      .limit(FETCH_LIMIT)
+    if (error) {
+      console.error('[home] top buys query failed:', error.message)
+      continue
+    }
+    const rows = dedupe((data ?? []) as unknown as TxRow[])
+    picked = rows
+    window = w
+    if (rows.length >= 10) break
+  }
+
+  const top = picked.slice(0, 10)
+  if (top.length === 0) return { window, rows: [] }
+
+  const symbols = [...new Set(top.map((r) => r.ticker))]
+  const { data: tickers, error: tErr } = await sb
+    .from('tickers')
+    .select('symbol, name, market_cap')
+    .in('symbol', symbols)
+  if (tErr) console.error('[home] tickers join failed:', tErr.message)
+  const meta = new Map((tickers ?? []).map((t) => [t.symbol as string, t as { name: string | null; market_cap: number | null }]))
+
+  const rows: TopBuy[] = top.map((r) => {
+    const m = meta.get(r.ticker)
+    const result = computeConvictionScore(
+      {
+        ticker: r.ticker,
+        insider_name: r.insider_name ?? '',
+        officer_title: r.officer_title,
+        role: r.role,
+        total_value: r.total_value,
+        price_per_share: r.price_per_share,
+        transaction_date: r.transaction_date,
+        is_opportunistic: true,
+        is_local: null,
+        sector: null,
+        cluster_count: 0,
+        cluster_total_value: 0,
+        insider_median_value: null,
+        classification: r.classification,
+        shares: r.shares,
+        shares_owned_after: r.shares_owned_after,
+        market_cap: m?.market_cap ?? null,
+      },
+      [],
+      [],
+    )
+
+    if (process.env.NODE_ENV !== 'production' && result.score !== r.conviction_score) {
+      console.warn(`[home] score mismatch ${r.ticker}/${r.insider_name}: stored ${r.conviction_score}, recomputed ${result.score}`)
+    }
+
+    const role = displayRole(r)
+    return {
+      id: r.id,
+      ticker: r.ticker,
+      company: m?.name ?? null,
+      insider: formatInsiderName(r.insider_name),
+      role,
+      value: r.total_value,
+      stake: holdingsDeltaPct(r),
+      score: r.conviction_score ?? result.score,
+      filed: r.filed_date ?? r.transaction_date,
+      breakdown: toBreakdown(result.breakdown, role),
+    }
+  })
+
+  return { window, rows }
+}
+
+function toBreakdown(
+  b: ReturnType<typeof computeConvictionScore>['breakdown'],
+  role: string,
+): Breakdown[] {
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+  const out: Breakdown[] = b.map((f) => ({
+    label: f.factor === 'Role' ? `Insider role (${role})` : f.factor,
+    pts: `${fmt(f.points)}/${f.maxPoints}`,
+    pct: f.maxPoints ? Math.max(0, Math.min(100, (f.points / f.maxPoints) * 100)) : 0,
+  }))
+  // Opportunistic scores omit momentum entirely; show it as n/a so the 4 factors are visible.
+  if (!b.some((f) => f.factor === 'Price momentum')) {
+    out.push({ label: 'Price momentum (not used for Opportunistic)', pts: 'n/a', pct: 0 })
+  }
+  return out
+}
+
+// ─── Formatting ──────────────────────────────────────────────────────────────
+
+function displayRole(r: Pick<TxRow, 'role' | 'officer_title'>): string {
+  const cls = classifyRole(r)
+  if (cls === 'Insider (other)') return 'Insider'
+  if (cls === 'Co-Founder/Partner') return 'Co-founder'
+  if (cls === 'Other/EVP') {
+    const t = (r.officer_title ?? r.role ?? '').trim()
+    if (!t) return 'Officer'
+    return t.length > 24 ? `${t.slice(0, 23)}…` : t
+  }
+  return cls
+}
+
+const ENTITY_RE = /\b(LLC|L\.?P\.?|INC|CORP|CO|FUND|TRUST|CAPITAL|PARTNERS|HOLDINGS|MANAGEMENT|GROUP|LTD|ADVISORS|INVESTMENTS?)\b\.?/i
+const SUFFIX_RE = /^(JR|SR|II|III|IV|V)\.?$/i
+
+function titleCase(w: string): string {
+  if (SUFFIX_RE.test(w) && /^[IV]+$/i.test(w)) return w.toUpperCase()
+  return w
+    .toLowerCase()
+    .replace(/(^|[-'])(\p{L})/gu, (_, sep: string, c: string) => sep + c.toUpperCase())
+    .replace(/^Mc(\p{L})/u, (_, c: string) => 'Mc' + c.toUpperCase())
+}
+
+// SEC Form 4 names are "LAST FIRST MIDDLE [SUFFIX]". Turn person names into
+// "First Middle Last Suffix"; leave entity names (funds, LLCs) in order.
+function formatInsiderName(raw: string | null): string {
+  if (!raw) return 'Unknown insider'
+  const name = raw.trim().replace(/\s+/g, ' ')
+  const isUpper = name === name.toUpperCase()
+  if (ENTITY_RE.test(name) || name.includes(',')) return isUpper ? name.split(' ').map(titleCase).join(' ') : name
+  const parts = name.split(' ')
+  if (parts.length < 2 || parts.length > 5) return isUpper ? parts.map(titleCase).join(' ') : name
+  const suffix = SUFFIX_RE.test(parts[parts.length - 1]) ? parts.pop()! : null
+  const [last, ...rest] = parts
+  const ordered = [...rest.map((p) => (p.length === 1 ? `${p}.` : p)), last, ...(suffix ? [suffix] : [])]
+  return ordered.map((p) => (isUpper || p === p.toUpperCase() ? titleCase(p) : p)).join(' ')
+}
+
+function fmtMoney(v: number | null): string {
+  if (v == null) return '—'
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`
+  if (v >= 1e3) return `$${Math.round(v / 1e3)}K`
+  return `$${Math.round(v)}`
+}
+
+function fmtStake(s: TopBuy['stake']): string {
+  if (!s) return 'New'
+  const v = s.pct >= 10 ? Math.round(s.pct) : Number(s.pct.toFixed(1))
+  return `${s.capped ? '>' : '+'}${v}%`
+}
+
+function fmtDate(iso: string): string {
+  // Dates are calendar dates (YYYY-MM-DD); format in UTC so they don't shift a day.
+  return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+// ─── Small UI pieces ─────────────────────────────────────────────────────────
+
+const btnPrimary =
+  'inline-flex h-11 items-center rounded-sm bg-text px-5 text-sm font-semibold text-background no-underline transition-colors hover:bg-white hover:text-background'
+const btnSecondary =
+  'inline-flex h-11 items-center rounded-sm border border-border-strong px-5 text-sm font-medium text-text no-underline transition-colors hover:border-muted hover:text-white'
+const textLink = 'text-sm text-text-secondary underline underline-offset-2 hover:text-white'
+const h2Cls = 'm-0 font-serif text-[28px] font-normal leading-tight text-heading md:text-[34px]'
+
+function Dot({ color }: { color: string }) {
+  return <span className="inline-block h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
+}
+
+function Bar({ pct, width }: { pct: number; width?: number }) {
   return (
-    <motion.div
-      variants={fadeUp}
-      initial="hidden"
-      whileInView="visible"
-      viewport={{ once: true }}
-      transition={{ delay }}
-      className={className}
-    >
-      {children}
-    </motion.div>
+    <div className="h-1 rounded-[2px] bg-track" style={width ? { width } : undefined}>
+      <div className="h-1 rounded-[2px] bg-text-secondary" style={{ width: `${pct}%` }} />
+    </div>
   )
 }
 
-// ─── section 4 mock score card ────────────────────────────────────────────────
-
-function ScoreCard() {
-  const bars = [
-    { label: 'Role (10% Owner)',        value: 20, max: 20 },
-    { label: 'Trade Size ($5M–$25M)',   value: 15, max: 15 },
-    { label: 'Sector (Comm. Services)', value: 12, max: 12 },
-    { label: 'Cluster (3 insiders)',    value:  8, max:  8 },
-  ]
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{
-      background: '#18181b',
-      border: '1px solid rgba(255,255,255,0.1)',
-      borderRadius: '16px',
-      padding: '32px',
-      maxWidth: '380px',
-      width: '100%',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
-        <div>
-          <div style={{ fontSize: '13px', color: '#555', letterSpacing: '2px', marginBottom: '4px' }}>CONVICTION SCORE</div>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: '#e6edf3' }}>APH</div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '64px', fontWeight: 900, color: '#3fb950', lineHeight: 1, letterSpacing: '-2px' }}>92</div>
-          <div style={{
-            fontSize: '11px', fontWeight: 600, color: '#3fb950',
-            border: '1px solid rgba(63,185,80,0.2)', background: 'rgba(63,185,80,0.08)',
-            borderRadius: '999px', padding: '3px 12px', marginTop: '6px', display: 'inline-block',
-          }}>
-            HIGH CONVICTION
+    <div className="flex flex-col gap-1">
+      <span className="label-mono">{label}</span>
+      <span className="font-mono text-sm text-heading">{value}</span>
+    </div>
+  )
+}
+
+function SignalCard({ row, eyebrow }: { row: TopBuy; eyebrow: string }) {
+  return (
+    <div className="flex min-w-0 flex-[1_1_430px] flex-col gap-5 rounded-md border border-border bg-surface p-5 md:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5 sm:flex-[1_0_auto]">
+          <div className="label-mono sm:whitespace-nowrap">{eyebrow}</div>
+          <Link href={`/t/${row.ticker}`} className="font-mono text-2xl font-semibold text-heading no-underline hover:text-white">
+            {row.ticker}
+          </Link>
+          <div className="text-sm text-text-secondary sm:whitespace-nowrap">
+            {row.insider}, {row.role}
           </div>
+        </div>
+        <div className="flex min-w-0 flex-col items-end gap-2">
+          <div className="font-mono text-[52px] font-medium leading-none text-opportunistic">{row.score}</div>
+          <span className="inline-flex items-center gap-1.5 text-right text-xs text-opportunistic sm:whitespace-nowrap">
+            <Dot color="var(--color-opportunistic)" />
+            Opportunistic · {convictionLabel('OPPORTUNISTIC', row.score)}
+          </span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
-        {bars.map(({ label, value, max }) => (
-          <div key={label}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span style={{ fontSize: '12px', color: '#888' }}>{label}</span>
-              <span style={{ fontSize: '12px', color: '#aaa' }}>{value}<span style={{ color: '#555' }}>/{max}</span></span>
+      <div className="flex flex-wrap gap-7 border-y border-border py-3.5">
+        <Stat label="BOUGHT" value={fmtMoney(row.value)} />
+        <Stat label="STAKE Δ" value={fmtStake(row.stake)} />
+        <Stat label="FILED" value={fmtDate(row.filed)} />
+      </div>
+
+      <div className="flex flex-col gap-3.5">
+        <div className="flex flex-wrap justify-between gap-3">
+          <div className="label-mono">WHY IT SCORED {row.score}</div>
+          <div className="text-xs text-muted">Beats {row.score}% of opportunistic buys</div>
+        </div>
+        {row.breakdown.map((b) => (
+          <div key={b.label} className="flex flex-col gap-1.5">
+            <div className="flex justify-between gap-3 text-[13px]">
+              <span className="text-text-secondary">{b.label}</span>
+              <span className="font-mono text-muted">{b.pts}</span>
             </div>
-            <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)' }}>
-              <div style={{
-                height: '100%', borderRadius: '2px', background: 'rgba(63,185,80,0.6)',
-                width: `${(value / max) * 100}%`,
-                transition: 'width 1s ease',
-              }} />
-            </div>
+            <Bar pct={b.pct} />
           </div>
         ))}
       </div>
-
     </div>
   )
 }
 
-// ─── faq item ─────────────────────────────────────────────────────────────────
+const th = 'px-4 py-3 font-mono text-[11px] font-medium tracking-[0.08em] text-muted'
+const td = 'px-4 py-[13px]'
 
-function FAQItem({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false)
+function TopTable({ rows }: { rows: TopBuy[] }) {
   return (
-    <div style={{
-      marginBottom: '8px',
-      background: open ? 'rgba(24,24,27,0.6)' : 'rgba(24,24,27,0.3)',
-      border: `1px solid ${open ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)'}`,
-      borderRadius: '12px',
-      transition: 'background 0.2s, border-color 0.2s',
-    }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '20px 24px', textAlign: 'left', gap: '16px',
-        }}
-      >
-        <span style={{ fontSize: '16px', fontWeight: 600, color: '#e6edf3' }}>{q}</span>
-        {open
-          ? <Minus size={18} color="#9ca3af" style={{ flexShrink: 0 }} />
-          : <Plus  size={18} color="#9ca3af" style={{ flexShrink: 0 }} />}
-      </button>
-      <div style={{
-        overflow: 'hidden',
-        maxHeight: open ? '200px' : '0',
-        transition: 'max-height 0.3s ease',
-      }}>
-        <p style={{ fontSize: '15px', color: '#888', lineHeight: 1.7, margin: '0 0 20px', padding: '0 24px', paddingRight: '48px' }}>
-          {a}
-        </p>
-      </div>
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full min-w-[880px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border bg-surface text-left">
+            <th className={`${th} w-10`}>#</th>
+            <th className={th}>TICKER</th>
+            <th className={th}>INSIDER</th>
+            <th className={`${th} text-right`}>BOUGHT</th>
+            <th className={`${th} text-right`}>STAKE Δ</th>
+            <th className={th}>SCORE</th>
+            <th className={`${th} text-right`}>FILED</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.id} className="border-b border-row-border last:border-b-0 hover:bg-surface-hover">
+              <td className={`${td} font-mono text-muted`}>{i + 1}</td>
+              <td className={`${td} max-w-[300px] truncate`}>
+                <Link href={`/t/${r.ticker}`} className="font-mono font-semibold text-heading no-underline hover:text-white hover:underline">
+                  {r.ticker}
+                </Link>
+                {r.company && <span className="pl-2.5 text-muted">{r.company}</span>}
+              </td>
+              <td className={`${td} text-text-secondary`}>
+                {r.insider}
+                <span className="text-muted"> · {r.role}</span>
+              </td>
+              <td className={`${td} text-right font-mono text-text`}>{fmtMoney(r.value)}</td>
+              <td className={`${td} text-right font-mono text-text-secondary`}>{fmtStake(r.stake)}</td>
+              <td className={td}>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-[22px] font-mono font-semibold text-heading">{r.score}</span>
+                  <Bar pct={r.score} width={72} />
+                </div>
+              </td>
+              <td className={`${td} text-right font-mono text-muted`}>{fmtDate(r.filed)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
-// ─── page ─────────────────────────────────────────────────────────────────────
+// ─── Static content ──────────────────────────────────────────────────────────
 
-const FAQS = [
+const PAPERS = [
   {
-    q: 'What is the Sentra Score?',
-    a: "The conviction score is a 0-100 number that measures how strong an insider signal is. It weighs the insider's role, trade size, sector, and whether multiple insiders bought the same stock. Scores above 70 trigger a trade alert.",
+    venue: 'JOURNAL OF FINANCE · 2012',
+    title: 'Decoding Inside Information',
+    authors: 'Cohen, Malloy & Pomorski',
+    finding:
+      'Insiders who trade outside their usual calendar pattern earn significant abnormal returns. Those on predictable schedules earn essentially none.',
+    use: 'the core classification. Every insider is judged against their own history.',
   },
   {
-    q: 'Where does the data come from?',
-    a: 'All data comes from SEC EDGAR Form 4 filings — the mandatory disclosure form every corporate insider must file within 2 business days of trading their company\'s stock.',
-  },
-  {
-    q: 'How often is data updated?',
-    a: 'Signals are updated daily. New Form 4 filings are ingested every morning and scored automatically.',
-  },
-  {
-    q: 'Is this financial advice?',
-    a: 'No. Sentra is a signal intelligence tool, not a financial advisor. Always do your own research before making investment decisions.',
-  },
-  {
-    q: 'What stocks does Sentra cover?',
-    a: 'Sentra currently monitors all 3,000+ stocks with full signal coverage.',
+    venue: 'REVIEW OF ECONOMICS & STATISTICS · 2003',
+    title: 'Estimating the Returns to Insider Trading',
+    authors: 'Jeng, Metrick & Zeckhauser',
+    finding:
+      'Insider purchases earn roughly 6% abnormal return over six months. Insider sales show no significant predictive power.',
+    use: 'only purchases are scored. Sales are too noisy to mean much.',
   },
 ]
 
-type SearchResult = { symbol: string; name: string }
+// Source: output/backtest-results.json, bucket cls_dir:OPPORTUNISTIC:buy
+// (scripts/backtest-universe.ts; alpha = stock return − SPY return, 180 trading-day horizon).
+const EVIDENCE = [
+  { value: '+7.07%', label: 'Mean excess return vs. SPY, 6 months' },
+  { value: '4,699', label: 'Opportunistic buys tested' },
+  { value: '2021–2026', label: 'Test period' },
+]
 
-function HeroSearch() {
-  const router = useRouter()
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResult[]>([])
-  const [open, setOpen] = useState(false)
-  const debounceRef = useState<ReturnType<typeof setTimeout> | null>(null)
-  const wrapperRef = useState<HTMLDivElement | null>(null)
+// ─── Page ────────────────────────────────────────────────────────────────────
 
-  const navigate = (symbol: string) => {
-    setOpen(false)
-    setQuery('')
-    router.push(`/t/${symbol}`)
-  }
-
-  const handleChange = (val: string) => {
-    setQuery(val)
-    if (debounceRef[0]) clearTimeout(debounceRef[0])
-    if (val.length < 2) { setResults([]); setOpen(false); return }
-    debounceRef[1](setTimeout(async () => {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(val)}`)
-      const data = await res.json()
-      setResults(data.results ?? [])
-      setOpen((data.results ?? []).length > 0)
-    }, 200))
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return
-    const ticker = query.trim().toUpperCase()
-    if (!ticker) return
-    if (results.length === 1) { navigate(results[0].symbol); return }
-    const exact = results.find((r) => r.symbol === ticker)
-    if (exact) { navigate(exact.symbol); return }
-    navigate(ticker)
-  }
+export default async function HomePage() {
+  const { window, rows } = await getTopBuys()
+  const top = rows[0]
 
   return (
-    <div
-      ref={(el) => { wrapperRef[1](el) }}
-      style={{ position: 'relative', width: '100%', maxWidth: '680px', marginTop: '64px' }}
-      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false) }}
-    >
-      <div style={{
-        display: 'flex', alignItems: 'center',
-        background: 'rgba(255,255,255,0.1)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255,255,255,0.2)',
-        borderRadius: '999px',
-        padding: '0 28px',
-        height: '72px',
-      }}>
-        <Search size={18} color="#9ca3af" style={{ flexShrink: 0, marginRight: '12px' }} />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => handleChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onFocus={() => { if (results.length > 0) setOpen(true) }}
-          placeholder="Search a ticker or company... AAPL, Nvidia, Tesla"
-          style={{
-            flex: 1, background: 'transparent', border: 'none', outline: 'none',
-            color: '#fff', fontSize: '20px',
-          }}
-        />
-        {query && (
-          <button
-            onClick={() => navigate(query.trim().toUpperCase())}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex' }}
-          >
-            <Search size={16} color="#fff" />
-          </button>
-        )}
-      </div>
-
-      {open && results.length > 0 && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0,
-          background: '#18181b',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '16px',
-          overflow: 'hidden',
-          zIndex: 50,
-        }}>
-          {results.map((r) => (
-            <button
-              key={r.symbol}
-              tabIndex={0}
-              onMouseDown={(e) => { e.preventDefault(); navigate(r.symbol) }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                width: '100%', padding: '12px 20px', textAlign: 'left',
-                background: 'none', border: 'none', cursor: 'pointer',
-                borderBottom: '1px solid rgba(255,255,255,0.05)',
-                transition: 'background 0.1s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-            >
-              <span style={{ color: '#fff', fontWeight: 700, fontSize: '15px', minWidth: '56px' }}>{r.symbol}</span>
-              <span style={{ color: '#9ca3af', fontSize: '14px' }}>{r.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function HomePage() {
-  return (
-    <div style={{
-      background: '#000',
-      color: '#fff',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    }}>
-
-      {/* ── SECTION 1: HERO ─────────────────────────────────────────────────── */}
-      <section style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden', background: '#000' }}>
-        {/* WebGL shader background */}
-        <div className="shader-mobile-offset" style={{ position: 'absolute', inset: 0 }}>
-          <WebGLShader />
-        </div>
-
-        {/* dark overlay */}
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 10 }} />
-
-        {/* content */}
-        <div className="hero-content" style={{
-          position: 'relative', zIndex: 20,
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          textAlign: 'center', paddingTop: '120px', paddingLeft: '24px', paddingRight: '24px',
-        }}>
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.1 }}
-            style={{
-              fontSize: 'clamp(40px, 7vw, 96px)', fontWeight: 900,
-              lineHeight: 1.0, letterSpacing: '-3px', whiteSpace: 'nowrap',
-              margin: '0 0 20px', color: '#fff',
-            }}
-          >
-            Sentra Signals
-          </motion.h1>
-
-          <motion.p
-            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.15 }}
-            style={{ fontSize: 'clamp(16px, 2vw, 20px)', color: '#aaa', fontWeight: 400, lineHeight: 1.4, maxWidth: '672px', margin: '0 0 40px' }}
-          >
-            We scan 3,000+ stocks for event mispricings so you don&apos;t have to.
-          </motion.p>
-
-          <motion.div
-            initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.3 }}
-            style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}
-          >
-            <Link href="/explore" style={{
-              background: '#fff', color: '#000', padding: '16px 40px',
-              borderRadius: '999px', textDecoration: 'none', fontWeight: 700, fontSize: '16px',
-            }}>
-              Explore Tickers
-            </Link>
-            <Link href="/top" style={{
-              background: 'transparent', color: '#fff',
-              border: '1px solid rgba(255,255,255,0.3)',
-              padding: '16px 40px', borderRadius: '999px',
-              textDecoration: 'none', fontWeight: 600, fontSize: '16px',
-            }}>
-              View Top Signals
-            </Link>
-          </motion.div>
-
-          <HeroSearch />
-        </div>
-
-        {/* scroll indicator */}
-        <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 1.2 }}
-          style={{ position: 'absolute', bottom: '24px', left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}
-        >
-          <motion.div
-            animate={{ y: [0, 6, 0] }}
-            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-          >
-            <ChevronDown size={22} color="#555" />
-          </motion.div>
-        </motion.div>
-      </section>
-
-      {/* ── SECTION 2: STATS BAR ────────────────────────────────────────────── */}
-      <section style={{ background: '#09090b', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <div style={{
-          maxWidth: '1152px', margin: '0 auto', padding: '56px 24px',
-          display: 'flex', justifyContent: 'center', gap: '0',
-        }}>
-          {[
-            { value: '3,000+', label: 'Stocks Monitored' },
-            { value: 'Daily', label: 'Updated' },
-          ].map(({ value, label }, i, arr) => (
-            <FadeUp key={label} delay={i * 0.1} className="">
-              <div style={{
-                textAlign: 'center', padding: '0 64px',
-                borderRight: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-              }}>
-                <div style={{ fontSize: '52px', fontWeight: 900, letterSpacing: '-2px', marginBottom: '6px', color: '#fefce8' }}>
-                  {value}
-                </div>
-                <div style={{ fontSize: '13px', color: '#555', letterSpacing: '0.5px' }}>{label}</div>
-              </div>
-            </FadeUp>
-          ))}
-        </div>
-      </section>
-
-      {/* ── SECTION 3: HOW IT WORKS ─────────────────────────────────────────── */}
-      <section style={{ background: '#000', padding: '96px 24px', position: 'relative', overflow: 'hidden' }}>
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.02) 0%, transparent 70%)',
-        }} />
-        <div style={{ maxWidth: '1152px', margin: '0 auto', position: 'relative' }}>
-          <FadeUp>
-            <div style={{ textAlign: 'center', marginBottom: '64px' }}>
-              <p style={{ fontSize: '11px', letterSpacing: '2.5px', color: '#555', margin: '0 0 14px' }}>HOW IT WORKS</p>
-              <h2 style={{ fontSize: 'clamp(28px, 4vw, 48px)', fontWeight: 900, letterSpacing: '-1px', margin: '0 0 14px' }}>
-                How Sentra Works
-              </h2>
-              <p style={{ fontSize: '17px', color: '#666', margin: 0 }}>Three signals. One score. Instant clarity.</p>
+    <div className="bg-background pt-16 text-text">
+      <main className="mx-auto max-w-[1400px] px-4 md:px-8">
+        {/* HERO */}
+        <section className="flex flex-wrap items-center gap-10 pb-14 pt-12 md:gap-16 md:pt-20">
+          <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-6">
+            <div className="font-mono text-[11px] tracking-[0.08em] text-muted md:text-xs">
+              SEC FORM 4 · RUSSELL 3000 · UPDATED EACH TRADING DAY
             </div>
-          </FadeUp>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-            {[
-              {
-                icon: <FileText size={22} color="#fff" />,
-                title: 'SEC EDGAR Ingestion',
-                body: 'Every Form 4 insider filing across 3,000+ stocks is ingested daily, parsed, and stored with full metadata.',
-                delay: 0,
-              },
-              {
-                icon: <Newspaper size={22} color="#fff" />,
-                title: 'Insider Classification',
-                body: 'Each insider is classified as ROUTINE or OPPORTUNISTIC using a 3-year calendar pattern analysis based on Harvard and MIT research.',
-                delay: 0.1,
-              },
-              {
-                icon: <TrendingUp size={22} color="#fff" />,
-                title: 'Conviction Scoring',
-                body: 'Every opportunistic signal is scored 0-100 based on role seniority, trade size, sector alpha history, and insider clustering. Only scores above 70 trigger alerts.',
-                delay: 0.2,
-              },
-            ].map(({ icon, title, body, delay }) => (
-              <FadeUp key={title} delay={delay}>
-                <div
-                  style={{
-                    background: 'rgba(24,24,27,0.5)', border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '16px', padding: '32px', height: '100%',
-                    transition: 'border-color 0.3s, background 0.3s',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'
-                    e.currentTarget.style.background = 'rgba(24,24,27,1)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'
-                    e.currentTarget.style.background = 'rgba(24,24,27,0.5)'
-                  }}
-                >
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    padding: '12px', borderRadius: '12px',
-                    background: 'rgba(255,255,255,0.05)',
-                    marginBottom: '20px',
-                  }}>
-                    {icon}
-                  </div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 12px', color: '#fff' }}>{title}</h3>
-                  <p style={{ fontSize: '14px', color: '#666', lineHeight: 1.7, margin: 0 }}>{body}</p>
-                </div>
-              </FadeUp>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── SECTION 4: SCORE EXPLAINER ──────────────────────────────────────── */}
-      <section style={{ background: '#09090b', borderTop: '1px solid rgba(255,255,255,0.05)', padding: '96px 24px' }}>
-        <div style={{
-          maxWidth: '1152px', margin: '0 auto',
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '64px', alignItems: 'center',
-        }}>
-          {/* left */}
-          <FadeUp>
-            <div>
-              <p style={{ fontSize: '11px', letterSpacing: '2.5px', color: '#555', margin: '0 0 14px' }}>THE CONVICTION SCORE</p>
-              <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 44px)', fontWeight: 900, letterSpacing: '-1px', margin: '0 0 20px', lineHeight: 1.1 }}>
-                One number that tells you whether to act
-              </h2>
-              <p style={{ fontSize: '15px', color: '#666', lineHeight: 1.8, margin: '0 0 32px' }}>
-                The conviction score weighs role seniority, trade size, sector performance, and insider
-                clustering into a single number. Scores above 70 are actionable. Scores above 85 are high conviction.
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '36px' }}>
-                {[
-                  { label: 'Role seniority',     pts: 'up to 20 pts' },
-                  { label: 'Trade size',          pts: 'up to 15 pts' },
-                  { label: 'Sector performance',  pts: 'up to 12 pts' },
-                  { label: 'Insider clustering',  pts: 'up to 12 pts' },
-                ].map(({ label, pts }, i, arr) => (
-                  <div key={label} style={{
-                    display: 'flex', justifyContent: 'space-between',
-                    padding: '12px 0',
-                    borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                  }}>
-                    <span style={{ fontSize: '14px', color: '#aaa' }}>{label}</span>
-                    <span style={{ fontSize: '13px', color: '#555' }}>{pts}</span>
-                  </div>
-                ))}
-              </div>
-
-              <Link href="/top" style={{
-                display: 'inline-block',
-                background: '#fff', color: '#000',
-                padding: '12px 24px', borderRadius: '999px',
-                textDecoration: 'none', fontWeight: 700, fontSize: '14px',
-              }}>
-                See Live Scores
+            <h1 className="m-0 font-serif text-[42px] font-normal leading-[1.04] tracking-[-0.015em] text-heading md:text-[62px]">
+              The insider buys
+              <br />
+              that actually matter.
+            </h1>
+            <p className="m-0 max-w-[560px] text-base leading-relaxed text-text-secondary md:text-[17px]">
+              Most insider trades are routine: scheduled sales, grants, habit. Sentra reads every filing across the Russell 3000, filters out the
+              routine, and ranks the buys where an insider broke their own pattern.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <a href="#top10" className={btnPrimary}>
+                {window.cta}
+              </a>
+              <Link href="/about" className={btnSecondary}>
+                How it works
               </Link>
             </div>
-          </FadeUp>
+          </div>
 
-          {/* right */}
-          <FadeUp delay={0.15}>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <ScoreCard />
-            </div>
-          </FadeUp>
-        </div>
-      </section>
+          {top && <SignalCard row={top} eyebrow={window.eyebrow} />}
+        </section>
 
-      {/* ── SECTION 5: FAQ ──────────────────────────────────────────────────── */}
-      <section style={{ background: '#000', borderTop: '1px solid rgba(255,255,255,0.05)', padding: '96px 24px' }}>
-        <div style={{ maxWidth: '720px', margin: '0 auto' }}>
-          <FadeUp>
-            <div style={{ textAlign: 'center', marginBottom: '56px' }}>
-              <p style={{ fontSize: '11px', letterSpacing: '2.5px', color: '#555', margin: '0 0 14px' }}>FAQ</p>
-              <h2 style={{ fontSize: 'clamp(26px, 4vw, 44px)', fontWeight: 900, letterSpacing: '-1px', margin: 0 }}>
-                Frequently Asked Questions
-              </h2>
+        {/* TOP 10 */}
+        <section id="top10" className="flex scroll-mt-20 flex-col gap-5 border-t border-border pb-6 pt-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="flex flex-col gap-2">
+              <h2 className={h2Cls}>{window.heading}</h2>
+              <div className="text-sm text-muted">Opportunistic purchases only, ranked by conviction score.</div>
             </div>
-          </FadeUp>
-          <FadeUp delay={0.1}>
-            <div>
-              {FAQS.map((item) => (
-                <FAQItem key={item.q} q={item.q} a={item.a} />
-              ))}
-            </div>
-          </FadeUp>
-        </div>
-      </section>
-
-      {/* ── SECTION 6: CTA FOOTER ───────────────────────────────────────────── */}
-      <section style={{ background: '#09090b', borderTop: '1px solid rgba(255,255,255,0.05)', padding: '96px 24px' }}>
-        <FadeUp>
-          <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 4vw, 52px)', fontWeight: 900, letterSpacing: '-1.5px', margin: '0 0 16px', lineHeight: 1.1 }}>
-              See Today's Insider Signals
-            </h2>
-            <p style={{ fontSize: '17px', color: '#666', margin: '0 0 40px', lineHeight: 1.7 }}>
-              3,000+ stocks monitored daily. Only the strongest signals surface.
-            </p>
-            <Link
-              href="/alerts"
-              style={{
-                display: 'inline-block',
-                background: '#fff', color: '#000',
-                padding: '16px 40px', borderRadius: '999px',
-                textDecoration: 'none', fontWeight: 600, fontSize: '16px',
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#f3f4f6')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
-            >
-              View Alerts
+            <Link href="/events?classification=OPPORTUNISTIC" className={textLink}>
+              Open full screener
             </Link>
           </div>
-        </FadeUp>
-      </section>
+          {rows.length > 0 ? (
+            <TopTable rows={rows} />
+          ) : (
+            <div className="rounded-md border border-border px-6 py-10 text-center text-sm text-muted">
+              No opportunistic buys filed in the last 90 days. Check back after the next trading day.
+            </div>
+          )}
+        </section>
 
+        {/* HOW TO READ */}
+        <section className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-12 border-b border-border py-12">
+          <div className="flex flex-col gap-3">
+            <div className="label-mono">STEP 1 · CLASSIFICATION</div>
+            <div className="font-serif text-[26px] leading-snug text-heading">Is this insider trading out of habit?</div>
+            <p className="m-0 text-[15px] leading-relaxed text-text-secondary">
+              Insiders who trade in the same month every year are routine. When one breaks that pattern, the trade is opportunistic. Based on
+              Cohen, Malloy &amp; Pomorski (2012).
+            </p>
+            <div className="flex flex-wrap gap-[18px] pt-1 text-[13px]">
+              <span className="inline-flex items-center gap-1.5 text-opportunistic"><Dot color="var(--color-opportunistic)" />Opportunistic</span>
+              <span className="inline-flex items-center gap-1.5 text-unclassifiable"><Dot color="var(--color-unclassifiable)" />Unclassifiable</span>
+              <span className="inline-flex items-center gap-1.5 text-routine"><Dot color="var(--color-routine)" />Routine</span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3">
+            <div className="label-mono">STEP 2 · SCORE</div>
+            <div className="font-serif text-[26px] leading-snug text-heading">How much conviction is behind the buy?</div>
+            <p className="m-0 text-[15px] leading-relaxed text-text-secondary">
+              Every open-market purchase gets a 0 to 100 percentile rank within its class, built from four walk-forward validated factors: stake
+              increase, price momentum, insider role, and company size. Sales aren&apos;t scored.
+            </p>
+            <div className="pt-1">
+              <Link href="/about" className={textLink}>
+                Read the methodology
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* ACADEMIC FOUNDATION */}
+        <section className="flex flex-col gap-6 border-b border-border py-14">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="label-mono">ACADEMIC FOUNDATION</div>
+              <h2 className={h2Cls}>Built on published research</h2>
+            </div>
+            <Link href="/about" className={textLink}>
+              Full methodology
+            </Link>
+          </div>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(340px,100%),1fr))] gap-4">
+            {PAPERS.map((p) => (
+              <article key={p.title} className="flex flex-col gap-3 rounded-md border border-border p-6">
+                <div className="label-mono">{p.venue}</div>
+                <div className="font-serif text-[22px] leading-snug text-heading">{p.title}</div>
+                <div className="text-[13px] text-muted">{p.authors}</div>
+                <p className="m-0 text-[15px] leading-relaxed text-text-secondary">{p.finding}</p>
+                <p className="m-0 border-t border-border pt-3 text-sm leading-normal text-muted">
+                  <span className="text-text-secondary">How Sentra uses it:</span> {p.use}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {/* EVIDENCE */}
+        <section className="flex flex-col gap-6 border-b border-border py-14">
+          <div className="flex flex-col gap-2">
+            <div className="label-mono">EVIDENCE</div>
+            <h2 className={h2Cls}>Does it work?</h2>
+            <p className="m-0 max-w-[640px] text-sm leading-relaxed text-muted">
+              Backtest of opportunistic buys against SPY. Shown with its limits.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 divide-y divide-border overflow-hidden rounded-md border border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            {EVIDENCE.map((e) => (
+              <div key={e.label} className="flex flex-col gap-1.5 px-5 py-5 md:px-6 md:py-[22px]">
+                <div className="font-mono text-[22px] font-medium text-heading md:text-[28px]">{e.value}</div>
+                <div className="text-[13px] text-muted">{e.label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="m-0 max-w-[760px] text-sm leading-relaxed text-muted">
+            Caveats: a minority of large winners drive the average; the median trade trailed SPY by 2.58%. No trading costs or slippage
+            modeled.{' '}
+            <Link href="/about" className={textLink}>
+              Full backtest
+            </Link>
+          </p>
+        </section>
+
+        {/* BUILT BY */}
+        <section className="flex flex-wrap items-center justify-between gap-8 pb-16 pt-12">
+          <div className="flex max-w-[640px] flex-col gap-2">
+            <div className="label-mono">BUILT BY</div>
+            <div className="font-serif text-[28px] text-heading">Dean Gans</div>
+            <p className="m-0 text-[15px] leading-relaxed text-text-secondary">
+              Finance and Applied Math student. I built Sentra solo to test whether academic insider research holds up on live filings. Happy to
+              talk about how it works.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2.5">
+            <a
+              href="https://www.linkedin.com/in/deangans"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-11 items-center rounded-sm border border-border-strong px-[18px] text-sm text-text no-underline hover:border-muted hover:text-white"
+            >
+              LinkedIn
+            </a>
+            <a
+              href="mailto:deangans815@gmail.com"
+              className="inline-flex h-11 items-center rounded-sm bg-text px-[18px] text-sm font-semibold text-background no-underline hover:bg-white hover:text-background"
+            >
+              Email me
+            </a>
+          </div>
+        </section>
+      </main>
     </div>
   )
 }

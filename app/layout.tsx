@@ -1,6 +1,29 @@
 import "./globals.css";
+import { Newsreader, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  // Variable font: weights 400/500 used, plus the optical-size axis.
+  axes: ["opsz"],
+  variable: "--font-newsreader",
+  display: "swap",
+});
+
+const plexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-sans",
+  display: "swap",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-mono",
+  display: "swap",
+});
 
 export const metadata = {
   title: "Sentra Signals",
@@ -30,13 +53,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${newsreader.variable} ${plexSans.variable} ${plexMono.variable}`}
+    >
       <body
+        className="font-sans"
         style={{
           margin: 0,
-          backgroundColor: "black",
-          color: "white",
-          fontFamily: "Arial, sans-serif",
+          backgroundColor: "#0B0E11",
+          color: "#E8EAED",
         }}
       >
         <Navbar />
