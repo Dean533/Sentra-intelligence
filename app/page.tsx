@@ -431,6 +431,20 @@ export default async function HomePage() {
           </div>
         </section>
 
+        {/* WATCHLIST CTA */}
+        <section className="flex flex-wrap items-center justify-between gap-6 border-b border-border py-10">
+          <div className="flex max-w-[640px] flex-col gap-2">
+            <div className="label-mono">WATCHLIST</div>
+            <h2 className="m-0 font-serif text-[24px] font-normal leading-tight text-heading md:text-[26px]">Track your own tickers</h2>
+            <p className="m-0 text-[15px] leading-relaxed text-text-secondary">
+              Save the stocks you follow and see every insider trade and headline for them in one place.
+            </p>
+          </div>
+          <Link href="/watchlist" className={btnSecondary}>
+            Open watchlist
+          </Link>
+        </section>
+
         {/* EVIDENCE */}
         <section className="flex flex-col gap-6 border-b border-border py-14">
           <div className="flex flex-col gap-2">

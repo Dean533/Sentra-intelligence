@@ -25,10 +25,10 @@
 //   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
+import { displayRole, formatInsiderName } from '@/lib/insider/format'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,7 +52,9 @@ type InsiderRow = {
   insider_name: string | null; role: string | null; officer_title: string | null
   transaction_date: string; transaction_code: string | null
   shares: number | null; price_per_share: number | null; total_value: number | null
-  classification: string | null; sentra_score: number | null
+  classification: string | null
+  // /api/insider/fetch returns conviction_score; sentra_score kept as a fallback.
+  conviction_score?: number | null; sentra_score?: number | null
 }
 
 type PortfolioTrade = {
@@ -97,7 +99,7 @@ function fmtCurrency(val: number | null) {
 function fmtDollar(n: number | null, sign = false) {
   if (n == null) return '—'
   const abs = Math.abs(n)
-  const pre = n < 0 ? '-' : sign ? '+' : ''
+  const pre = n < 0 ? '−' : sign ? '+' : ''
   if (abs >= 1e6) return `${pre}$${(abs / 1e6).toFixed(2)}M`
   if (abs >= 1e3) return `${pre}$${(abs / 1e3).toFixed(1)}K`
   return `${pre}$${abs.toFixed(2)}`
@@ -105,7 +107,7 @@ function fmtDollar(n: number | null, sign = false) {
 
 function fmtPct(n: number | null, sign = false) {
   if (n == null) return '—'
-  return `${n < 0 ? '' : sign ? '+' : ''}${n.toFixed(2)}%`
+  return `${n < 0 ? '−' : sign ? '+' : ''}${Math.abs(n).toFixed(2)}%`
 }
 
 function fmtDate(iso: string) {
@@ -119,29 +121,17 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d ago`
 }
 
-function clr(n: number | null, neutral = '#7b8498') {
-  if (n == null) return neutral
-  return n >= 0 ? '#3fb950' : '#f85149'
+// Some feed titles arrive HTML-escaped ("S&amp;P 500").
+function decodeEntities(s: string) {
+  return s
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
 }
 
-function scoreColor(s: number | null) {
-  if (s == null) return '#4a5568'
-  if (s >= 70) return '#3fb950'
-  if (s >= 50) return '#d29922'
-  return '#7b8498'
-}
-
-function txColor(code: string | null) {
-  if (!code) return '#7b8498'
-  if (code.toUpperCase() === 'P') return '#3fb950'
-  if (code.toUpperCase() === 'S') return '#f85149'
-  return '#d29922'
-}
-function txLabel(code: string | null) {
-  if (!code) return '—'
-  if (code.toUpperCase() === 'P') return 'Purchase'
-  if (code.toUpperCase() === 'S') return 'Sale'
-  return code
+// Up / down text color (same convention as the ticker page).
+function tone(n: number | null | undefined) {
+  if (n == null) return 'text-muted'
+  return n >= 0 ? 'text-opportunistic' : 'text-routine'
 }
 
 function computePosition(ticker: string, trades: PortfolioTrade[], row: TickerRow): Position | null {
@@ -171,38 +161,123 @@ function calcTrade(tr: PortfolioTrade, row: TickerRow | undefined) {
   return { cost, mkt, gain, gainP, dayChg }
 }
 
-const CLS_BADGE: Record<string, { color: string; bg: string; border: string }> = {
-  OPPORTUNISTIC:  { color: '#3fb950', bg: 'rgba(63,185,80,0.08)',   border: 'rgba(63,185,80,0.2)'  },
-  ROUTINE:        { color: '#d29922', bg: 'rgba(210,153,34,0.08)',  border: 'rgba(210,153,34,0.2)' },
-  UNCLASSIFIABLE: { color: '#7b8498', bg: 'rgba(123,132,152,0.08)', border: 'rgba(123,132,152,0.2)' },
+const CLS: Record<string, { label: string; color: string }> = {
+  OPPORTUNISTIC:  { label: 'Opportunistic',  color: 'var(--color-opportunistic)' },
+  UNCLASSIFIABLE: { label: 'Unclassifiable', color: 'var(--color-unclassifiable)' },
+  ROUTINE:        { label: 'Routine',        color: 'var(--color-routine)' },
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// Same buy/sale marker colors as the ticker page chart.
+const BUY_COLOR  = '#58A6FF'
+const SALE_COLOR = '#F0883E'
 
-const TH: React.CSSProperties = {
-  padding: '9px 10px', textAlign: 'left', whiteSpace: 'nowrap',
-  fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px', color: '#4a5568',
-  textTransform: 'uppercase', borderBottom: '1px solid #131820', background: '#060910',
-  position: 'sticky', top: 0,
-}
-const TH_R: React.CSSProperties = { ...TH, textAlign: 'right' }
-const TD: React.CSSProperties  = { padding: '10px 10px', borderBottom: '1px solid #0c1016', verticalAlign: 'middle', whiteSpace: 'nowrap' }
-const TD_R: React.CSSProperties = { ...TD, textAlign: 'right' }
+// ─── Styles (match the homepage top-10 table) ─────────────────────────────────
 
-const inputCss: React.CSSProperties = {
-  background: '#0a0d12', border: '1px solid #1e2530', borderRadius: '7px',
-  padding: '8px 11px', color: '#e6edf3', fontSize: '13px', outline: 'none',
-  fontFamily: 'inherit', boxSizing: 'border-box',
+const thBase = 'whitespace-nowrap px-4 py-3 font-mono text-[11px] font-medium tracking-[0.08em] text-muted'
+const th    = `${thBase} text-left`
+const thR   = `${thBase} text-right`
+const td    = 'whitespace-nowrap px-4 py-[13px]'
+const tdR   = `${td} text-right font-mono`
+const trCls = 'border-b border-row-border last:border-b-0 hover:bg-surface-hover'
+const tableWrap = 'overflow-x-auto rounded-md border border-border'
+const theadRow  = 'border-b border-border bg-surface'
+
+const inputCls =
+  'h-10 rounded-sm border border-border-strong bg-surface px-3 font-sans text-sm text-text outline-none placeholder:text-muted focus:border-muted disabled:opacity-50'
+const btnPrimary =
+  'inline-flex h-10 cursor-pointer items-center justify-center rounded-sm border-0 bg-text px-4 font-sans text-sm font-semibold text-background transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40'
+const btnSecondary =
+  'inline-flex h-10 cursor-pointer items-center justify-center rounded-sm border border-border-strong bg-transparent px-4 font-sans text-sm text-text-secondary transition-colors hover:border-muted hover:text-white disabled:cursor-not-allowed disabled:opacity-40'
+const h2Cls = 'm-0 font-serif text-[24px] font-normal leading-tight text-heading md:text-[28px]'
+
+function Dot({ color }: { color: string }) {
+  return <span className="inline-block h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
 }
-const btnPri: React.CSSProperties = {
-  background: '#1a2d4a', border: '1px solid #2a4a70', borderRadius: '7px',
-  padding: '8px 20px', color: '#58a6ff', fontSize: '13px', fontWeight: 600,
-  cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+
+function Segmented<T extends string>({ value, options, onChange, label }: {
+  value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string
+}) {
+  return (
+    <div className="flex w-fit overflow-hidden rounded-sm border border-border-strong" role="group" aria-label={label}>
+      {options.map((o, i) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={`h-[34px] cursor-pointer border-0 px-3.5 font-sans text-[13px] ${i ? 'border-l border-solid border-border-strong' : ''} ${
+            value === o.value ? 'bg-track text-heading' : 'bg-transparent text-muted hover:text-text-secondary'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
 }
-const btnSec: React.CSSProperties = {
-  background: 'transparent', border: '1px solid #1e2530', borderRadius: '7px',
-  padding: '7px 14px', color: '#7b8498', fontSize: '13px',
-  cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-md border border-border px-6 py-10 text-center text-sm text-muted">{children}</div>
+}
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background pt-16 text-text">
+      <main className="mx-auto max-w-[1400px] px-4 pb-24 md:px-8">{children}</main>
+    </div>
+  )
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" className="shrink-0" aria-hidden="true">
+      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+      <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+      <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+    </svg>
+  )
+}
+
+// ─── Signed-out prompt ────────────────────────────────────────────────────────
+
+function SignInPrompt() {
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+
+  // Same OAuth call as /login; /auth/callback returns the user to /watchlist.
+  async function handleGoogle() {
+    setLoading(true); setError(null)
+    const { error } = await getSupabase().auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + '/auth/callback' },
+    })
+    if (error) { setError(error.message); setLoading(false) }
+  }
+
+  return (
+    <PageShell>
+      <section className="flex flex-col gap-3 pb-8 pt-10 md:pt-14">
+        <div className="label-mono">WATCHLIST</div>
+        <h1 className="m-0 font-serif text-[36px] font-normal leading-[1.08] tracking-[-0.01em] text-heading md:text-[46px]">Your watchlist</h1>
+      </section>
+      <div className="flex max-w-[560px] flex-col gap-5 rounded-md border border-border bg-surface p-6 md:p-8">
+        <p className="m-0 text-base leading-relaxed text-text-secondary">
+          Sign in with Google to track tickers and see their insider activity.
+        </p>
+        {error && <div className="rounded-sm border border-routine/30 bg-routine/10 px-3.5 py-2.5 text-[13px] text-routine">{error}</div>}
+        <div className="flex flex-wrap items-center gap-4">
+          <button type="button" onClick={handleGoogle} disabled={loading} className={`${btnPrimary} h-11 gap-2.5 px-5`}>
+            <GoogleIcon />
+            {loading ? 'Redirecting…' : 'Sign in with Google'}
+          </button>
+          <Link href="/login" className="text-sm text-text-secondary underline underline-offset-2 hover:text-white">
+            Use email instead
+          </Link>
+        </div>
+      </div>
+    </PageShell>
+  )
 }
 
 // ─── Creation screen ──────────────────────────────────────────────────────────
@@ -212,28 +287,29 @@ function CreateScreen({ onCreate }: { onCreate: (p: Portfolio) => void }) {
   const [desc, setDesc] = useState('')
   function go() { if (name.trim()) onCreate({ name: name.trim(), description: desc.trim(), tickers: [] }) }
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0d12', color: '#e6edf3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: '100%', maxWidth: '400px', padding: '0 24px' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '6px', letterSpacing: '-0.4px' }}>Create Your Portfolio</h1>
-        <p style={{ fontSize: '13px', color: '#4a5568', marginBottom: '28px' }}>Track insider signals for the stocks you own.</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go() }} placeholder="Portfolio name" autoFocus style={{ ...inputCss, width: '100%' }} />
-          <input value={desc} onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go() }} placeholder="Description (optional)" style={{ ...inputCss, width: '100%' }} />
-        </div>
-        <button onClick={go} disabled={!name.trim()} style={{ ...btnPri, width: '100%', opacity: name.trim() ? 1 : 0.4 }}>
-          Create Portfolio
+    <PageShell>
+      <section className="flex flex-col gap-3 pb-8 pt-10 md:pt-14">
+        <div className="label-mono">WATCHLIST</div>
+        <h1 className="m-0 font-serif text-[36px] font-normal leading-[1.08] tracking-[-0.01em] text-heading md:text-[46px]">Create your watchlist</h1>
+        <p className="m-0 max-w-[560px] text-base leading-relaxed text-text-secondary">Track insider signals for the stocks you own or follow.</p>
+      </section>
+      <div className="flex max-w-[440px] flex-col gap-3">
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go() }} placeholder="Watchlist name" aria-label="Watchlist name" autoFocus className={`${inputCls} w-full`} />
+        <input value={desc} onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go() }} placeholder="Description (optional)" aria-label="Description" className={`${inputCls} w-full`} />
+        <button onClick={go} disabled={!name.trim()} className={`${btnPrimary} mt-2 w-full`}>
+          Create watchlist
         </button>
       </div>
-    </div>
+    </PageShell>
   )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PortfolioPage() {
-  const router = useRouter()
   const [user,      setUser]      = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
+  const [signedOut, setSignedOut] = useState(false)
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [dbLoading, setDbLoading] = useState(true)
 
@@ -262,12 +338,13 @@ export default function PortfolioPage() {
   const [fetchingPrice, setFetchingPrice] = useState(false)
 
   // ── Auth ──────────────────────────────────────────────────────────────────────
+  // Signed out: show the sign-in prompt in place (previously redirected to /login).
   useEffect(() => {
     getSupabase().auth.getUser().then(({ data: { user } }) => {
-      if (!user) { router.replace('/login'); return }
+      if (!user) { setSignedOut(true); return }
       setUser(user); setAuthReady(true)
     })
-  }, [router])
+  }, [])
 
   // ── Load portfolio ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -372,7 +449,8 @@ export default function PortfolioPage() {
   }
 
   // ── Guards ────────────────────────────────────────────────────────────────────
-  if (!authReady || dbLoading) return <div style={{ minHeight: '100vh', background: '#0a0d12', paddingTop: '60px' }} />
+  if (signedOut)               return <SignInPrompt />
+  if (!authReady || dbLoading) return <div className="min-h-screen bg-background pt-16" />
   if (!portfolio)              return <CreateScreen onCreate={save} />
 
   // ── Derived ───────────────────────────────────────────────────────────────────
@@ -395,465 +473,414 @@ export default function PortfolioPage() {
   const tSumGainPc = tSumCost > 0 ? (tSumGain / tSumCost) * 100 : 0
   const tSumDayChg = buyTrades.reduce((s, t) => s + (calcTrade(t, tickerMap.get(t.ticker)).dayChg ?? 0), 0)
 
-  // ── Row styling ───────────────────────────────────────────────────────────────
-  function rowBg(i: number, hover?: boolean) {
-    return hover ? 'rgba(88,166,255,0.035)' : i % 2 === 0 ? '#080b10' : '#06090d'
-  }
+  const formLabel = 'label-mono mb-1.5 block'
+  const canSaveTrade = !!addForm && !!addForm.ticker.trim() && !!addForm.shares && !!addForm.cost
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0d12', color: '#e6edf3', fontFamily: 'inherit' }}>
-      <div className="rsp-pad" style={{ maxWidth: '1400px', margin: '0 auto', padding: '80px 28px 100px' }}>
-
-        {/* ── Header ── */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          {editing ? (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
-              <input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }} autoFocus style={{ ...inputCss, width: '220px', fontWeight: 700 }} />
-              <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }} placeholder="Description" style={{ ...inputCss, width: '220px' }} />
-              <button onClick={saveEdit} style={btnPri}>Save</button>
-              <button onClick={() => setEditing(false)} style={btnSec}>Cancel</button>
-            </div>
-          ) : (
-            <div>
-              <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0, letterSpacing: '-0.3px' }}>{portfolio.name}</h1>
-              {portfolio.description && <p style={{ fontSize: '12px', color: '#4a5568', margin: '2px 0 0' }}>{portfolio.description}</p>}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            {/* View toggle */}
-            <div className="portfolio-view-toggle" style={{ display: 'flex', background: '#060910', border: '1px solid #1a1f2a', borderRadius: '8px', padding: '3px', gap: '2px' }}>
-              {(['tickers', 'trades'] as const).map((v) => (
-                <button key={v} onClick={() => setView(v)} style={{
-                  padding: '5px 16px', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit',
-                  fontWeight: view === v ? 600 : 400,
-                  color: view === v ? '#58a6ff' : '#4a5568',
-                  background: view === v ? '#1a2d4a' : 'transparent',
-                  border: `1px solid ${view === v ? '#2a4a70' : 'transparent'}`,
-                  transition: 'all 0.12s',
-                }}>
-                  {v === 'tickers' ? 'Tickers' : 'Trades'}
-                </button>
-              ))}
-            </div>
-            {!editing && <button onClick={startEdit} style={btnSec}>Edit</button>}
+    <PageShell>
+      {/* ── Header ── */}
+      <section className="flex flex-wrap items-end justify-between gap-6 pb-6 pt-10 md:pt-14">
+        {editing ? (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }} autoFocus aria-label="Watchlist name" className={`${inputCls} w-full font-medium sm:w-[240px]`} />
+            <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit() }} placeholder="Description" aria-label="Description" className={`${inputCls} w-full sm:w-[280px]`} />
+            <button onClick={saveEdit} className={btnPrimary}>Save</button>
+            <button onClick={() => setEditing(false)} className={btnSecondary}>Cancel</button>
           </div>
-        </div>
-
-        {/* ── Add ticker ── */}
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <input ref={tickerRef} value={tickerInput}
-              onChange={(e) => { setTickerInput(e.target.value); setValidateError(null) }}
-              onKeyDown={(e) => { if (e.key === 'Enter') addTicker() }}
-              placeholder="Add ticker… AAPL, TSLA, NVDA"
-              style={{ ...inputCss, width: '240px' }} disabled={validating} />
-            <button onClick={addTicker} disabled={validating || !tickerInput.trim()}
-              style={{ ...btnSec, opacity: validating || !tickerInput.trim() ? 0.4 : 1 }}>
-              {validating ? 'Checking…' : 'Add'}
-            </button>
+        ) : (
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="label-mono">WATCHLIST</div>
+            <h1 className="m-0 break-words font-serif text-[36px] font-normal leading-[1.08] tracking-[-0.01em] text-heading md:text-[46px]">{portfolio.name}</h1>
+            {portfolio.description && <p className="m-0 max-w-[640px] text-base leading-relaxed text-text-secondary">{portfolio.description}</p>}
           </div>
-          {validateError && <p style={{ fontSize: '12px', color: '#f85149', margin: '4px 0 0' }}>{validateError}</p>}
-        </div>
+        )}
 
-        {/* Chips */}
+        <div className="flex shrink-0 items-center gap-2">
+          <Segmented
+            label="View"
+            value={view}
+            onChange={setView}
+            options={[{ value: 'tickers', label: 'Tickers' }, { value: 'trades', label: 'Trades' }]}
+          />
+          {!editing && <button onClick={startEdit} className={`${btnSecondary} h-[34px] px-3.5 text-[13px]`}>Edit</button>}
+        </div>
+      </section>
+
+      {/* ── Add ticker + chips ── */}
+      <section className="flex flex-col gap-3 border-t border-border pb-6 pt-6">
+        <div className="flex items-center gap-2">
+          <input ref={tickerRef} value={tickerInput}
+            onChange={(e) => { setTickerInput(e.target.value); setValidateError(null) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') addTicker() }}
+            placeholder="Add ticker… AAPL, TSLA, NVDA"
+            aria-label="Add ticker"
+            className={`${inputCls} min-w-0 flex-1 font-mono text-[13px] sm:w-[260px] sm:flex-none`} disabled={validating} />
+          <button onClick={addTicker} disabled={validating || !tickerInput.trim()} className={btnSecondary}>
+            {validating ? 'Checking…' : 'Add'}
+          </button>
+        </div>
+        {validateError && <p className="m-0 text-[13px] text-routine">{validateError}</p>}
+
         {portfolio.tickers.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '24px' }}>
+          <div className="flex flex-wrap gap-1.5">
             {portfolio.tickers.map((t) => (
-              <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#0a0d12', border: '1px solid #1a2333', borderRadius: '5px', padding: '3px 8px', fontSize: '11px', fontWeight: 700, color: '#c9d1d9' }}>
-                {t}
-                <button onClick={() => save({ ...portfolio!, tickers: portfolio!.tickers.filter((x) => x !== t) })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a4a60', fontSize: '13px', lineHeight: 1, padding: 0 }}>×</button>
-              </div>
+              <span key={t} className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-strong bg-surface pl-2.5 pr-1.5 font-mono text-xs font-semibold text-text">
+                <Link href={`/t/${t}`} className="text-text no-underline hover:text-white">{t}</Link>
+                <button
+                  onClick={() => save({ ...portfolio!, tickers: portfolio!.tickers.filter((x) => x !== t) })}
+                  aria-label={`Remove ${t}`}
+                  className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-xs border-0 bg-transparent p-0 text-sm leading-none text-muted hover:bg-track hover:text-white"
+                >
+                  ×
+                </button>
+              </span>
             ))}
           </div>
         )}
+      </section>
 
-        {portfolio.tickers.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '48px 0', color: '#3a4a60', fontSize: '13px' }}>
-            <div style={{ fontSize: '24px', marginBottom: '8px' }}>☆</div>Add tickers above to start tracking
-          </div>
-        )}
+      {portfolio.tickers.length === 0 && (
+        <Empty>Add a ticker above to start tracking its price, insider trades and news.</Empty>
+      )}
 
-        {loading && <div style={{ color: '#3a4a60', fontSize: '12px', marginBottom: '16px' }}>Loading…</div>}
+      {loading && <div className="pb-4 font-mono text-xs text-muted">Loading…</div>}
 
-        {/* ══════════════════════════════════════════════════════════════════════
-            TICKERS VIEW
-        ══════════════════════════════════════════════════════════════════════ */}
-        {!loading && data.length > 0 && view === 'tickers' && (
-          <div style={{ overflowX: 'auto', border: '1px solid #131820', borderRadius: '10px', marginBottom: '32px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr>
-                  <th style={{ ...TH, width: '32px', textAlign: 'center' }}>No.</th>
-                  <th style={TH}>Ticker</th>
-                  <th style={TH}>Company</th>
-                  <th style={TH_R}>Shares</th>
-                  <th style={TH_R}>Avg Cost</th>
-                  <th style={TH_R}>Total Cost</th>
-                  <th style={TH_R}>Price</th>
-                  <th style={TH_R}>Change %</th>
-                  <th style={TH_R}>Volume</th>
-                  <th style={TH_R}>Mkt Value</th>
-                  <th style={TH_R}>Gain $</th>
-                  <th style={TH_R}>Gain %</th>
-                  <th style={TH_R}>Day Chg $</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((row, i) => {
-                  const pos = positions.get(row.ticker)
-                  return (
-                    <tr key={row.ticker}
-                      style={{ background: rowBg(i) }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = rowBg(i, true))}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = rowBg(i))}
-                    >
-                      <td style={{ ...TD, textAlign: 'center', color: '#3a4a60', fontSize: '11px' }}>{i + 1}</td>
-                      <td style={TD}>
-                        <Link href={`/t/${row.ticker}`} style={{ color: '#58a6ff', fontWeight: 700, textDecoration: 'none', fontFamily: 'monospace', letterSpacing: '0.3px' }}>{row.ticker}</Link>
-                      </td>
-                      <td style={{ ...TD, color: '#8b949e', maxWidth: '180px' }}>
-                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name ?? '—'}</span>
-                      </td>
-                      {/* Shares — show + Trade if no position */}
-                      <td style={TD_R}>
-                        {pos ? (
-                          <span style={{ color: '#c9d1d9', fontVariantNumeric: 'tabular-nums' }}>{pos.netShares.toLocaleString()}</span>
-                        ) : (
-                          <button onClick={() => openAdd(row.ticker)}
-                            style={{ background: 'rgba(88,166,255,0.06)', border: '1px solid #1e3550', borderRadius: '5px', padding: '2px 9px', color: '#4a7ab5', fontSize: '11px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            + Trade
-                          </button>
-                        )}
-                      </td>
-                      <td style={{ ...TD_R, color: '#8b949e', fontVariantNumeric: 'tabular-nums' }}>
-                        {pos ? `$${pos.avgCost.toFixed(2)}` : '—'}
-                      </td>
-                      <td style={{ ...TD_R, color: '#8b949e', fontVariantNumeric: 'tabular-nums' }}>
-                        {pos ? fmtDollar(pos.costBasis) : '—'}
-                      </td>
-                      <td style={{ ...TD_R, color: '#e6edf3', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {row.price != null ? `$${row.price.toFixed(2)}` : '—'}
-                      </td>
-                      <td style={{ ...TD_R, color: clr(row.changePercent), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {row.changePercent != null ? fmtPct(row.changePercent, true) : '—'}
-                      </td>
-                      <td style={{ ...TD_R, color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>{fmtVolume(row.volume)}</td>
-                      <td style={{ ...TD_R, color: '#c9d1d9', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {pos?.marketValue != null ? fmtDollar(pos.marketValue) : '—'}
-                      </td>
-                      <td style={{ ...TD_R, color: clr(pos?.gainDollar ?? null), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {pos?.gainDollar != null ? fmtDollar(pos.gainDollar, true) : '—'}
-                      </td>
-                      <td style={{ ...TD_R, color: clr(pos?.gainPct ?? null), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {pos?.gainPct != null ? fmtPct(pos.gainPct, true) : '—'}
-                      </td>
-                      <td style={{ ...TD_R, color: clr(pos?.dayChangeDollar ?? null), fontVariantNumeric: 'tabular-nums' }}>
-                        {pos?.dayChangeDollar != null ? fmtDollar(pos.dayChangeDollar, true) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-
-                {/* Summary row */}
-                {posArr.length > 0 && (
-                  <tr style={{ background: '#0a0e15', borderTop: '1px solid #1a2333' }}>
-                    <td style={{ ...TD, textAlign: 'center', color: '#3a4a60' }}></td>
-                    <td colSpan={5} style={{ ...TD, color: '#4a5568', fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                      Total ({posArr.length} position{posArr.length !== 1 ? 's' : ''})
-                    </td>
-                    <td style={{ ...TD_R, color: '#3a4a60' }}>—</td>
-                    <td style={{ ...TD_R, color: '#3a4a60' }}>—</td>
-                    <td style={{ ...TD_R, color: '#3a4a60' }}>—</td>
-                    <td style={{ ...TD_R, color: '#e6edf3', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(sumMkt)}</td>
-                    <td style={{ ...TD_R, color: clr(sumGain), fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(sumGain, true)}</td>
-                    <td style={{ ...TD_R, color: clr(sumGain), fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtPct(sumGainPc, true)}</td>
-                    <td style={{ ...TD_R, color: clr(sumDayChg), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(sumDayChg, true)}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════════
-            TRADES VIEW
-        ══════════════════════════════════════════════════════════════════════ */}
-        {view === 'trades' && (
-          <div style={{ marginBottom: '32px' }}>
-            {trades.length === 0 && !addForm && (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: '#3a4a60', fontSize: '13px' }}>
-                <div style={{ fontSize: '22px', marginBottom: '8px' }}>📊</div>No trades yet
-              </div>
-            )}
-
-            {(trades.length > 0 || addForm) && (
-              <div style={{ overflowX: 'auto', border: '1px solid #131820', borderRadius: '10px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ ...TH, width: '32px', textAlign: 'center' }}>No.</th>
-                      <th style={TH}>Ticker</th>
-                      <th style={TH}>Company</th>
-                      <th style={TH_R}>Price</th>
-                      <th style={TH_R}>Change %</th>
-                      <th style={TH_R}>Volume</th>
-                      <th style={TH}>Type</th>
-                      <th style={TH}>Date</th>
-                      <th style={TH_R}>Shares</th>
-                      <th style={TH_R}>Cost/Share</th>
-                      <th style={TH_R}>Total Cost</th>
-                      <th style={TH_R}>Mkt Value</th>
-                      <th style={TH_R}>Gain $</th>
-                      <th style={TH_R}>Gain %</th>
-                      <th style={TH_R}>Day Chg $</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trades.map((tr, i) => {
-                      const row  = tickerMap.get(tr.ticker)
-                      const c    = calcTrade(tr, row)
-                      const isBuy = tr.direction === 'buy'
-                      return (
-                        <tr key={tr.id}
-                          style={{ background: rowBg(i) }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = rowBg(i, true))}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = rowBg(i))}
-                        >
-                          <td style={{ ...TD, textAlign: 'center', color: '#3a4a60', fontSize: '11px' }}>{i + 1}</td>
-                          <td style={TD}>
-                            <Link href={`/t/${tr.ticker}`} style={{ color: '#58a6ff', fontWeight: 700, textDecoration: 'none', fontFamily: 'monospace', letterSpacing: '0.3px' }}>{tr.ticker}</Link>
-                          </td>
-                          <td style={{ ...TD, color: '#8b949e', maxWidth: '160px' }}>
-                            <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row?.name ?? '—'}</span>
-                          </td>
-                          <td style={{ ...TD_R, color: '#e6edf3', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                            {row?.price != null ? `$${row.price.toFixed(2)}` : '—'}
-                          </td>
-                          <td style={{ ...TD_R, color: clr(row?.changePercent ?? null), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                            {row?.changePercent != null ? fmtPct(row.changePercent, true) : '—'}
-                          </td>
-                          <td style={{ ...TD_R, color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>{fmtVolume(row?.volume ?? null)}</td>
-                          <td style={TD}>
-                            <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 7px', borderRadius: '4px', color: isBuy ? '#3fb950' : '#f85149', background: isBuy ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)', border: `1px solid ${isBuy ? 'rgba(63,185,80,0.25)' : 'rgba(248,81,73,0.25)'}` }}>
-                              {isBuy ? 'Buy' : 'Sell'}
-                            </span>
-                          </td>
-                          <td style={{ ...TD, color: '#6b7280' }}>{fmtDate(tr.trade_date)}</td>
-                          <td style={{ ...TD_R, color: '#c9d1d9', fontVariantNumeric: 'tabular-nums' }}>{tr.shares.toLocaleString()}</td>
-                          <td style={{ ...TD_R, color: '#c9d1d9', fontVariantNumeric: 'tabular-nums' }}>${tr.cost_per_share.toFixed(2)}</td>
-                          <td style={{ ...TD_R, color: '#8b949e', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(c.cost)}</td>
-                          <td style={{ ...TD_R, color: isBuy ? '#c9d1d9' : '#3a4a60', fontWeight: isBuy ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>
-                            {isBuy && c.mkt != null ? fmtDollar(c.mkt) : '—'}
-                          </td>
-                          <td style={{ ...TD_R, color: isBuy ? clr(c.gain) : '#3a4a60', fontWeight: isBuy ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>
-                            {isBuy && c.gain != null ? fmtDollar(c.gain, true) : '—'}
-                          </td>
-                          <td style={{ ...TD_R, color: isBuy ? clr(c.gainP) : '#3a4a60', fontWeight: isBuy ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>
-                            {isBuy && c.gainP != null ? fmtPct(c.gainP, true) : '—'}
-                          </td>
-                          <td style={{ ...TD_R, color: isBuy ? clr(c.dayChg) : '#3a4a60', fontVariantNumeric: 'tabular-nums' }}>
-                            {isBuy && c.dayChg != null ? fmtDollar(c.dayChg, true) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-
-                    {/* Summary row */}
-                    {buyTrades.length > 0 && (
-                      <tr style={{ background: '#0a0e15', borderTop: '1px solid #1a2333' }}>
-                        <td style={{ ...TD, textAlign: 'center' }}></td>
-                        <td colSpan={8} style={{ ...TD, color: '#4a5568', fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                          Total ({buyTrades.length} buy{buyTrades.length !== 1 ? 's' : ''})
-                        </td>
-                        <td style={{ ...TD_R, color: '#3a4a60' }}>—</td>
-                        <td style={{ ...TD_R, color: '#8b949e', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(tSumCost)}</td>
-                        <td style={{ ...TD_R, color: '#e6edf3', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(tSumMkt)}</td>
-                        <td style={{ ...TD_R, color: clr(tSumGain), fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(tSumGain, true)}</td>
-                        <td style={{ ...TD_R, color: clr(tSumGain), fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtPct(tSumGainPc, true)}</td>
-                        <td style={{ ...TD_R, color: clr(tSumDayChg), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(tSumDayChg, true)}</td>
-                      </tr>
-                    )}
-
-                    {/* + Trade row / inline form */}
-                    {!addForm ? (
-                      <tr
-                        onClick={() => openAdd()}
-                        style={{ background: '#060910', cursor: 'pointer' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(88,166,255,0.03)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = '#060910')}
-                      >
-                        <td colSpan={15} style={{ ...TD, borderTop: '1px solid #1a2333', color: '#3a4a60', fontSize: '12px', fontWeight: 600 }}>
-                          <span style={{ marginLeft: '4px' }}>+ Add Trade</span>
-                        </td>
-                      </tr>
-                    ) : (
-                      <tr style={{ background: '#060910' }}>
-                        <td colSpan={15} style={{ padding: 0, borderTop: '1px solid #1a2d4a' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end', padding: '14px 16px', borderBottom: '1px solid #0c1016' }}>
-
-                            {/* Ticker */}
-                            <div>
-                              <div style={{ fontSize: '10px', color: '#4a5568', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ticker</div>
-                              <input value={addForm.ticker} onChange={(e) => setAddForm((f) => f ? { ...f, ticker: e.target.value.toUpperCase() } : f)} placeholder="AAPL" style={{ ...inputCss, width: '80px' }} autoFocus />
-                            </div>
-
-                            {/* Date */}
-                            <div>
-                              <div style={{ fontSize: '10px', color: '#4a5568', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date</div>
-                              <input type="date" value={addForm.date} onChange={(e) => setAddForm((f) => f ? { ...f, date: e.target.value } : f)} style={{ ...inputCss, width: '140px', colorScheme: 'dark' }} />
-                            </div>
-
-                            {/* Type */}
-                            <div>
-                              <div style={{ fontSize: '10px', color: '#4a5568', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Type</div>
-                              <select value={addForm.direction} onChange={(e) => setAddForm((f) => f ? { ...f, direction: e.target.value as 'buy' | 'sell' } : f)} style={{ ...inputCss, width: '80px', cursor: 'pointer' }}>
-                                <option value="buy">Buy</option>
-                                <option value="sell">Sell</option>
-                              </select>
-                            </div>
-
-                            {/* Shares */}
-                            <div>
-                              <div style={{ fontSize: '10px', color: '#4a5568', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Shares</div>
-                              <input type="number" min="0" step="any" value={addForm.shares} onChange={(e) => setAddForm((f) => f ? { ...f, shares: e.target.value } : f)} placeholder="100" style={{ ...inputCss, width: '90px' }} />
-                            </div>
-
-                            {/* Cost + Today button */}
-                            <div>
-                              <div style={{ fontSize: '10px', color: '#4a5568', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cost / Share</div>
-                              <div style={{ display: 'flex', gap: '5px' }}>
-                                <input type="number" min="0" step="any" value={addForm.cost} onChange={(e) => setAddForm((f) => f ? { ...f, cost: e.target.value } : f)} placeholder="0.00" style={{ ...inputCss, width: '100px' }} />
-                                <button onClick={fetchTodayPrice} disabled={fetchingPrice || !addForm.ticker.trim()} title="Use today's price" style={{ ...btnSec, padding: '7px 10px', fontSize: '11px', opacity: !addForm.ticker.trim() ? 0.4 : 1 }}>
-                                  {fetchingPrice ? '…' : "Today's"}
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Total preview */}
-                            {addForm.shares && addForm.cost && (
-                              <div style={{ paddingBottom: '1px' }}>
-                                <div style={{ fontSize: '10px', color: '#3a4a60', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</div>
-                                <span style={{ fontSize: '13px', color: '#8b949e', fontVariantNumeric: 'tabular-nums' }}>
-                                  {fmtDollar(parseFloat(addForm.shares) * parseFloat(addForm.cost))}
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Actions */}
-                            <div style={{ display: 'flex', gap: '6px', paddingBottom: '1px' }}>
-                              <button onClick={saveTrade} disabled={savingTrade || !addForm.ticker.trim() || !addForm.shares || !addForm.cost}
-                                style={{ ...btnPri, opacity: savingTrade || !addForm.ticker.trim() || !addForm.shares || !addForm.cost ? 0.4 : 1, cursor: !addForm.ticker.trim() || !addForm.shares || !addForm.cost ? 'not-allowed' : 'pointer' }}>
-                                {savingTrade ? 'Saving…' : 'Save'}
-                              </button>
-                              <button onClick={() => setAddForm(null)} style={btnSec}>Cancel</button>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Empty + open form immediately */}
-            {trades.length === 0 && !addForm && (
-              <div style={{ marginTop: '12px' }}>
-                <button onClick={() => openAdd()} style={{ ...btnSec, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '15px' }}>+</span> Add Trade
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ════════════════════════════════════════════════════════════════════
-            FEED (news + insider — always visible)
-        ════════════════════════════════════════════════════════════════════ */}
-        {!loading && portfolio.tickers.length > 0 && (
-          <div style={{ marginTop: '16px' }}>
-            <div style={{ display: 'flex', borderBottom: '1px solid #131820', marginBottom: '16px' }}>
-              {(['news', 'insider'] as const).map((sec) => {
-                const active = activeSection === sec
+      {/* ══════════════════ TICKERS VIEW ══════════════════ */}
+      {!loading && data.length > 0 && view === 'tickers' && (
+        <div className={`${tableWrap} mb-10`}>
+          <table className="w-full min-w-[1100px] border-collapse text-sm">
+            <thead>
+              <tr className={theadRow}>
+                <th className={`${th} w-10`}>#</th>
+                <th className={th}>TICKER</th>
+                <th className={thR}>SHARES</th>
+                <th className={thR}>AVG COST</th>
+                <th className={thR}>TOTAL COST</th>
+                <th className={thR}>PRICE</th>
+                <th className={thR}>CHANGE</th>
+                <th className={thR}>VOLUME</th>
+                <th className={thR}>MKT VALUE</th>
+                <th className={thR}>GAIN $</th>
+                <th className={thR}>GAIN %</th>
+                <th className={thR}>DAY CHG $</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, i) => {
+                const pos = positions.get(row.ticker)
                 return (
-                  <button key={sec}
-                    onClick={() => { setActiveSection(sec); if (sec === 'insider') setDirFilter('all') }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '9px 4px', marginRight: '24px', fontSize: '13px', fontWeight: active ? 600 : 400, color: active ? '#e6edf3' : '#4a5568', borderBottom: `2px solid ${active ? '#58a6ff' : 'transparent'}`, transition: 'color 0.15s', fontFamily: 'inherit' }}>
-                    {sec === 'news' ? 'Recent News' : 'Recent Insider Trades'}
-                  </button>
+                  <tr key={row.ticker} className={trCls}>
+                    <td className={`${td} font-mono text-muted`}>{i + 1}</td>
+                    <td className={`${td} max-w-[300px] truncate`}>
+                      <Link href={`/t/${row.ticker}`} className="font-mono font-semibold text-heading no-underline hover:text-white hover:underline">{row.ticker}</Link>
+                      {row.name && <span className="pl-2.5 text-muted">{row.name}</span>}
+                    </td>
+                    <td className={tdR}>
+                      {pos ? (
+                        <span className="text-text">{pos.netShares.toLocaleString()}</span>
+                      ) : (
+                        <button onClick={() => openAdd(row.ticker)}
+                          className="h-7 cursor-pointer rounded-sm border border-border-strong bg-transparent px-2.5 font-sans text-xs text-text-secondary hover:border-muted hover:text-white">
+                          + Trade
+                        </button>
+                      )}
+                    </td>
+                    <td className={`${tdR} text-text-secondary`}>{pos ? `$${pos.avgCost.toFixed(2)}` : '—'}</td>
+                    <td className={`${tdR} text-text-secondary`}>{pos ? fmtDollar(pos.costBasis) : '—'}</td>
+                    <td className={`${tdR} text-heading`}>{row.price != null ? `$${row.price.toFixed(2)}` : '—'}</td>
+                    <td className={`${tdR} ${tone(row.changePercent)}`}>{row.changePercent != null ? fmtPct(row.changePercent, true) : '—'}</td>
+                    <td className={`${tdR} text-muted`}>{fmtVolume(row.volume)}</td>
+                    <td className={`${tdR} text-text`}>{pos?.marketValue != null ? fmtDollar(pos.marketValue) : '—'}</td>
+                    <td className={`${tdR} ${tone(pos?.gainDollar)}`}>{pos?.gainDollar != null ? fmtDollar(pos.gainDollar, true) : '—'}</td>
+                    <td className={`${tdR} ${tone(pos?.gainPct)}`}>{pos?.gainPct != null ? fmtPct(pos.gainPct, true) : '—'}</td>
+                    <td className={`${tdR} ${tone(pos?.dayChangeDollar)}`}>{pos?.dayChangeDollar != null ? fmtDollar(pos.dayChangeDollar, true) : '—'}</td>
+                  </tr>
                 )
               })}
-            </div>
 
-            {activeSection === 'news' && (
-              news.length === 0
-                ? <p style={{ fontSize: '12px', color: '#3a4a60' }}>No recent news.</p>
-                : <div>{news.map((item, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '10px', padding: '9px 0', borderBottom: '1px solid #0c1016' }}>
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#58a6ff', background: '#0d1f30', border: '1px solid #1a3a50', borderRadius: '3px', padding: '2px 5px', flexShrink: 0 }}>{item.ticker}</span>
-                      {item.url
-                        ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: '#c9d1d9', textDecoration: 'none', fontSize: '12px', flex: 1, lineHeight: 1.4 }}>{item.title}</a>
-                        : <span style={{ color: '#c9d1d9', fontSize: '12px', flex: 1 }}>{item.title}</span>}
-                      <span style={{ fontSize: '11px', color: '#3a4a60', whiteSpace: 'nowrap', flexShrink: 0 }}>{[item.source, timeAgo(item.publishedAt)].filter(Boolean).join(' · ')}</span>
-                    </div>
-                  ))}</div>
-            )}
+              {posArr.length > 0 && (
+                <tr className="border-t border-border-strong bg-surface">
+                  <td className={td} />
+                  <td colSpan={4} className={`${td} font-mono text-[11px] tracking-[0.08em] text-muted`}>
+                    TOTAL ({posArr.length} POSITION{posArr.length !== 1 ? 'S' : ''})
+                  </td>
+                  <td className={`${tdR} text-muted`}>—</td>
+                  <td className={`${tdR} text-muted`}>—</td>
+                  <td className={`${tdR} text-muted`}>—</td>
+                  <td className={`${tdR} font-semibold text-heading`}>{fmtDollar(sumMkt)}</td>
+                  <td className={`${tdR} font-semibold ${tone(sumGain)}`}>{fmtDollar(sumGain, true)}</td>
+                  <td className={`${tdR} font-semibold ${tone(sumGain)}`}>{fmtPct(sumGainPc, true)}</td>
+                  <td className={`${tdR} ${tone(sumDayChg)}`}>{fmtDollar(sumDayChg, true)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-            {activeSection === 'insider' && (
-              <div>
-                <div style={{ display: 'flex', gap: '5px', marginBottom: '12px' }}>
-                  {(['all', 'buys', 'sells'] as const).map((f) => {
-                    const active = dirFilter === f
+      {/* ══════════════════ TRADES VIEW ══════════════════ */}
+      {view === 'trades' && (
+        <div className="mb-10">
+          {trades.length === 0 && !addForm && <Empty>No trades yet. Log a buy or sale to track your cost basis and gains.</Empty>}
+
+          {(trades.length > 0 || addForm) && (
+            <div className={tableWrap}>
+              <table className="w-full min-w-[1200px] border-collapse text-sm">
+                <thead>
+                  <tr className={theadRow}>
+                    <th className={`${th} w-10`}>#</th>
+                    <th className={th}>TICKER</th>
+                    <th className={thR}>PRICE</th>
+                    <th className={thR}>CHANGE</th>
+                    <th className={thR}>VOLUME</th>
+                    <th className={th}>TYPE</th>
+                    <th className={th}>DATE</th>
+                    <th className={thR}>SHARES</th>
+                    <th className={thR}>COST/SH</th>
+                    <th className={thR}>TOTAL COST</th>
+                    <th className={thR}>MKT VALUE</th>
+                    <th className={thR}>GAIN $</th>
+                    <th className={thR}>GAIN %</th>
+                    <th className={thR}>DAY CHG $</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trades.map((tr, i) => {
+                    const row   = tickerMap.get(tr.ticker)
+                    const c     = calcTrade(tr, row)
+                    const isBuy = tr.direction === 'buy'
                     return (
-                      <button key={f} onClick={() => setDirFilter(f)} style={{ padding: '4px 12px', borderRadius: '5px', border: `1px solid ${active ? '#2a4a70' : '#1a1f2a'}`, background: active ? '#1a2d4a' : 'transparent', color: active ? '#58a6ff' : '#4a5568', fontSize: '11px', fontWeight: active ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        {f === 'all' ? 'All' : f === 'buys' ? 'Buys' : 'Sells'}
-                      </button>
+                      <tr key={tr.id} className={trCls}>
+                        <td className={`${td} font-mono text-muted`}>{i + 1}</td>
+                        <td className={`${td} max-w-[260px] truncate`}>
+                          <Link href={`/t/${tr.ticker}`} className="font-mono font-semibold text-heading no-underline hover:text-white hover:underline">{tr.ticker}</Link>
+                          {row?.name && <span className="pl-2.5 text-muted">{row.name}</span>}
+                        </td>
+                        <td className={`${tdR} text-heading`}>{row?.price != null ? `$${row.price.toFixed(2)}` : '—'}</td>
+                        <td className={`${tdR} ${tone(row?.changePercent)}`}>{row?.changePercent != null ? fmtPct(row.changePercent, true) : '—'}</td>
+                        <td className={`${tdR} text-muted`}>{fmtVolume(row?.volume ?? null)}</td>
+                        <td className={td}>
+                          <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: isBuy ? BUY_COLOR : SALE_COLOR }}>
+                            <Dot color={isBuy ? BUY_COLOR : SALE_COLOR} />{isBuy ? 'Buy' : 'Sell'}
+                          </span>
+                        </td>
+                        <td className={`${td} font-mono text-muted`}>{fmtDate(tr.trade_date)}</td>
+                        <td className={`${tdR} text-text`}>{tr.shares.toLocaleString()}</td>
+                        <td className={`${tdR} text-text`}>${tr.cost_per_share.toFixed(2)}</td>
+                        <td className={`${tdR} text-text-secondary`}>{fmtDollar(c.cost)}</td>
+                        <td className={`${tdR} ${isBuy ? 'text-text' : 'text-muted'}`}>{isBuy && c.mkt != null ? fmtDollar(c.mkt) : '—'}</td>
+                        <td className={`${tdR} ${isBuy ? tone(c.gain) : 'text-muted'}`}>{isBuy && c.gain != null ? fmtDollar(c.gain, true) : '—'}</td>
+                        <td className={`${tdR} ${isBuy ? tone(c.gainP) : 'text-muted'}`}>{isBuy && c.gainP != null ? fmtPct(c.gainP, true) : '—'}</td>
+                        <td className={`${tdR} ${isBuy ? tone(c.dayChg) : 'text-muted'}`}>{isBuy && c.dayChg != null ? fmtDollar(c.dayChg, true) : '—'}</td>
+                      </tr>
                     )
                   })}
-                </div>
-                {loadingFeed && <div style={{ color: '#3a4a60', fontSize: '12px' }}>Loading…</div>}
-                {!loadingFeed && insiderTrades.length === 0 && <p style={{ fontSize: '12px', color: '#3a4a60' }}>No insider trades found.</p>}
-                {!loadingFeed && insiderTrades.length > 0 && (
-                  <div style={{ overflowX: 'auto', border: '1px solid #131820', borderRadius: '10px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                      <thead>
-                        <tr>{['Ticker', 'Insider', 'Role', 'Date', 'Type', 'Price', 'Shares', 'Value', 'Score'].map((h) => <th key={h} style={TH}>{h}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        {insiderTrades.map((row, i) => {
-                          const isBuy = row.transaction_code?.toUpperCase() === 'P'
-                          const cls   = row.classification ?? 'UNCLASSIFIABLE'
-                          const badge = CLS_BADGE[cls] ?? CLS_BADGE.UNCLASSIFIABLE
-                          const color = txColor(row.transaction_code)
-                          return (
-                            <tr key={row.id ?? i} style={{ background: rowBg(i) }}>
-                              <td style={TD}><Link href={`/t/${row.ticker}`} style={{ display: 'inline-block', padding: '2px 6px', borderRadius: '4px', background: '#0d1f30', border: '1px solid #1a3a50', color: '#9ecbff', fontSize: '11px', fontWeight: 700, textDecoration: 'none', fontFamily: 'monospace' }}>{row.ticker}</Link></td>
-                              <td style={{ ...TD, maxWidth: '160px' }}>
-                                <div style={{ color: '#c9d1d9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.insider_name ?? '—'}</div>
-                                <span style={{ display: 'inline-block', marginTop: '2px', fontSize: '10px', fontWeight: 600, padding: '1px 5px', borderRadius: '3px', color: badge.color, background: badge.bg, border: `1px solid ${badge.border}` }}>{cls}</span>
-                              </td>
-                              <td style={{ ...TD, color: '#6b7280', maxWidth: '130px' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.officer_title ?? row.role ?? '—'}</div></td>
-                              <td style={{ ...TD, color: '#6b7280' }}>{fmtDate(row.transaction_date)}</td>
-                              <td style={TD}><span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', color, background: `${color}18`, border: `1px solid ${color}35` }}>{txLabel(row.transaction_code)}</span></td>
-                              <td style={{ ...TD, color: '#c9d1d9', fontVariantNumeric: 'tabular-nums' }}>{row.price_per_share != null ? `$${Number(row.price_per_share).toFixed(2)}` : '—'}</td>
-                              <td style={{ ...TD, color: '#c9d1d9', fontVariantNumeric: 'tabular-nums' }}>{row.shares != null ? Number(row.shares).toLocaleString() : '—'}</td>
-                              <td style={{ ...TD, color, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtCurrency(row.total_value)}</td>
-                              <td style={{ ...TD, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !isBuy ? '#3a4a60' : scoreColor(row.sentra_score) }}>{!isBuy ? <span style={{ color: '#3a4a60' }}>N/A</span> : row.sentra_score ?? <span style={{ color: '#3a4a60' }}>—</span>}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
-      </div>
-    </div>
+                  {buyTrades.length > 0 && (
+                    <tr className="border-t border-border-strong bg-surface">
+                      <td className={td} />
+                      <td colSpan={7} className={`${td} font-mono text-[11px] tracking-[0.08em] text-muted`}>
+                        TOTAL ({buyTrades.length} BUY{buyTrades.length !== 1 ? 'S' : ''})
+                      </td>
+                      <td className={`${tdR} text-muted`}>—</td>
+                      <td className={`${tdR} text-text-secondary`}>{fmtDollar(tSumCost)}</td>
+                      <td className={`${tdR} font-semibold text-heading`}>{fmtDollar(tSumMkt)}</td>
+                      <td className={`${tdR} font-semibold ${tone(tSumGain)}`}>{fmtDollar(tSumGain, true)}</td>
+                      <td className={`${tdR} font-semibold ${tone(tSumGain)}`}>{fmtPct(tSumGainPc, true)}</td>
+                      <td className={`${tdR} ${tone(tSumDayChg)}`}>{fmtDollar(tSumDayChg, true)}</td>
+                    </tr>
+                  )}
+
+                  {!addForm ? (
+                    <tr onClick={() => openAdd()} className="cursor-pointer border-t border-border hover:bg-surface-hover">
+                      <td colSpan={14} className={`${td} text-[13px] text-text-secondary`}>+ Add trade</td>
+                    </tr>
+                  ) : (
+                    <tr className="border-t border-border bg-surface">
+                      <td colSpan={14} className="p-0">
+                        <div className="flex flex-wrap items-end gap-3 px-4 py-4">
+                          <label>
+                            <span className={formLabel}>TICKER</span>
+                            <input value={addForm.ticker} onChange={(e) => setAddForm((f) => f ? { ...f, ticker: e.target.value.toUpperCase() } : f)} placeholder="AAPL" className={`${inputCls} w-[90px] bg-background font-mono text-[13px]`} autoFocus />
+                          </label>
+                          <label>
+                            <span className={formLabel}>DATE</span>
+                            <input type="date" value={addForm.date} onChange={(e) => setAddForm((f) => f ? { ...f, date: e.target.value } : f)} className={`${inputCls} w-[150px] bg-background font-mono text-[13px] [color-scheme:dark]`} />
+                          </label>
+                          <label>
+                            <span className={formLabel}>TYPE</span>
+                            <select value={addForm.direction} onChange={(e) => setAddForm((f) => f ? { ...f, direction: e.target.value as 'buy' | 'sell' } : f)} className={`${inputCls} w-[90px] cursor-pointer bg-background`}>
+                              <option value="buy">Buy</option>
+                              <option value="sell">Sell</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span className={formLabel}>SHARES</span>
+                            <input type="number" min="0" step="any" value={addForm.shares} onChange={(e) => setAddForm((f) => f ? { ...f, shares: e.target.value } : f)} placeholder="100" className={`${inputCls} w-[100px] bg-background font-mono text-[13px]`} />
+                          </label>
+                          <div>
+                            <span className={formLabel}>COST / SHARE</span>
+                            <div className="flex gap-1.5">
+                              <input type="number" min="0" step="any" value={addForm.cost} onChange={(e) => setAddForm((f) => f ? { ...f, cost: e.target.value } : f)} placeholder="0.00" aria-label="Cost per share" className={`${inputCls} w-[110px] bg-background font-mono text-[13px]`} />
+                              <button onClick={fetchTodayPrice} disabled={fetchingPrice || !addForm.ticker.trim()} title="Use today's price" className={`${btnSecondary} px-3 text-xs`}>
+                                {fetchingPrice ? '…' : "Today's"}
+                              </button>
+                            </div>
+                          </div>
+                          {addForm.shares && addForm.cost && (
+                            <div className="pb-2.5">
+                              <span className={formLabel}>TOTAL</span>
+                              <span className="font-mono text-sm text-text-secondary">{fmtDollar(parseFloat(addForm.shares) * parseFloat(addForm.cost))}</span>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <button onClick={saveTrade} disabled={savingTrade || !canSaveTrade} className={btnPrimary}>
+                              {savingTrade ? 'Saving…' : 'Save'}
+                            </button>
+                            <button onClick={() => setAddForm(null)} className={btnSecondary}>Cancel</button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {trades.length === 0 && !addForm && (
+            <div className="mt-3">
+              <button onClick={() => openAdd()} className={btnSecondary}>+ Add trade</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════ FEED (news + insider) ══════════════════ */}
+      {!loading && portfolio.tickers.length > 0 && (
+        <section className="flex flex-col gap-5 pt-2">
+          <div className="flex flex-col gap-2">
+            <div className="label-mono">ACTIVITY</div>
+            <h2 className={h2Cls}>What&apos;s happening in your tickers</h2>
+          </div>
+
+          <div role="tablist" className="flex gap-1 border-b border-border">
+            {(['news', 'insider'] as const).map((sec) => {
+              const active = activeSection === sec
+              return (
+                <button key={sec}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => { setActiveSection(sec); if (sec === 'insider') setDirFilter('all') }}
+                  className={`-mb-px h-11 cursor-pointer border-0 border-b-2 border-solid bg-transparent px-4 font-sans text-sm font-medium ${
+                    active ? 'border-heading text-heading' : 'border-transparent text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {sec === 'news' ? 'News' : 'Insider trades'}
+                </button>
+              )
+            })}
+          </div>
+
+          {activeSection === 'news' && (
+            news.length === 0
+              ? <Empty>No recent news for these tickers.</Empty>
+              : (
+                <ul className="m-0 list-none p-0">
+                  {news.map((item, i) => (
+                    <li key={i} className="flex flex-col gap-1 border-b border-row-border py-3.5 sm:flex-row sm:items-baseline sm:gap-4">
+                      <Link href={`/t/${item.ticker}`} className="w-14 shrink-0 font-mono text-[13px] font-semibold text-heading no-underline hover:text-white">{item.ticker}</Link>
+                      {item.url
+                        ? <a href={item.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 text-[15px] leading-snug text-text no-underline hover:text-white hover:underline">{decodeEntities(item.title)}</a>
+                        : <span className="min-w-0 flex-1 text-[15px] leading-snug text-text">{decodeEntities(item.title)}</span>}
+                      <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted">{[item.source, timeAgo(item.publishedAt)].filter(Boolean).join(' · ')}</span>
+                    </li>
+                  ))}
+                </ul>
+              )
+          )}
+
+          {activeSection === 'insider' && (
+            <div className="flex flex-col gap-4">
+              <Segmented
+                label="Trade direction"
+                value={dirFilter}
+                onChange={setDirFilter}
+                options={[{ value: 'all', label: 'All' }, { value: 'buys', label: 'Buys' }, { value: 'sells', label: 'Sales' }]}
+              />
+              {loadingFeed && <div className="font-mono text-xs text-muted">Loading…</div>}
+              {!loadingFeed && insiderTrades.length === 0 && <Empty>No insider trades found for these tickers.</Empty>}
+              {!loadingFeed && insiderTrades.length > 0 && (
+                <div className={tableWrap}>
+                  <table className="w-full min-w-[960px] border-collapse text-sm">
+                    <thead>
+                      <tr className={theadRow}>
+                        <th className={th}>TICKER</th>
+                        <th className={th}>INSIDER</th>
+                        <th className={th}>TYPE</th>
+                        <th className={th}>CLASS</th>
+                        <th className={thR}>PRICE</th>
+                        <th className={thR}>SHARES</th>
+                        <th className={thR}>VALUE</th>
+                        <th className={th}>SCORE</th>
+                        <th className={thR}>DATE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {insiderTrades.map((row, i) => {
+                        const code  = row.transaction_code?.toUpperCase()
+                        const isBuy = code === 'P'
+                        const isSale = code === 'S'
+                        const cls   = row.classification ? CLS[row.classification] : null
+                        const score = row.conviction_score ?? row.sentra_score ?? null
+                        const typeColor = isBuy ? BUY_COLOR : isSale ? SALE_COLOR : 'var(--color-muted)'
+                        return (
+                          <tr key={row.id ?? i} className={trCls}>
+                            <td className={td}>
+                              <Link href={`/t/${row.ticker}`} className="font-mono font-semibold text-heading no-underline hover:text-white hover:underline">{row.ticker}</Link>
+                            </td>
+                            <td className={`${td} max-w-[320px] truncate text-text-secondary`}>
+                              {formatInsiderName(row.insider_name)}
+                              <span className="text-muted"> · {displayRole(row)}</span>
+                            </td>
+                            <td className={td}>
+                              <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: typeColor }}>
+                                <Dot color={typeColor} />{isBuy ? 'Buy' : isSale ? 'Sale' : (row.transaction_code ?? '—')}
+                              </span>
+                            </td>
+                            <td className={td}>
+                              {cls ? (
+                                <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: cls.color }}>
+                                  <Dot color={cls.color} />{cls.label}
+                                </span>
+                              ) : <span className="text-xs text-muted">—</span>}
+                            </td>
+                            <td className={`${tdR} text-text-secondary`}>{row.price_per_share != null ? `$${Number(row.price_per_share).toFixed(2)}` : '—'}</td>
+                            <td className={`${tdR} text-text-secondary`}>{row.shares != null ? Number(row.shares).toLocaleString() : '—'}</td>
+                            <td className={`${tdR} text-text`}>{fmtCurrency(row.total_value)}</td>
+                            <td className={td}>
+                              {!isBuy ? <span className="font-mono text-xs text-muted">n/a</span>
+                                : score != null ? <span className="font-mono font-semibold text-heading">{score}</span>
+                                : <span className="font-mono text-muted">—</span>}
+                            </td>
+                            <td className={`${tdR} text-muted`}>{fmtDate(row.transaction_date)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="m-0 text-[13px] text-muted">
+                Score is a 0–100 percentile rank within each class; only open-market purchases are scored.{' '}
+                <Link href="/about" className="text-text-secondary underline underline-offset-2 hover:text-white">How scoring works</Link>
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+    </PageShell>
   )
 }

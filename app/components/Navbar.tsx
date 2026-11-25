@@ -11,6 +11,7 @@ import TickerSearch from './TickerSearch'
 const NAV_LINKS = [
   { label: 'Screener',    href: '/events' },
   { label: 'Tickers',     href: '/explore' },
+  { label: 'Watchlist',   href: '/watchlist' },
   { label: 'Methodology', href: '/about' },
 ]
 
@@ -126,13 +127,6 @@ export default function Navbar() {
                         <div className="label-mono mb-0.5">SIGNED IN AS</div>
                         <div className="truncate text-[13px] text-text-secondary">{email}</div>
                       </div>
-                      <Link
-                        href="/watchlist"
-                        onClick={() => setShowMenu(false)}
-                        className="block rounded-sm px-3 py-2 text-[13px] text-text-secondary no-underline hover:bg-surface-hover hover:text-white"
-                      >
-                        Watchlist
-                      </Link>
                       <button
                         onClick={signOut}
                         className="block w-full cursor-pointer rounded-sm border-none bg-transparent px-3 py-2 text-left font-sans text-[13px] text-routine hover:bg-routine/10"
@@ -196,13 +190,6 @@ export default function Navbar() {
                 <div className="mb-3 text-xs text-muted">
                   Signed in as <span className="text-text-secondary">{email}</span>
                 </div>
-                <Link
-                  href="/watchlist"
-                  onClick={() => setMobileOpen(false)}
-                  className="mb-3 block text-[15px] text-text-secondary no-underline"
-                >
-                  Watchlist
-                </Link>
                 <button
                   onClick={signOut}
                   className="cursor-pointer border-none bg-transparent p-0 font-sans text-[15px] text-routine"
