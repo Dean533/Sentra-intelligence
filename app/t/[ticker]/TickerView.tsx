@@ -4,10 +4,10 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MarketRange } from '@/lib/marketData'
-import type { NewsItem } from '@/lib/news/tickerNews'
 import { fmtDate, fmtMoney, fmtStake, type Breakdown } from '@/lib/insider/format'
 import { holdingsDeltaPct } from '@/lib/insider/holdingsDelta'
 import { BUY_COLOR, SALE_COLOR, type ChartMarker, type ChartPoint } from './PriceChart'
+import { Dot, Skeleton, fmtLarge, h2Cls, labelMono } from './ui'
 
 const PriceChart = dynamic(() => import('./PriceChart'), { ssr: false })
 
@@ -60,14 +60,6 @@ export type TickerSignal = {
   breakdown: Breakdown[]
 }
 
-export type SimilarCompany = {
-  symbol: string
-  name: string | null
-  marketCap: number
-  signalScore: number | null
-  lastBuyDate: string | null
-}
-
 /* eslint-disable @typescript-eslint/no-explicit-any -- Yahoo quote/summary payloads are untyped */
 type TickerApi = { quote: any; summary: any; ticker: any }
 
@@ -89,7 +81,6 @@ const CLS: Record<string, { label: string; color: string }> = {
 }
 
 const PAGE = 20
-const NEWS_PER_COL = 8
 const DAY = 86_400_000
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
@@ -97,16 +88,6 @@ const DAY = 86_400_000
 function fmtPrice(n: number | null | undefined): string {
   if (n == null) return '—'
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function fmtLarge(n: number | null | undefined): string {
-  if (n == null) return '—'
-  const sign = n < 0 ? '−' : ''
-  const a = Math.abs(n)
-  if (a >= 1e12) return `${sign}$${(a / 1e12).toFixed(2)}T`
-  if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(1)}B`
-  if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(1)}M`
-  return `${sign}$${a.toLocaleString()}`
 }
 
 function fmtVol(n: number | null | undefined): string {
@@ -179,34 +160,14 @@ function groupSameDay(list: InsiderTrade[]): TableRow[] {
   return out
 }
 
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime()
-  const h = Math.floor(ms / 3_600_000)
-  if (h < 1) return `${Math.max(1, Math.floor(ms / 60_000))}m ago`
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  if (d < 30) return `${d}d ago`
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
 // Insider trades carry calendar dates only; pin them to the US close (~20:00 UTC)
 // so they land on the right day on intraday charts.
 const tradeMs = (d: string) => Date.parse(`${d}T20:00:00Z`)
 
 // ─── Small pieces ────────────────────────────────────────────────────────────
 
-const labelMono = 'font-mono text-[11px] tracking-[0.08em] text-muted'
-const h2Cls = 'm-0 font-serif text-[26px] font-normal leading-tight text-heading md:text-[30px]'
 const textLink = 'text-sm text-text-secondary underline underline-offset-2 hover:text-white'
 const linkBtn = 'cursor-pointer border-0 bg-transparent p-0 font-sans text-text-secondary underline underline-offset-2 hover:text-white'
-
-function Dot({ color, size = 7 }: { color: string; size?: number }) {
-  return <span className="inline-block shrink-0 rounded-full" style={{ background: color, width: size, height: size }} aria-hidden="true" />
-}
-
-function Skeleton({ className }: { className: string }) {
-  return <span className={`inline-block animate-pulse rounded-sm bg-track ${className}`} aria-hidden="true" />
-}
 
 // ─── Signal strip (only rendered when there is a recent opportunistic buy) ───
 
@@ -352,53 +313,6 @@ function TradePopover({
   )
 }
 
-// ─── News card ───────────────────────────────────────────────────────────────
-
-function NewsThumb({ item }: { item: NewsItem }) {
-  const [failed, setFailed] = useState(0) // 0 = try thumbnail, 1 = try logo, 2 = initials
-  const logo = item.sourceDomain ? `https://www.google.com/s2/favicons?domain=${item.sourceDomain}&sz=64` : null
-  const src = failed === 0 ? (item.thumbnail ?? logo) : failed === 1 && item.thumbnail ? logo : null
-  const isLogo = src != null && src === logo
-  if (!src) {
-    const initials = item.source.replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
-    return (
-      <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-sm border border-border bg-surface font-mono text-sm text-muted" aria-hidden="true">
-        {initials || '·'}
-      </span>
-    )
-  }
-  return (
-    <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-border bg-surface" aria-hidden="true">
-      {/* eslint-disable-next-line @next/next/no-img-element -- remote news images, arbitrary hosts */}
-      <img
-        src={src}
-        alt=""
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onError={() => setFailed((f) => f + 1)}
-        className={isLogo ? 'h-7 w-7' : 'h-full w-full object-cover'}
-      />
-    </span>
-  )
-}
-
-function NewsCard({ item }: { item: NewsItem }) {
-  return (
-    <a
-      href={item.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group flex gap-3.5 rounded-sm border border-transparent p-2 no-underline transition-colors hover:border-border hover:bg-surface-hover"
-    >
-      <NewsThumb item={item} />
-      <span className="flex min-w-0 flex-col gap-1.5">
-        <span className="line-clamp-3 text-sm leading-[1.4] text-text group-hover:text-white">{item.title}</span>
-        <span className="truncate text-xs text-muted">{item.source} · {timeAgo(item.publishedAt)}</span>
-      </span>
-    </a>
-  )
-}
-
 // ─── Main view ───────────────────────────────────────────────────────────────
 
 export default function TickerView({
@@ -408,6 +322,7 @@ export default function TickerView({
   signal,
   company,
   sector,
+  news,
   similar,
 }: {
   symbol: string
@@ -416,16 +331,16 @@ export default function TickerView({
   signal: TickerSignal | null
   company: string | null
   sector: string | null
-  similar: SimilarCompany[]
+  /** News section, server-rendered and streamed in its own Suspense boundary. */
+  news: React.ReactNode
+  /** "You may also like" section, server-rendered and streamed in its own Suspense boundary. */
+  similar: React.ReactNode
 }) {
   const [api, setApi] = useState<TickerApi | null>(null)
   const [apiState, setApiState] = useState<'loading' | 'ok' | 'missing'>('loading')
   const [range, setRange] = useState<MarketRange>('1y')
   const [points, setPoints] = useState<ChartPoint[]>([])
   const [pointsRange, setPointsRange] = useState<MarketRange | null>(null)
-  const [news, setNews] = useState<NewsItem[] | null>(null)
-  const [newsOpen, setNewsOpen] = useState(false)
-  const [newsAt, setNewsAt] = useState<number | null>(null)
   const [showBuys, setShowBuys] = useState(true)
   const [showSales, setShowSales] = useState(true)
   const [mode, setMode] = useState<'buys' | 'all'>('buys')
@@ -447,13 +362,8 @@ export default function TickerView({
         setApiState('ok')
       })
       .catch(() => live && setApiState('missing'))
-    const qs = new URLSearchParams({ ticker: symbol, ...(company ? { company } : {}) })
-    fetch(`/api/news/feed?${qs}`)
-      .then((r) => r.json())
-      .then((d) => { if (live) { setNews(d.items ?? []); setNewsAt(Date.now()) } })
-      .catch(() => live && setNews([]))
     return () => { live = false }
-  }, [symbol, company])
+  }, [symbol])
 
   useEffect(() => {
     let live = true
@@ -637,19 +547,6 @@ export default function TickerView({
     },
   ]
   const facts = factsRaw.filter((f) => f.value != null && f.value !== '')
-
-  const split = useMemo(() => {
-    const items = news ?? []
-    const pos = items.filter((n) => n.sentiment === 'positive')
-    const neg = items.filter((n) => n.sentiment === 'negative')
-    const oldest = items.length ? items[items.length - 1].publishedAt : null
-    return { pos, neg, neutral: items.length - pos.length - neg.length, total: items.length, oldest }
-  }, [news])
-  const newsWindow = split.oldest && newsAt
-    ? newsAt - Date.parse(split.oldest) <= 7.5 * DAY
-      ? 'last 7 days'
-      : `since ${new Date(split.oldest).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-    : ''
 
   const th = 'px-4 py-3 font-mono text-[11px] font-medium tracking-[0.08em] text-muted whitespace-nowrap'
   const td = 'px-4 py-[13px]'
@@ -955,96 +852,11 @@ export default function TickerView({
           </div>
         </section>
 
-        {/* ── News, split by sentiment ───────────────────────────────────── */}
-        <section className="mt-12 flex flex-col gap-5 border-t border-border pt-12">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-col gap-1.5">
-              <div className={labelMono}>NEWS</div>
-              <h2 className={h2Cls}>What the headlines say</h2>
-            </div>
-            {news && news.length > 0 && (
-              <span className="font-mono text-xs text-muted">{split.total} headlines · {newsWindow}</span>
-            )}
-          </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {([
-              { key: 'pos', title: 'Positive', color: 'var(--color-opportunistic)', items: split.pos },
-              { key: 'neg', title: 'Negative', color: 'var(--color-routine)', items: split.neg },
-            ] as const).map((col) => (
-              <div key={col.key} className="flex flex-col rounded-md border border-border px-3 pb-3 pt-4" style={{ borderTop: `2px solid ${col.color}` }}>
-                <div className="flex items-baseline justify-between px-2 pb-2">
-                  <span className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: col.color }}>
-                    <Dot color={col.color} size={8} />
-                    {col.title}
-                  </span>
-                  <span className="font-mono text-xs text-muted">{news ? col.items.length : ''}</span>
-                </div>
-                {news == null ? (
-                  <div className="flex flex-col gap-3 p-2">
-                    {[0, 1, 2].map((i) => (
-                      <div key={i} className="flex gap-3.5"><Skeleton className="h-16 w-16" /><div className="flex flex-1 flex-col gap-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-3 w-1/3" /></div></div>
-                    ))}
-                  </div>
-                ) : col.items.length === 0 ? (
-                  <p className="m-0 px-2 py-3 text-sm text-muted">No {col.title.toLowerCase()} headlines {newsWindow ? `(${newsWindow})` : ''}.</p>
-                ) : (
-                  <div className="flex flex-col gap-1">
-                    {(newsOpen ? col.items : col.items.slice(0, NEWS_PER_COL)).map((n) => <NewsCard key={n.id} item={n} />)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-            <span>
-              Sentiment is a free keyword model over each headline (finance word list, phrase and negation rules).
-              {news ? ` ${split.neutral} neutral headline${split.neutral === 1 ? '' : 's'} hidden.` : ''}
-            </span>
-            {(split.pos.length > NEWS_PER_COL || split.neg.length > NEWS_PER_COL) && (
-              <button
-                type="button"
-                onClick={() => setNewsOpen((v) => !v)}
-                className="h-8 cursor-pointer rounded-sm border border-border-strong bg-transparent px-3 font-sans text-[13px] text-text-secondary hover:border-muted hover:text-white"
-              >
-                {newsOpen ? 'Show fewer' : 'Show all headlines'}
-              </button>
-            )}
-          </div>
-        </section>
+        {/* ── News (streamed) ───────────────────────────────────────────── */}
+        {news}
 
-        {/* ── You may also like ──────────────────────────────────────────── */}
-        {similar.length > 0 && (
-          <section className="mt-12 flex flex-col gap-5 border-t border-border pt-12">
-            <div className="flex flex-col gap-1.5">
-              <div className={labelMono}>SIMILAR COMPANIES{sectorLabel ? ` · ${sectorLabel.toUpperCase()}` : ''}</div>
-              <h2 className={h2Cls}>You may also like</h2>
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              {similar.map((c) => (
-                <Link
-                  key={c.symbol}
-                  href={`/t/${c.symbol}`}
-                  className={`flex flex-col gap-2 rounded-md border bg-surface p-4 no-underline transition-colors hover:bg-surface-hover ${
-                    c.signalScore != null ? 'border-[#1F4D2A]' : 'border-border hover:border-border-strong'
-                  }`}
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="font-mono text-base font-semibold text-heading">{c.symbol}</span>
-                    <span className="font-mono text-xs text-muted">{fmtLarge(c.marketCap)}</span>
-                  </div>
-                  <span className="line-clamp-1 text-[13px] text-text-secondary">{c.name ?? '—'}</span>
-                  {c.signalScore != null ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-opportunistic">
-                      <Dot color="var(--color-opportunistic)" />Opportunistic buy · {c.signalScore}
-                    </span>
-                  ) : c.lastBuyDate ? (
-                    <span className="text-xs text-muted">Last insider buy: {fmtDate(c.lastBuyDate, true)}</span>
-                  ) : null}
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
+        {/* ── You may also like (streamed) ──────────────────────────────── */}
+        {similar}
       </main>
     </div>
   )

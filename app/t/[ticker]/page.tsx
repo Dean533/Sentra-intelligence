@@ -1,13 +1,28 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
+import { unstable_cache } from 'next/cache'
 import { createClient } from '@supabase/supabase-js'
 import { computeConvictionScore } from '@/lib/scoring/convictionScore'
 import { holdingsDeltaPct, convictionLabel } from '@/lib/insider/holdingsDelta'
 import { displayRole, formatInsiderName, toBreakdown } from '@/lib/insider/format'
-import TickerView, { type InsiderTrade, type TickerSignal, type SimilarCompany } from './TickerView'
+import { getTickerNewsWithTime, type TickerNews as TickerNewsData } from '@/lib/news/tickerNews'
+import TickerView, { type InsiderTrade, type TickerSignal } from './TickerView'
+import TickerNews from './TickerNews'
+import SimilarCompanies, { type SimilarCompany } from './SimilarCompanies'
+import TickerSkeleton from './TickerSkeleton'
 
-// Insider data is re-queried at most once an hour per ticker; quote, chart and
-// news are fetched client-side from the existing API routes.
-export const revalidate = 3600
+// Rendering: the page renders per request and streams. The shell + skeleton
+// flush immediately; the insider view, news and "You may also like" each stream
+// in their own Suspense boundary as their data arrives. Quote, company facts and
+// chart are fetched client-side from the API routes.
+//
+// Caching (Next data cache, shared across requests):
+//   - insider trades, ticker row and peers: 1 hour (INSIDER_TTL below). Insider
+//     data only changes when the daily cron ingests new Form 4s.
+//   - Yahoo quote/facts/chart: lib/yahoo.ts; news: lib/news/tickerNews.ts.
+// A query error is never cached: the loader throws Uncacheable, so the page
+// shows that request's partial result (as before) and the next request retries.
+const INSIDER_TTL = 60 * 60
 
 // "Recent" for the signal strip: an opportunistic buy filed in the last 90 days
 // (the same longest window the homepage's top-10 widens to).
@@ -46,39 +61,70 @@ function supabase() {
   )
 }
 
-async function getInsiderData(symbol: string) {
-  const sb = supabase()
+type Meta = { name: string | null; sector: string | null; market_cap: number | null } | null
 
+// Thrown from a cached loader when one of its queries failed. unstable_cache
+// never stores a rejection, so the partial value is served for this request
+// only (see orFallback) and the next request queries again.
+class Uncacheable<T> extends Error {
+  constructor(readonly value: T) { super('partial result, not cached') }
+}
+
+async function orFallback<T>(p: Promise<T>): Promise<T> {
+  try {
+    return await p
+  } catch (e) {
+    if (e instanceof Uncacheable) return e.value as T
+    throw e
+  }
+}
+
+async function getMeta(sb: ReturnType<typeof supabase>, symbol: string): Promise<Meta> {
+  const { data, error } = await sb.from('tickers').select('symbol, name, sector, market_cap').eq('symbol', symbol).maybeSingle()
+  if (error) {
+    console.error('[ticker] tickers query failed:', error.message)
+    throw new Uncacheable<Meta>(null)
+  }
+  return (data as Meta) ?? null
+}
+
+async function getInsiderData(sb: ReturnType<typeof supabase>, symbol: string, metaP: Promise<Meta>) {
+  let failed = false
+  // All pages of a code are requested in parallel (the row cap is known up front);
+  // results are kept in page order and stop at the first short page, exactly as
+  // the previous one-page-at-a-time loop did.
   async function fetchCode(code: 'P' | 'S', max: number): Promise<{ rows: Row[]; full: boolean }> {
-    const out: Row[] = []
-    for (let from = 0; from < max; from += PAGE) {
-      const { data, error } = await sb
+    const starts: number[] = []
+    for (let from = 0; from < max; from += PAGE) starts.push(from)
+    const pages = await Promise.all(starts.map((from) =>
+      sb
         .from('insider_transactions')
         .select(SELECT_COLS)
         .eq('ticker', symbol)
         .eq('transaction_code', code)
         .order('filed_date', { ascending: false })
         .order('transaction_date', { ascending: false })
-        .range(from, Math.min(from + PAGE, max) - 1)
-      if (error) { console.error(`[ticker] ${code} query failed:`, error.message); break }
+        .range(from, Math.min(from + PAGE, max) - 1),
+    ))
+    const out: Row[] = []
+    for (const { data, error } of pages) {
+      if (error) { console.error(`[ticker] ${code} query failed:`, error.message); failed = true; break }
       out.push(...((data ?? []) as unknown as Row[]))
       if (!data || data.length < PAGE) return { rows: out, full: false }
     }
     return { rows: out, full: out.length >= max }
   }
 
-  const [buysRes, salesRes, metaRes] = await Promise.all([
+  const [buysRes, salesRes, meta] = await Promise.all([
     fetchCode('P', BUY_LIMIT),
     fetchCode('S', SALE_LIMIT),
-    sb.from('tickers').select('symbol, name, sector, market_cap').eq('symbol', symbol).maybeSingle(),
+    metaP,
   ])
-  if (metaRes.error) console.error('[ticker] tickers query failed:', metaRes.error.message)
 
   const byFiled = (a: Row, b: Row) =>
     (b.filed_date ?? b.transaction_date).localeCompare(a.filed_date ?? a.transaction_date) ||
     b.transaction_date.localeCompare(a.transaction_date)
   const rows = [...buysRes.rows, ...salesRes.rows].sort(byFiled)
-  const meta = metaRes.data as { name: string | null; sector: string | null; market_cap: number | null } | null
 
   const trades: InsiderTrade[] = rows.map((r) => {
     const isBuy = r.transaction_code === 'P'
@@ -157,14 +203,15 @@ async function getInsiderData(symbol: string) {
     signal = null
   }
 
-  return {
+  const result = {
     trades,
     truncated: buysRes.full || salesRes.full,
     signal,
-    similar: await getSimilar(sb, symbol, meta),
     company: meta?.name ?? null,
     sector: meta?.sector ?? null,
   }
+  if (failed) throw new Uncacheable(result)
+  return result
 }
 
 // "You may also like": nearest market cap (log scale) within the same sector —
@@ -187,7 +234,8 @@ async function getSimilar(
     .neq('symbol', symbol)
     .not('market_cap', 'is', null)
     .limit(1000)
-  if (error || !data?.length) return []
+  if (error) throw new Uncacheable<SimilarCompany[]>([])
+  if (!data?.length) return []
   const target = Math.log10(meta.market_cap ?? 1e10)
   const peers = (data as { symbol: string; name: string | null; market_cap: number }[])
     .filter((t) => t.market_cap > 0)
@@ -223,7 +271,7 @@ async function getSimilar(
   for (const r of (lastBuyRes.data ?? []) as { ticker: string; transaction_date: string }[]) {
     if (!lastBuy.has(r.ticker)) lastBuy.set(r.ticker, r.transaction_date)
   }
-  return peers
+  const similar = peers
     .map((p) => ({
       symbol: p.symbol,
       name: p.name,
@@ -232,7 +280,45 @@ async function getSimilar(
       lastBuyDate: lastBuy.get(p.symbol) ?? null,
     }))
     .sort((a, b) => (b.signalScore != null ? 1 : 0) - (a.signalScore != null ? 1 : 0))
+  if (sigRes.error || lastBuyRes.error) throw new Uncacheable(similar)
+  return similar
 }
+
+// ─── Cached loaders (1 hour, shared across requests) ─────────────────────────
+
+const cachedMeta = unstable_cache(
+  (symbol: string) => getMeta(supabase(), symbol),
+  ['ticker-meta-v1'],
+  { revalidate: INSIDER_TTL, tags: ['insider'] },
+)
+const loadMeta = (symbol: string) => orFallback(cachedMeta(symbol))
+
+// Loaders that depend on the ticker row: if that query failed, their result was
+// built without it, so it must not be cached either.
+async function withMeta<T>(symbol: string, build: (metaP: Promise<Meta>) => Promise<T>): Promise<T> {
+  let metaFailed = false
+  const metaP = cachedMeta(symbol).catch((e) => {
+    if (e instanceof Uncacheable) { metaFailed = true; return e.value as Meta }
+    throw e
+  })
+  const result = await build(metaP)
+  if (metaFailed) throw new Uncacheable(result)
+  return result
+}
+
+const cachedInsiderData = unstable_cache(
+  (symbol: string) => withMeta(symbol, (metaP) => getInsiderData(supabase(), symbol, metaP)),
+  ['ticker-insider-v1'],
+  { revalidate: INSIDER_TTL, tags: ['insider'] },
+)
+const loadInsiderData = (symbol: string) => orFallback(cachedInsiderData(symbol))
+
+const cachedSimilar = unstable_cache(
+  (symbol: string) => withMeta(symbol, async (metaP) => getSimilar(supabase(), symbol, await metaP)),
+  ['ticker-similar-v1'],
+  { revalidate: INSIDER_TTL, tags: ['insider'] },
+)
+const loadSimilar = (symbol: string) => orFallback(cachedSimilar(symbol))
 
 export async function generateMetadata({ params }: { params: Promise<{ ticker: string }> }): Promise<Metadata> {
   const { ticker } = await params
@@ -243,9 +329,59 @@ export async function generateMetadata({ params }: { params: Promise<{ ticker: s
   }
 }
 
+// ─── Streamed sections ───────────────────────────────────────────────────────
+
+async function InsiderSection({ symbol, dataP, news, similar }: {
+  symbol: string
+  dataP: ReturnType<typeof loadInsiderData>
+  news: React.ReactNode
+  similar: React.ReactNode
+}) {
+  const data = await dataP
+  return <TickerView symbol={symbol} {...data} news={news} similar={similar} />
+}
+
+async function NewsSection({ newsP }: { newsP: Promise<TickerNewsData | null> }) {
+  const news = await newsP
+  return <TickerNews items={news?.items ?? []} fetchedAt={news?.fetchedAt ?? null} />
+}
+
+async function SimilarSection({ similarP, metaP }: { similarP: Promise<SimilarCompany[]>; metaP: Promise<Meta> }) {
+  const [similar, meta] = await Promise.all([similarP, metaP])
+  return <SimilarCompanies similar={similar} sectorLabel={meta?.sector ?? null} />
+}
+
 export default async function TickerPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params
   const symbol = decodeURIComponent(ticker).toUpperCase().trim()
-  const data = await getInsiderData(symbol)
-  return <TickerView symbol={symbol} {...data} />
+
+  // Start everything now; each section awaits only what it needs.
+  const metaP = loadMeta(symbol)
+  const dataP = loadInsiderData(symbol)
+  const newsP: Promise<TickerNewsData | null> = metaP
+    .then((m) => getTickerNewsWithTime(symbol, m?.name ?? null))
+    .catch((e) => {
+      console.error('[ticker] news failed:', e instanceof Error ? e.message : e)
+      return null // renders the "no headlines" state, same as the old client fallback
+    })
+  const similarP = loadSimilar(symbol).catch(() => [] as SimilarCompany[])
+
+  return (
+    <Suspense fallback={<TickerSkeleton symbol={symbol} />}>
+      <InsiderSection
+        symbol={symbol}
+        dataP={dataP}
+        news={
+          <Suspense fallback={<TickerNews items={null} fetchedAt={null} />}>
+            <NewsSection newsP={newsP} />
+          </Suspense>
+        }
+        similar={
+          <Suspense fallback={null}>
+            <SimilarSection similarP={similarP} metaP={metaP} />
+          </Suspense>
+        }
+      />
+    </Suspense>
+  )
 }

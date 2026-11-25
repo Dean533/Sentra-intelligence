@@ -1,7 +1,8 @@
 // Ticker headlines for the ticker page: Yahoo Finance search news (has thumbnails)
 // merged with Google News RSS (wider coverage), last 7 days, deduped, scored with
 // the free keyword model in ./sentiment. Read-only: nothing is written to the DB.
-import YahooFinance from 'yahoo-finance2'
+import { unstable_cache } from 'next/cache'
+import { yahoo, TTL } from '@/lib/yahoo'
 import { scoreHeadline, type Sentiment } from './sentiment'
 
 export type NewsItem = {
@@ -16,12 +17,9 @@ export type NewsItem = {
   score: number
 }
 
-const yahoo = new YahooFinance()
 const WINDOW_DAYS = 7
 const MIN_ITEMS = 30
 const MAX_ITEMS = 80
-const TTL_MS = 10 * 60_000
-const cache = new Map<string, { at: number; items: NewsItem[] }>()
 
 function decode(s: string): string {
   return s
@@ -147,15 +145,34 @@ function isAboutAnotherCompany(title: string, symbol: string): boolean {
   return tokens.some((t) => !ACRONYM_STOPLIST.has(t))
 }
 
-export async function getTickerNews(symbol: string, companyName: string | null = null): Promise<NewsItem[]> {
-  const key = symbol.toUpperCase()
-  const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.items
+export type TickerNews = { items: NewsItem[]; fetchedAt: number }
 
+// Cached 30 minutes per ticker + company name (Next data cache, shared across requests).
+const cachedNews = unstable_cache(
+  async (key: string, companyName: string | null): Promise<TickerNews> => ({
+    items: await fetchTickerNews(key, companyName),
+    fetchedAt: Date.now(),
+  }),
+  ['ticker-news-v1'],
+  { revalidate: TTL.news, tags: ['news'] },
+)
+
+/** Headlines plus the time they were fetched (for the "last 7 days" label). */
+export function getTickerNewsWithTime(symbol: string, companyName: string | null = null): Promise<TickerNews> {
+  return cachedNews(symbol.toUpperCase().trim(), companyName)
+}
+
+export async function getTickerNews(symbol: string, companyName: string | null = null): Promise<NewsItem[]> {
+  return (await getTickerNewsWithTime(symbol, companyName)).items
+}
+
+async function fetchTickerNews(key: string, companyName: string | null): Promise<NewsItem[]> {
   const short = shortName(companyName)
   const [y, g] = await Promise.allSettled([fromYahoo(key), fromGoogle(key, short)])
   if (y.status === 'rejected') console.error('[news] yahoo failed:', y.reason?.message ?? y.reason)
   if (g.status === 'rejected') console.error('[news] google failed:', g.reason?.message ?? g.reason)
+  // Both sources down: throw so an empty list isn't cached for 30 minutes.
+  if (y.status === 'rejected' && g.status === 'rejected') throw new Error('news sources unavailable')
   // Yahoo first so its thumbnailed copy wins the dedupe.
   const merged = [...(y.status === 'fulfilled' ? y.value : []), ...(g.status === 'fulfilled' ? g.value : [])]
 
@@ -204,8 +221,5 @@ export async function getTickerNews(symbol: string, companyName: string | null =
     picked = unique.slice(0, MIN_ITEMS)
   }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const items: NewsItem[] = picked.map(({ related, ...n }: NewsItem & { related?: boolean }) => n)
-
-  cache.set(key, { at: Date.now(), items })
-  return items
+  return picked.map(({ related, ...n }: NewsItem & { related?: boolean }) => n)
 }

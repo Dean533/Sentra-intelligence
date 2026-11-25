@@ -1,6 +1,5 @@
-import YahooFinance from "yahoo-finance2";
-
-const yahooFinance = new YahooFinance();
+import { unstable_cache } from "next/cache";
+import { yahoo as yahooFinance, TTL } from "./yahoo";
 
 export type MarketRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y" | "5y" | "max";
 
@@ -57,11 +56,23 @@ function getStartDate(range: MarketRange) {
   }
 }
 
-export async function getMarketHistory(
+// Price history is quote data: cached 5 minutes per symbol + range. Note: the
+// returned `meta` Date fields come back as ISO strings (JSON round-trip), same
+// as what the API route already sent to the browser.
+const cachedHistory = unstable_cache(
+  (symbol: string, range: MarketRange) => fetchMarketHistory(symbol, range),
+  ["yahoo-history-v1"],
+  { revalidate: TTL.quote, tags: ["yahoo", "yahoo-history"] }
+);
+
+export function getMarketHistory(
   ticker: string,
   selectedRange: MarketRange = "1mo"
 ) {
-  const symbol = ticker.toUpperCase().trim();
+  return cachedHistory(ticker.toUpperCase().trim(), selectedRange);
+}
+
+async function fetchMarketHistory(symbol: string, selectedRange: MarketRange) {
   const { period1, interval } = getStartDate(selectedRange);
 
   const result: any = await yahooFinance.chart(symbol, {

@@ -1,8 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import YahooFinance from 'yahoo-finance2'
-
-const yahooFinance = new YahooFinance()
+import { getQuote } from '@/lib/yahoo'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,7 +46,7 @@ export async function GET(req: Request) {
     : await Promise.all(
         (rows ?? []).map(async (t) => {
           try {
-            const quote = await yahooFinance.quote(t.symbol) as any
+            const quote = await getQuote(t.symbol) // cached 5 min
             return {
               ...t,
               price:              quote.regularMarketPrice         ?? null,

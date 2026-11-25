@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import YahooFinance from 'yahoo-finance2'
+import { getQuote } from '@/lib/yahoo'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY!,
 )
-
-const yahooFinance = new YahooFinance()
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -40,7 +38,7 @@ export async function GET(req: Request) {
         .limit(30),
     ]),
     Promise.allSettled(
-      tickers.map((t) => (yahooFinance.quote(t) as Promise<any>).catch(() => null))
+      tickers.map((t) => getQuote(t).catch(() => null)) // cached 5 min
     ),
   ])
 
