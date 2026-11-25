@@ -41,19 +41,47 @@ const SECTOR_OPTIONS = [
 
 // ─── shared styles ────────────────────────────────────────────────────────────
 
-const dropdownStyle: React.CSSProperties = {
-  padding: '7px 28px 7px 12px',
-  borderRadius: '8px',
-  border: '1px solid #1e2530',
-  background: '#0d1117',
-  color: '#c9d1d9',
-  fontSize: '13px',
-  cursor: 'pointer',
-  outline: 'none',
-  appearance: 'none',
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237b8498' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
-  backgroundRepeat: 'no-repeat',
-  backgroundPosition: 'right 10px center',
+const thBase = 'px-2 py-3 font-mono text-[11px] font-medium tracking-[0.08em] text-muted md:whitespace-nowrap md:px-4'
+const th  = `${thBase} text-left`
+const thR = `${thBase} text-right`
+const td  = 'px-2 py-[13px] md:px-4'
+const btnSecondary =
+  'inline-flex h-10 cursor-pointer items-center justify-center rounded-sm border border-border-strong bg-transparent px-4 font-sans text-sm text-text-secondary transition-colors hover:border-muted hover:text-white disabled:cursor-not-allowed disabled:opacity-40'
+
+// #, Company and Sector columns are hidden on small screens (company moves under the ticker).
+const hideMobile = 'hidden md:table-cell'
+const MOBILE_HIDDEN_COLS = [0, 2, 3]
+
+const COLS: { label: string; cls: string }[] = [
+  { label: '#',          cls: `${th} ${hideMobile} w-12` },
+  { label: 'TICKER',     cls: th },
+  { label: 'COMPANY',    cls: `${th} ${hideMobile}` },
+  { label: 'SECTOR',     cls: `${th} ${hideMobile}` },
+  { label: 'PRICE',      cls: thR },
+  { label: 'DAY CHANGE', cls: thR },
+  { label: 'MARKET CAP', cls: thR },
+]
+
+// Labeled select, same as the screener's filter controls.
+function FilterSelect({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void
+  options: { value: string; label: string }[]
+}) {
+  return (
+    <label className="relative flex h-10 items-center gap-2 rounded-sm border border-border-strong bg-surface pl-3 pr-8">
+      <span className="whitespace-nowrap text-xs text-muted">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="cursor-pointer appearance-none border-none bg-transparent font-sans text-sm text-text outline-none [&>option]:bg-surface"
+      >
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <svg className="pointer-events-none absolute right-3" width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+        <path d="M1 1l4 4 4-4" stroke="#8B949E" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </label>
+  )
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -138,216 +166,152 @@ export default function ExplorePage() {
   // ─── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="rsp-pad" style={{ padding: '80px 40px 80px', maxWidth: '1100px', margin: '0 auto' }}>
+    <div className="min-h-screen bg-background pt-16 text-text">
+      <main className="mx-auto max-w-[1400px] px-4 pb-16 md:px-8">
 
-      {/* heading */}
-      <p style={{ color: '#7b8498', fontSize: '12px', letterSpacing: '2px', margin: '0 0 10px' }}>
-        TICKER EXPLORER
-      </p>
-      <h1 style={{ fontSize: '40px', fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.5px' }}>
-        Ticker Explorer
-      </h1>
-      <p style={{ color: '#7b8498', fontSize: '15px', margin: '0 0 36px', lineHeight: 1.6 }}>
-        Search any stock to see Sentra's signal analysis, or browse our coverage universe below.
-      </p>
+        {/* TITLE */}
+        <section className="flex flex-col gap-2.5 pb-6 pt-10">
+          <div className="font-mono text-xs tracking-[0.08em] text-muted">TICKER EXPLORER</div>
+          <h1 className="m-0 font-serif text-[34px] font-normal leading-[1.08] tracking-[-0.01em] text-heading md:text-[46px]">
+            Ticker Explorer
+          </h1>
+          <p className="m-0 max-w-[640px] text-[15px] leading-relaxed text-text-secondary md:text-base">
+            Search any stock to see Sentra&apos;s signal analysis, or browse our coverage universe below.
+          </p>
+        </section>
 
-      {/* search bar */}
-      <div style={{ position: 'relative', marginBottom: '20px' }}>
-        <span style={{
-          position: 'absolute', left: '20px', top: '50%', transform: 'translateY(-50%)',
-          color: '#7b8498', fontSize: '18px', pointerEvents: 'none', lineHeight: 1,
-        }}>
-          ⌕
-        </span>
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Search by ticker or company name… NVDA, Apple, Tesla"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={handleKeyDown}
-          style={{
-            width: '100%', padding: '18px 20px 18px 48px',
-            borderRadius: '12px', border: '1px solid #1e2530',
-            background: '#0d1117', color: 'white', fontSize: '17px',
-            outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.15s',
-          }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = '#3a4a60')}
-          onBlur={(e)  => (e.currentTarget.style.borderColor = '#1e2530')}
-        />
-        {search && (
-          <span style={{
-            position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)',
-            color: '#7b8498', fontSize: '12px', letterSpacing: '0.5px', pointerEvents: 'none',
-          }}>
-            ENTER ↵
-          </span>
-        )}
-      </div>
-
-      {/* controls row: count label left, dropdowns right */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: '12px', marginBottom: '20px', flexWrap: 'wrap',
-      }}>
-        <span style={{ color: '#7b8498', fontSize: '13px' }}>
-          {loading
-            ? 'Loading…'
-            : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} stocks`}
-        </span>
-
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <select value={sector} onChange={(e) => changeSector(e.target.value)} style={dropdownStyle}>
-            {SECTOR_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={sortBy} onChange={(e) => changeSort(e.target.value as SortKey)} style={dropdownStyle}>
-            {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* table */}
-      <div className="table-scroll-x">
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '580px' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid #1e2530' }}>
-            {['#', 'Ticker', 'Company', 'Sector', 'Price', 'Day Change', 'Market Cap'].map((h) => (
-              <th key={h} style={{
-                textAlign: 'left', padding: '10px 16px',
-                color: '#7b8498', fontSize: '11px', letterSpacing: '1px', fontWeight: 500,
-              }}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-
-          {/* "Search for X" row — shown when query has no exact match in visible 30 */}
-          {!loading && showSearchFor && (
-            <tr
-              onClick={() => router.push(`/t/${searchVal}`)}
-              style={{ borderBottom: '1px solid #1a2235', cursor: 'pointer', transition: 'background 0.12s' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(158,203,255,0.05)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <td colSpan={7} style={{ padding: '14px 16px' }}>
-                <span style={{ color: '#9ecbff', marginRight: '10px', fontSize: '15px' }}>↗</span>
-                <span style={{ color: '#7b8498', fontSize: '14px' }}>Press Enter to search </span>
-                <span style={{ color: '#c9d1d9', fontWeight: 700, fontSize: '14px' }}>{searchVal}</span>
-                <span style={{ color: '#7b8498', fontSize: '14px' }}> directly</span>
-                <span style={{ color: '#9ecbff', fontSize: '14px', marginLeft: '8px' }}>→</span>
-              </td>
-            </tr>
+        {/* SEARCH */}
+        <label className="flex h-12 items-center gap-3 rounded-sm border border-border-strong bg-surface px-4 focus-within:border-muted">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B949E" strokeWidth="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+          </svg>
+          <span className="sr-only">Search by ticker or company name</span>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Search by ticker or company name… NVDA, Apple, Tesla"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="min-w-0 flex-1 border-none bg-transparent font-sans text-base text-text outline-none placeholder:text-muted"
+          />
+          {search && (
+            <span className="pointer-events-none hidden font-mono text-[11px] tracking-[0.08em] text-muted sm:inline">ENTER ↵</span>
           )}
+        </label>
 
-          {/* loading skeleton */}
-          {loading && Array.from({ length: 10 }).map((_, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid #141920' }}>
-              {Array.from({ length: 7 }).map((_, j) => (
-                <td key={j} style={{ padding: '14px 16px' }}>
-                  <div style={{
-                    height: '14px', borderRadius: '4px',
-                    background: '#1a1f2a',
-                    width: j === 2 ? '140px' : j === 0 ? '20px' : '60px',
-                    animation: 'pulse 1.5s ease-in-out infinite',
-                  }} />
-                </td>
-              ))}
-            </tr>
-          ))}
+        {/* CONTROLS: count left, selects right */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 pt-5">
+          <span className="font-mono text-xs text-muted">
+            {loading
+              ? 'Loading…'
+              : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString()} stocks`}
+          </span>
+          <div className="flex flex-wrap gap-2.5">
+            <FilterSelect
+              label="Sector"
+              value={sector}
+              onChange={changeSector}
+              options={SECTOR_OPTIONS.map((s) => ({ value: s, label: s }))}
+            />
+            <FilterSelect label="Sort" value={sortBy} onChange={(v) => changeSort(v as SortKey)} options={SORT_OPTIONS} />
+          </div>
+        </div>
 
-          {/* ticker rows */}
-          {!loading && filtered.length === 0 && !showSearchFor ? (
-            <tr>
-              <td colSpan={7} style={{ padding: '48px 16px', textAlign: 'center', color: '#7b8498', fontSize: '14px' }}>
-                No tickers match your filters.
-              </td>
-            </tr>
-          ) : (
-            !loading && filtered.map((t, i) => (
-              <tr
-                key={t.id}
-                onClick={() => router.push(`/t/${t.symbol}`)}
-                style={{ borderBottom: '1px solid #141920', cursor: 'pointer', transition: 'background 0.12s' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#0d1117')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <td style={{ padding: '14px 16px', color: '#7b8498', fontSize: '13px' }}>
-                  {(page - 1) * 30 + i + 1}
-                </td>
-                <td style={{ padding: '14px 16px', fontWeight: 700, fontSize: '15px' }}>{t.symbol}</td>
-                <td style={{ padding: '14px 16px', color: '#c9d1d9', fontSize: '14px' }}>{t.name}</td>
-                <td style={{ padding: '14px 16px', color: '#7b8498', fontSize: '13px' }}>{t.sector}</td>
-                <td style={{ padding: '14px 16px', fontSize: '14px' }}>
-                  {t.price ? `$${t.price.toFixed(2)}` : '—'}
-                </td>
-                <td style={{
-                  padding: '14px 16px', fontSize: '14px',
-                  color: t.day_change_percent == null ? '#7b8498'
-                    : t.day_change_percent >= 0 ? '#3fb950' : '#f85149',
-                }}>
-                  {t.day_change_percent != null
-                    ? `${t.day_change_percent >= 0 ? '+' : ''}${t.day_change_percent.toFixed(2)}%`
-                    : '—'}
-                </td>
-                <td style={{ padding: '14px 16px', fontSize: '14px' }}>
-                  {formatMarketCap(t.market_cap)}
-                </td>
+        {/* TABLE */}
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full border-collapse md:min-w-[560px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface">
+                {COLS.map((c) => <th key={c.label} className={c.cls}>{c.label}</th>)}
               </tr>
-            ))
-          )}
+            </thead>
+            <tbody>
 
-        </tbody>
-      </table>
-      </div>
+              {/* "Search for X" row — shown when query has no exact match in visible 30 */}
+              {!loading && showSearchFor && (
+                <tr
+                  onClick={() => router.push(`/t/${searchVal}`)}
+                  className="cursor-pointer border-b border-row-border transition-colors hover:bg-surface-hover"
+                >
+                  <td colSpan={7} className={td}>
+                    <span className="mr-2.5 text-muted">↗</span>
+                    <span className="text-muted">Press Enter to search </span>
+                    <span className="font-mono font-semibold text-heading">{searchVal}</span>
+                    <span className="text-muted"> directly</span>
+                    <span className="ml-2 text-muted">→</span>
+                  </td>
+                </tr>
+              )}
 
-      {/* pagination */}
-      {!loading && pages > 1 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: '16px', marginTop: '32px',
-        }}>
-          <button
-            onClick={() => setPage((p) => p - 1)}
-            disabled={page === 1}
-            style={{
-              padding: '8px 18px', borderRadius: '8px',
-              border: '1px solid #1e2530', background: 'transparent',
-              color: page === 1 ? '#3a4a5a' : '#c9d1d9',
-              fontSize: '13px', cursor: page === 1 ? 'not-allowed' : 'pointer',
-              transition: 'border-color 0.15s',
-            }}
-            onMouseEnter={(e) => { if (page > 1) e.currentTarget.style.borderColor = '#3a4a60' }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#1e2530' }}
-          >
-            ← Previous
-          </button>
+              {/* loading skeleton */}
+              {loading && Array.from({ length: 10 }).map((_, i) => (
+                <tr key={i} className="border-b border-row-border last:border-b-0">
+                  {COLS.map((_, j) => (
+                    <td key={j} className={`${td} ${MOBILE_HIDDEN_COLS.includes(j) ? hideMobile : ''}`}>
+                      <div
+                        className={`h-3.5 animate-pulse rounded-xs bg-track ${j >= 4 ? 'ml-auto' : ''}`}
+                        style={{ width: j === 2 ? 140 : j === 0 ? 20 : 60 }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
 
-          <span style={{ color: '#7b8498', fontSize: '13px' }}>
-            Page {page} of {pages}
-          </span>
+              {/* ticker rows */}
+              {!loading && filtered.length === 0 && !showSearchFor ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted">
+                    No tickers match your filters.
+                  </td>
+                </tr>
+              ) : (
+                !loading && filtered.map((t, i) => (
+                  <tr
+                    key={t.id}
+                    onClick={() => router.push(`/t/${t.symbol}`)}
+                    className="cursor-pointer border-b border-row-border transition-colors last:border-b-0 hover:bg-surface-hover"
+                  >
+                    <td className={`${td} ${hideMobile} font-mono text-muted`}>{(page - 1) * 30 + i + 1}</td>
+                    <td className={td}>
+                      <div className="font-mono font-semibold text-heading">{t.symbol}</div>
+                      <div className="max-w-[110px] truncate text-xs text-muted md:hidden">{t.name}</div>
+                    </td>
+                    <td className={`${td} ${hideMobile} max-w-[320px] truncate text-text-secondary`}>{t.name}</td>
+                    <td className={`${td} ${hideMobile} text-muted`}>{t.sector}</td>
+                    <td className={`${td} text-right font-mono text-text`}>
+                      {t.price ? `$${t.price.toFixed(2)}` : '—'}
+                    </td>
+                    <td
+                      className={`${td} text-right font-mono ${
+                        t.day_change_percent == null ? 'text-muted'
+                          : t.day_change_percent >= 0 ? 'text-opportunistic' : 'text-routine'
+                      }`}
+                    >
+                      {t.day_change_percent != null
+                        ? `${t.day_change_percent >= 0 ? '+' : ''}${t.day_change_percent.toFixed(2)}%`
+                        : '—'}
+                    </td>
+                    <td className={`${td} text-right font-mono text-text-secondary`}>
+                      {formatMarketCap(t.market_cap)}
+                    </td>
+                  </tr>
+                ))
+              )}
 
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            disabled={page === pages}
-            style={{
-              padding: '8px 18px', borderRadius: '8px',
-              border: '1px solid #1e2530', background: 'transparent',
-              color: page === pages ? '#3a4a5a' : '#c9d1d9',
-              fontSize: '13px', cursor: page === pages ? 'not-allowed' : 'pointer',
-              transition: 'border-color 0.15s',
-            }}
-            onMouseEnter={(e) => { if (page < pages) e.currentTarget.style.borderColor = '#3a4a60' }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#1e2530' }}
-          >
-            Next →
-          </button>
+            </tbody>
+          </table>
         </div>
-      )}
 
-      {/* skeleton animation */}
-      <style>{`@keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.9} }`}</style>
+        {/* PAGINATION */}
+        {!loading && pages > 1 && (
+          <div className="flex items-center justify-center gap-4 pt-6">
+            <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className={btnSecondary}>← Previous</button>
+            <span className="font-mono text-xs text-muted">Page {page} of {pages}</span>
+            <button onClick={() => setPage((p) => p + 1)} disabled={page === pages} className={btnSecondary}>Next →</button>
+          </div>
+        )}
+      </main>
     </div>
   )
 }
