@@ -45,7 +45,20 @@ type TickerSuggestion = { symbol: string; name: string }
 
 const PAGE_SIZE = 50
 const NEWS_PAGE_SIZE = 30
-const DEFAULT_WINDOW_DAYS = 90
+const DEFAULT_WINDOW_DAYS = 30
+
+// Date-range presets in More filters (trade date). null = all history.
+const RANGES: { label: string; days: number | null }[] = [
+  { label: '7d', days: 7 },
+  { label: '30d', days: 30 },
+  { label: '90d', days: 90 },
+  { label: '1y', days: 365 },
+  { label: 'All', days: null },
+]
+
+// Column sorts. "signal" = class bucket, then score (the SCORE column).
+type SortKey = 'signal' | 'filed' | 'value' | 'stake'
+type SortState = { key: SortKey; dir: 'asc' | 'desc' }
 
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
@@ -139,12 +152,40 @@ function FilterDate({ label, value, onChange }: { label: string; value: string; 
   )
 }
 
-function Pagination({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
+// Clickable column header: first click sorts descending, the next flips it.
+function SortTh({ label, sortKey, sort, onSort, align = 'left', title }: {
+  label: string; sortKey: SortKey; sort: SortState; onSort: (k: SortKey) => void
+  align?: 'left' | 'right'; title?: string
+}) {
+  const active = sort.key === sortKey
+  return (
+    <th
+      className={align === 'right' ? thR : th}
+      aria-sort={active ? (sort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={title}
+        className={`group inline-flex cursor-pointer items-center gap-1 border-none bg-transparent p-0 font-mono text-[11px] font-medium tracking-[0.08em] transition-colors ${
+          active ? 'text-heading' : 'text-muted hover:text-text-secondary'
+        }`}
+      >
+        {label}
+        <span className={`inline-block w-2.5 text-left ${active ? '' : 'opacity-0 group-hover:opacity-60'}`} aria-hidden="true">
+          {active ? (sort.dir === 'desc' ? '↓' : '↑') : '↓'}
+        </span>
+      </button>
+    </th>
+  )
+}
+
+function Pagination({ page, pages, onPage, approx = false }: { page: number; pages: number; onPage: (p: number) => void; approx?: boolean }) {
   if (pages <= 1) return null
   return (
     <div className="flex items-center justify-center gap-4 pt-6">
       <button onClick={() => onPage(page - 1)} disabled={page === 1} className={btnSecondary}>← Previous</button>
-      <span className="font-mono text-xs text-muted">Page {page} of {pages.toLocaleString('en-US')}</span>
+      <span className="font-mono text-xs text-muted">Page {page} of {approx ? '~' : ''}{pages.toLocaleString('en-US')}</span>
       <button onClick={() => onPage(page + 1)} disabled={page === pages} className={btnSecondary}>Next →</button>
     </div>
   )
@@ -249,6 +290,7 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
   const [page,        setPage]        = useState(1)
   const [total,       setTotal]       = useState(0)
   const [pages,       setPages]       = useState(1)
+  const [totalEstimated, setTotalEstimated] = useState(false)
   const [includeSales, setIncludeSales] = useState(false)
   const [clsFilter,   setClsFilter]   = useState('all')
   const [roleFilter,  setRoleFilter]  = useState('all')
@@ -262,9 +304,29 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
   const [moreOpen,    setMoreOpen]    = useState(false)
   const router = useRouter()
 
-  // Buys only → ranked by score. Sales included → mixed, newest filed first.
+  // Default: buys ranked by signal (class bucket, then score). Sales are unscored,
+  // so signal order would bury them: toggling sales resets to that mode's default
+  // (on → newest filed first, off → signal). Column headers re-sort from there.
   const dirFilter = includeSales ? 'all' : 'buys'
-  const sortBy: 'score' | 'filed' = includeSales ? 'filed' : 'score'
+  const [sort, setSort] = useState<SortState>({ key: 'signal', dir: 'desc' })
+
+  function toggleSales() {
+    const next = !includeSales
+    setIncludeSales(next)
+    setSort({ key: next ? 'filed' : 'signal', dir: 'desc' })
+  }
+
+  function sortBy(key: SortKey) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }))
+  }
+
+  function applyRange(days: number | null) {
+    setStartDate(days == null ? '' : isoDaysAgo(days))
+    setEndDate('')
+  }
+  const activeRange = endDate
+    ? null
+    : RANGES.find((r) => (r.days == null ? startDate === '' : startDate === isoDaysAgo(r.days)))?.label ?? null
 
   // Honor ?classification= deep links (e.g. homepage "Open full screener")
   useEffect(() => {
@@ -272,13 +334,14 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
     if (c === 'OPPORTUNISTIC' || c === 'ROUTINE' || c === 'UNCLASSIFIABLE') setClsFilter(c)
   }, [])
 
-  useEffect(() => { setPage(1) }, [ticker, dirFilter, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter])
+  useEffect(() => { setPage(1) }, [ticker, dirFilter, sort.key, sort.dir, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter])
 
   useEffect(() => {
     setLoading(true)
     setFetchError(null)
     const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), direction: dirFilter, include: 'company' })
-    if (sortBy === 'score')    params.set('sort', 'score')
+    params.set('sort', sort.key)
+    params.set('dir', sort.dir)
     if (ticker)                params.set('ticker', ticker)
     if (clsFilter  !== 'all')  params.set('classification', clsFilter)
     if (roleFilter !== 'all')  params.set('role', roleFilter)
@@ -299,11 +362,12 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
         setRows(d.rows ?? [])
         setTotal(d.total ?? 0)
         setPages(d.pages ?? 1)
+        setTotalEstimated(!!d.totalEstimated)
       })
       .catch((e: Error) => { if (!cancelled) setFetchError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [ticker, dirFilter, sortBy, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter, page])
+  }, [ticker, dirFilter, sort.key, sort.dir, clsFilter, roleFilter, valueFilter, startDate, endDate, clusterMin, holdingsPct, scoreFilter, page])
 
   // In cluster mode, group by ticker (sorted by each group's most recent trade) then flatten.
   const displayRows: InsiderRow[] = (() => {
@@ -325,14 +389,14 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
   const unit      = includeSales ? 'trades' : 'buys'
   const pageStart = (page - 1) * PAGE_SIZE + 1
   const pageEnd   = Math.min(page * PAGE_SIZE, total)
-  const since     = startDate ? ` · traded since ${fmtDay(startDate)}` : ''
+  const since     = startDate ? ` · traded since ${fmtDay(startDate)}` : ' · all time'
   const countText = loading
     ? 'Loading…'
     : fetchError
       ? 'Failed to load'
       : total === 0
         ? `No ${unit} found`
-        : `Showing ${pageStart}–${pageEnd} of ${total.toLocaleString('en-US')} ${unit}${since}`
+        : `Showing ${pageStart}–${pageEnd} of ${totalEstimated ? 'about ' : ''}${total.toLocaleString('en-US')} ${unit}${since}`
 
   return (
     <>
@@ -396,6 +460,24 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
               { value: '3', label: '3+ insiders' },
               { value: '4', label: '4+ insiders' },
             ]} />
+            <div className="flex h-10 items-center gap-2 rounded-sm border border-border-strong pl-3 pr-1">
+              <span className="text-xs text-muted">Period</span>
+              <div className="flex gap-0.5" role="group" aria-label="Date range">
+                {RANGES.map((r) => (
+                  <button
+                    key={r.label}
+                    type="button"
+                    aria-pressed={activeRange === r.label}
+                    onClick={() => applyRange(r.days)}
+                    className={`h-8 cursor-pointer rounded-sm border-0 px-2.5 font-mono text-xs ${
+                      activeRange === r.label ? 'bg-track text-heading' : 'bg-transparent text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <FilterDate label="From" value={startDate} onChange={setStartDate} />
             <FilterDate label="To" value={endDate} onChange={setEndDate} />
             {moreActive > 0 && (
@@ -416,7 +498,7 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
               type="button"
               role="switch"
               aria-checked={includeSales}
-              onClick={() => setIncludeSales((v) => !v)}
+              onClick={toggleSales}
               className="inline-flex h-9 cursor-pointer items-center gap-2.5 border-none bg-transparent px-1 font-sans text-sm text-text-secondary hover:text-white"
             >
               <span className={`relative inline-block h-5 w-[34px] rounded-[10px] transition-colors ${includeSales ? 'bg-opportunistic' : 'bg-border-strong'}`}>
@@ -425,7 +507,7 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
               Include sales
             </button>
             <span className="text-xs text-muted">
-              {includeSales ? 'Sales are shown for context but not scored. Sorted newest first.' : 'Sales are shown for context but not scored.'}
+              Sales are shown for context but not scored.
             </span>
           </div>
           <span className={`font-mono text-xs ${fetchError ? 'text-routine' : 'text-muted'}`}>{countText}</span>
@@ -440,10 +522,10 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
               <th className={th}>TICKER</th>
               <th className={th}>INSIDER</th>
               <th className={th}>CLASS</th>
-              <th className={thR}>VALUE</th>
-              <th className={thR}>STAKE Δ</th>
-              <th className={th}>SCORE{sortBy === 'score' ? ' ↓' : ''}</th>
-              <th className={thR}>FILED{sortBy === 'filed' ? ' ↓' : ''}</th>
+              <SortTh label="VALUE" sortKey="value" sort={sort} onSort={sortBy} align="right" title="Sort by trade value" />
+              <SortTh label="STAKE Δ" sortKey="stake" sort={sort} onSort={sortBy} align="right" title="Sort by change in the insider's stake" />
+              <SortTh label="SCORE" sortKey="signal" sort={sort} onSort={sortBy} title="Sort by signal: class first, then score" />
+              <SortTh label="FILED" sortKey="filed" sort={sort} onSort={sortBy} align="right" title="Sort by filing date" />
             </tr>
           </thead>
           <tbody>
@@ -529,7 +611,7 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
         </table>
       </div>
 
-      {!loading && <Pagination page={page} pages={pages} onPage={setPage} />}
+      {!loading && <Pagination page={page} pages={pages} onPage={setPage} approx={totalEstimated} />}
 
       {/* LEGEND */}
       <div className="mt-4 flex flex-wrap justify-between gap-x-6 gap-y-3 rounded-md border border-border bg-surface px-5 py-4">

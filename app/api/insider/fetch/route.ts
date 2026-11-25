@@ -10,7 +10,7 @@ const SELECT_COLS =
   'id, ticker, insider_name, insider_cik, role, is_director, is_officer, officer_title, ' +
   'transaction_date, transaction_code, transaction_direction, ' +
   'shares, price_per_share, total_value, shares_owned_after, purchase_pct_market_cap, ' +
-  'filed_date, source_url, conviction_score, classification'
+  'filed_date, source_url, conviction_score, classification, holdings_pct_change'
 
 // classification is now a stored column on insider_transactions, written by the cron.
 // Rows not yet scored by the cron have classification = null; treat them as UNCLASSIFIABLE
@@ -22,28 +22,100 @@ function attachClassifications(rows: any[]): any[] {
   }))
 }
 
-// ── Signal buckets for sort=score (see /about) ──────────────────────────────────
-// Rank by bucket first, then score, so Routine buys never outrank Opportunistic
-// ones. Order: Opportunistic ≥50 (Very high), Unclassifiable ≥50 (High),
-// Opportunistic <50 (Moderate), Unclassifiable <50 (Low), Routine ≥50 (Low),
-// Routine <50 (No signal). Unscored rows (sales, not-yet-scored buys) come last.
-type Bucket = { cls: 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE'; high: boolean } | { unscored: true }
-const SIGNAL_BUCKETS: Bucket[] = [
+// ── Screener sorting: opt-in ?sort=signal|filed|value|stake&dir=desc|asc ────────
+// (sort=score is accepted as an alias for signal.) Some orderings can't be one
+// ORDER BY in PostgREST, so a sort is a list of segments: each is a filter plus
+// an ordering, concatenated in order. match/cmp mirror filter/order for rows
+// already in memory (cluster batch path).
+//
+// Signal: rank by bucket, then score, so Routine buys never outrank Opportunistic
+// ones (see /about): Opportunistic >=50 (Very high), Unclassifiable >=50 (High),
+// Opportunistic <50 (Moderate), Unclassifiable <50 (Low), Routine >=50 (Low),
+// Routine <50 (No signal). asc reverses the buckets. Unscored rows always last.
+// Stake: holdings_pct_change is unsigned, so buys (increases) and sales (cuts)
+// are separate segments to get a signed order. Unknown stake always last.
+type SortKey = 'signal' | 'filed' | 'value' | 'stake'
+type Dir = 'asc' | 'desc'
+type Segment = {
+  filter: (q: any) => any
+  order:  (q: any) => any
+  match:  (r: any) => boolean
+  cmp:    (a: any, b: any) => number
+}
+
+// Orderings below use Postgres' default null placement on purpose: it matches the
+// btree indexes (idx_it_filed_txn_date, idx_it_total_value, ...). Forcing
+// NULLS LAST on a desc sort defeats the index and full-sorts ~260k rows (timeout).
+// Where nulls must sort last, they get their own trailing segment instead.
+const ALL = (q: any) => q
+const orderFiledDesc = (q: any) =>
+  q.order('filed_date', { ascending: false }).order('transaction_date', { ascending: false })
+const cmpStr = (a: string | null, b: string | null, asc: boolean) =>
+  a === b ? 0 : a == null ? 1 : b == null ? -1 : (asc ? 1 : -1) * a.localeCompare(b)
+const cmpNum = (a: number | null, b: number | null, asc: boolean) =>
+  a === b ? 0 : a == null ? 1 : b == null ? -1 : (asc ? 1 : -1) * (Number(a) - Number(b))
+const cmpFiledDesc = (a: any, b: any) =>
+  cmpStr(a.filed_date, b.filed_date, false) || cmpStr(a.transaction_date, b.transaction_date, false)
+
+const SIGNAL_BUCKETS: { cls: string; high: boolean }[] = [
   { cls: 'OPPORTUNISTIC',  high: true  },
   { cls: 'UNCLASSIFIABLE', high: true  },
   { cls: 'OPPORTUNISTIC',  high: false },
   { cls: 'UNCLASSIFIABLE', high: false },
   { cls: 'ROUTINE',        high: true  },
   { cls: 'ROUTINE',        high: false },
-  { unscored: true },
 ]
 
-// Same ranking for rows already in memory (cluster batch path).
-function bucketRank(r: { classification: string | null; conviction_score: number | null }): number {
-  if (r.conviction_score == null || r.classification == null) return SIGNAL_BUCKETS.length - 1
-  const high = r.conviction_score >= 50
-  const i = SIGNAL_BUCKETS.findIndex((b) => 'cls' in b && b.cls === r.classification && b.high === high)
-  return i < 0 ? SIGNAL_BUCKETS.length - 1 : i
+function sortSegments(sort: SortKey, dir: Dir): Segment[] {
+  const asc = dir === 'asc'
+  if (sort === 'signal') {
+    const buckets = asc ? [...SIGNAL_BUCKETS].reverse() : SIGNAL_BUCKETS
+    return [
+      ...buckets.map(({ cls, high }): Segment => ({
+        filter: (q) => { const f = q.eq('classification', cls); return high ? f.gte('conviction_score', 50) : f.lt('conviction_score', 50) },
+        order:  (q) => orderFiledDesc(q.order('conviction_score', { ascending: asc })),
+        match:  (r) => r.classification === cls && r.conviction_score != null && (r.conviction_score >= 50) === high,
+        cmp:    (a, b) => cmpNum(a.conviction_score, b.conviction_score, asc) || cmpFiledDesc(a, b),
+      })),
+      { filter: (q) => q.or('conviction_score.is.null,classification.is.null'), order: orderFiledDesc, match: () => true, cmp: cmpFiledDesc },
+    ]
+  }
+  if (sort === 'filed') {
+    return [{
+      filter: ALL,
+      order:  (q) => q.order('filed_date', { ascending: asc }).order('transaction_date', { ascending: asc }),
+      match:  () => true,
+      cmp:    (a, b) => cmpStr(a.filed_date, b.filed_date, asc) || cmpStr(a.transaction_date, b.transaction_date, asc),
+    }]
+  }
+  if (sort === 'value') {
+    return [
+      {
+        filter: (q) => q.not('total_value', 'is', null),
+        order:  (q) => orderFiledDesc(q.order('total_value', { ascending: asc })),
+        match:  (r) => r.total_value != null,
+        cmp:    (a, b) => cmpNum(a.total_value, b.total_value, asc) || cmpFiledDesc(a, b),
+      },
+      { filter: (q) => q.is('total_value', null), order: orderFiledDesc, match: () => true, cmp: cmpFiledDesc },
+    ]
+  }
+  // stake: desc = biggest increase first, biggest cut last; asc = the reverse.
+  const side = (code: 'P' | 'S', magAsc: boolean): Segment => ({
+    filter: (q) => q.eq('transaction_code', code).not('holdings_pct_change', 'is', null),
+    order:  (q) => orderFiledDesc(q.order('holdings_pct_change', { ascending: magAsc })),
+    match:  (r) => r.transaction_code?.toUpperCase() === code && r.holdings_pct_change != null,
+    cmp:    (a, b) => cmpNum(a.holdings_pct_change, b.holdings_pct_change, magAsc) || cmpFiledDesc(a, b),
+  })
+  const unknown: Segment = { filter: (q) => q.is('holdings_pct_change', null), order: orderFiledDesc, match: () => true, cmp: cmpFiledDesc }
+  return asc ? [side('S', false), side('P', true), unknown] : [side('P', false), side('S', true), unknown]
+}
+
+function sortInMemory(rows: any[], segs: Segment[]): any[] {
+  const seg = (r: any) => segs.findIndex((s) => s.match(r))
+  return rows
+    .map((r) => ({ r, i: seg(r) }))
+    .sort((a, b) => a.i - b.i || segs[a.i].cmp(a.r, b.r))
+    .map((x) => x.r)
 }
 
 type ClusterResult = {
@@ -129,7 +201,12 @@ export async function GET(req: Request) {
   const minValue       = minValueRaw ? parseInt(minValueRaw, 10) : null
   const minScoreRaw    = searchParams.get('min_score')
   const minScore       = minScoreRaw ? parseInt(minScoreRaw, 10) : null
-  const sort           = searchParams.get('sort') === 'score' ? 'score' : 'filed'
+  const sortRaw        = searchParams.get('sort')
+  const sort: SortKey | null =
+    sortRaw === 'score' || sortRaw === 'signal' ? 'signal'
+    : sortRaw === 'filed' || sortRaw === 'value' || sortRaw === 'stake' ? sortRaw
+    : null
+  const dir: Dir       = searchParams.get('dir') === 'asc' ? 'asc' : 'desc'
   const withCompany    = (searchParams.get('include') ?? '').split(',').includes('company')
   const limit          = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)))
   const page           = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
@@ -199,16 +276,13 @@ export async function GET(req: Request) {
 
   // ── 3. Base query factory (all filters except range/count) ────────────────────
   // Returns null when the ticker+cluster intersection is empty.
-  function buildBaseQuery(withCount: boolean, exactHead = false) {
+  function buildBaseQuery(withCount: boolean, headCount?: 'exact' | 'estimated') {
     let q = supabase
       .from('insider_transactions')
-      .select(SELECT_COLS, exactHead ? { count: 'exact', head: true } : withCount ? { count: 'estimated' } : {})
-    // Opt-in score ordering (screener). Default stays newest-filed first.
-    if (sort === 'score') q = q.order('conviction_score', { ascending: false, nullsFirst: false })
-    q = q
-      .order('filed_date', { ascending: false })
-      .order('transaction_date', { ascending: false })
-      .lte('transaction_date', '2027-01-01')
+      .select(SELECT_COLS, headCount ? { count: headCount, head: true } : withCount ? { count: 'estimated' } : {})
+    // Default: newest filed first. Opt-in screener sorts order per segment instead.
+    if (!sort) q = q.order('filed_date', { ascending: false }).order('transaction_date', { ascending: false })
+    q = q.lte('transaction_date', '2027-01-01')
 
     // Direction
     if (direction === 'buys')       q = q.eq('transaction_code', 'P')
@@ -323,12 +397,10 @@ export async function GET(req: Request) {
     })
     console.log(`[cluster] batch filter: ${clusterMatchCount} matched, ${clusterMissCount} excluded`)
 
-    // Rows arrive score-ordered; a stable sort by bucket keeps that order within each bucket.
-    if (sort === 'score') matching.sort((a, b) => bucketRank(a) - bucketRank(b))
-
-    const total    = matching.length
+    const ordered  = sort ? sortInMemory(matching, sortSegments(sort, dir)) : matching
+    const total    = ordered.length
     const pages    = Math.ceil(total / limit) || 1
-    const pageRows = matching.slice(offset, offset + limit)
+    const pageRows = ordered.slice(offset, offset + limit)
 
     return NextResponse.json({
       rows:  await attachCompanies(attachClassifications(pageRows)),
@@ -339,51 +411,75 @@ export async function GET(req: Request) {
     })
   }
 
-  // ── 4b. Signal-ranked path (sort=score) ───────────────────────────────────────
-  // PostgREST can't ORDER BY a computed bucket, so each bucket is its own query:
-  // exact counts for all buckets (in parallel), then fetch only the slice(s) of
-  // the bucket(s) that overlap this page.
-  if (sort === 'score') {
-    const bucketQuery = (b: Bucket, head: boolean) => {
+  // ── 4b. Screener sort path (opt-in ?sort=...) ─────────────────────────────────
+  // Segments are concatenated in order. Two strategies:
+  //  • Date-bounded (start_date set): exact count per segment in parallel, then
+  //    fetch only the slice(s) that overlap this page. Exact total.
+  //  • Unbounded ("All"): exact counts over the full history time out, so read
+  //    segments in order until the page is full. A segment's count is only
+  //    needed when the page starts beyond it (deep pages). Total is Postgres'
+  //    estimate and flagged totalEstimated.
+  if (sort) {
+    const segs = sortSegments(sort, dir)
+    const segQuery = (seg: Segment, head?: 'exact' | 'estimated') => {
       const q = buildBaseQuery(false, head)
-      if (!q) return null
-      if ('unscored' in b) return q.or('conviction_score.is.null,classification.is.null')
-      const scored = q.eq('classification', b.cls)
-      return b.high ? scored.gte('conviction_score', 50) : scored.lt('conviction_score', 50)
+      return q ? seg.filter(q) : null
+    }
+    const segCount = async (seg: Segment): Promise<number> => {
+      const q = segQuery(seg, 'exact')
+      if (!q) return 0
+      const { count, error } = await q
+      if (error) throw new Error(error.message || 'count failed (timeout)')
+      return count ?? 0
+    }
+    const segSlice = async (seg: Segment, from: number, n: number): Promise<any[]> => {
+      const q = segQuery(seg)
+      if (!q) return []
+      const { data, error } = await seg.order(q).range(from, from + n - 1)
+      if (error) throw new Error(error.message || 'query failed (timeout)')
+      return data ?? []
     }
 
     const t0 = performance.now()
-    let counts: number[]
+    const rows: any[] = []
+    let total: number
+    let totalEstimated = false
     try {
-      counts = await Promise.all(SIGNAL_BUCKETS.map(async (b) => {
-        const q = bucketQuery(b, true)
-        if (!q) return 0
-        const { count, error } = await q
-        if (error) throw new Error(error.message)
-        return count ?? 0
-      }))
+      if (startDate) {
+        const counts = await Promise.all(segs.map(segCount))
+        let skip = offset
+        for (let i = 0; i < segs.length && rows.length < limit; i++) {
+          if (skip >= counts[i]) { skip -= counts[i]; continue }
+          rows.push(...await segSlice(segs[i], skip, Math.min(limit - rows.length, counts[i] - skip)))
+          skip = 0
+        }
+        total = counts.reduce((a, c) => a + c, 0)
+      } else {
+        const estQ = buildBaseQuery(false, 'estimated')
+        const est = estQ ? estQ.then(({ count }: { count: number | null }) => count ?? 0) : Promise.resolve(0)
+        let skip = offset
+        for (let i = 0; i < segs.length && rows.length < limit; i++) {
+          const want = limit - rows.length
+          const got = await segSlice(segs[i], skip, want)
+          rows.push(...got)
+          if (got.length === want) break
+          // Segment ended inside this page (got > 0) or before it (got = 0).
+          skip = got.length > 0 || skip === 0 ? 0 : Math.max(0, skip - await segCount(segs[i]))
+        }
+        total = Math.max(await est, offset + rows.length)
+        totalEstimated = true
+      }
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 500 })
     }
 
-    const rows: any[] = []
-    let skip = offset
-    for (let i = 0; i < SIGNAL_BUCKETS.length && rows.length < limit; i++) {
-      if (skip >= counts[i]) { skip -= counts[i]; continue }
-      const want = Math.min(limit - rows.length, counts[i] - skip)
-      const { data, error } = await bucketQuery(SIGNAL_BUCKETS[i], false)!.range(skip, skip + want - 1)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      rows.push(...(data ?? []))
-      skip = 0
-    }
-
-    const total = counts.reduce((a, c) => a + c, 0)
-    console.log(`[insider/fetch] sort=score buckets=[${counts.join(',')}] total=${total} rows=${rows.length} ${(performance.now() - t0).toFixed(0)}ms`)
+    console.log(`[insider/fetch] sort=${sort} dir=${dir} ${startDate ? 'exact' : 'lazy'} total=${total} rows=${rows.length} ${(performance.now() - t0).toFixed(0)}ms`)
     return NextResponse.json({
       rows:  await attachCompanies(attachClassifications(rows)),
       total,
+      totalEstimated,
       page,
-      pages: Math.ceil(total / limit),
+      pages: Math.max(page, Math.ceil(total / limit)),
       clusterCounts,
     })
   }
