@@ -362,7 +362,7 @@ export default async function HomePage() {
               <h2 className={h2Cls}>{window.heading}</h2>
               <div className="text-sm text-muted">Opportunistic purchases only, ranked by conviction score.</div>
             </div>
-            <Link href="/events?classification=OPPORTUNISTIC" className={textLink}>
+            <Link href="/screener?classification=OPPORTUNISTIC" className={textLink}>
               Open full screener
             </Link>
           </div>

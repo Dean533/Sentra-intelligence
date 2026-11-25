@@ -566,6 +566,18 @@ export default function TickerView({
     requestAnimationFrame(() => setFocusId(repId))
   }
 
+  // Deep link from the screener (/t/X#trade-<id>): scroll to that trade's row and
+  // highlight it, switching to "All trades" for sales and paging in older rows.
+  const deepLinked = useRef(false)
+  useEffect(() => {
+    if (deepLinked.current) return
+    deepLinked.current = true
+    const m = window.location.hash.match(/^#trade-(.+)$/)
+    const t = m ? tradeById.get(decodeURIComponent(m[1])) : undefined
+    if (t) seeInTable(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeById])
+
   const summary: string | null = s?.assetProfile?.longBusinessSummary ?? null
   const ks = s?.defaultKeyStatistics ?? {}
   const fd = s?.financialData ?? {}
@@ -646,7 +658,7 @@ export default function TickerView({
     return (
       <div className="bg-background pt-16">
         <main className="mx-auto flex max-w-[1400px] flex-col gap-4 px-4 py-24 md:px-8">
-          <Link href="/events" className="self-start font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">← SCREENER</Link>
+          <Link href="/screener" className="self-start font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">← SCREENER</Link>
           <h1 className="m-0 font-mono text-4xl font-semibold text-heading">{symbol}</h1>
           <p className="m-0 text-text-secondary">We couldn&apos;t find market or insider data for this ticker.</p>
         </main>
@@ -659,7 +671,7 @@ export default function TickerView({
       <main className="mx-auto max-w-[1400px] px-4 pb-16 md:px-8">
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <section className="flex flex-col gap-[18px] pb-5 pt-7">
-          <Link href="/events" className="self-start font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">
+          <Link href="/screener" className="self-start font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">
             ← SCREENER
           </Link>
 

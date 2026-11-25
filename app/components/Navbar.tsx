@@ -7,9 +7,8 @@ import { getSupabase } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
 import TickerSearch from './TickerSearch'
 
-// "Screener" temporarily points at /events until the /screener route ships (Phase 3).
 const NAV_LINKS = [
-  { label: 'Screener',    href: '/events' },
+  { label: 'Screener',    href: '/screener' },
   { label: 'Tickers',     href: '/explore' },
   { label: 'Watchlist',   href: '/watchlist' },
   { label: 'Methodology', href: '/about' },

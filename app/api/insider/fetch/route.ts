@@ -22,6 +22,30 @@ function attachClassifications(rows: any[]): any[] {
   }))
 }
 
+// ── Signal buckets for sort=score (see /about) ──────────────────────────────────
+// Rank by bucket first, then score, so Routine buys never outrank Opportunistic
+// ones. Order: Opportunistic ≥50 (Very high), Unclassifiable ≥50 (High),
+// Opportunistic <50 (Moderate), Unclassifiable <50 (Low), Routine ≥50 (Low),
+// Routine <50 (No signal). Unscored rows (sales, not-yet-scored buys) come last.
+type Bucket = { cls: 'OPPORTUNISTIC' | 'UNCLASSIFIABLE' | 'ROUTINE'; high: boolean } | { unscored: true }
+const SIGNAL_BUCKETS: Bucket[] = [
+  { cls: 'OPPORTUNISTIC',  high: true  },
+  { cls: 'UNCLASSIFIABLE', high: true  },
+  { cls: 'OPPORTUNISTIC',  high: false },
+  { cls: 'UNCLASSIFIABLE', high: false },
+  { cls: 'ROUTINE',        high: true  },
+  { cls: 'ROUTINE',        high: false },
+  { unscored: true },
+]
+
+// Same ranking for rows already in memory (cluster batch path).
+function bucketRank(r: { classification: string | null; conviction_score: number | null }): number {
+  if (r.conviction_score == null || r.classification == null) return SIGNAL_BUCKETS.length - 1
+  const high = r.conviction_score >= 50
+  const i = SIGNAL_BUCKETS.findIndex((b) => 'cls' in b && b.cls === r.classification && b.high === high)
+  return i < 0 ? SIGNAL_BUCKETS.length - 1 : i
+}
+
 type ClusterResult = {
   counts:   Map<string, number>         // ticker → max insiders in any window
   tradeSets: Map<string, Set<string>>   // ticker → Set of 'cik|date' keys for cluster trades
@@ -105,6 +129,8 @@ export async function GET(req: Request) {
   const minValue       = minValueRaw ? parseInt(minValueRaw, 10) : null
   const minScoreRaw    = searchParams.get('min_score')
   const minScore       = minScoreRaw ? parseInt(minScoreRaw, 10) : null
+  const sort           = searchParams.get('sort') === 'score' ? 'score' : 'filed'
+  const withCompany    = (searchParams.get('include') ?? '').split(',').includes('company')
   const limit          = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10)))
   const page           = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10))
   const offset         = (page - 1) * limit
@@ -173,10 +199,13 @@ export async function GET(req: Request) {
 
   // ── 3. Base query factory (all filters except range/count) ────────────────────
   // Returns null when the ticker+cluster intersection is empty.
-  function buildBaseQuery(withCount: boolean) {
+  function buildBaseQuery(withCount: boolean, exactHead = false) {
     let q = supabase
       .from('insider_transactions')
-      .select(SELECT_COLS, withCount ? { count: 'estimated' } : {})
+      .select(SELECT_COLS, exactHead ? { count: 'exact', head: true } : withCount ? { count: 'estimated' } : {})
+    // Opt-in score ordering (screener). Default stays newest-filed first.
+    if (sort === 'score') q = q.order('conviction_score', { ascending: false, nullsFirst: false })
+    q = q
       .order('filed_date', { ascending: false })
       .order('transaction_date', { ascending: false })
       .lte('transaction_date', '2027-01-01')
@@ -251,6 +280,16 @@ export async function GET(req: Request) {
     return q
   }
 
+  // Optional company names for the returned page (screener), one batched lookup.
+  async function attachCompanies(rows: any[]): Promise<any[]> {
+    if (!withCompany || rows.length === 0) return rows
+    const symbols = [...new Set(rows.map((r) => r.ticker as string))]
+    const { data, error } = await supabase.from('tickers').select('symbol, name').in('symbol', symbols)
+    if (error) { console.error('[insider/fetch] company lookup failed:', error.message); return rows }
+    const names = new Map((data ?? []).map((t) => [t.symbol as string, t.name as string | null]))
+    return rows.map((r) => ({ ...r, company: names.get(r.ticker) ?? null }))
+  }
+
   // ── 4a. Batch path — JS filtering needed for cluster trade membership ─────────
   // Holdings-% filtering is now applied in SQL inside buildBaseQuery, so it no
   // longer forces this path on its own.
@@ -284,12 +323,15 @@ export async function GET(req: Request) {
     })
     console.log(`[cluster] batch filter: ${clusterMatchCount} matched, ${clusterMissCount} excluded`)
 
+    // Rows arrive score-ordered; a stable sort by bucket keeps that order within each bucket.
+    if (sort === 'score') matching.sort((a, b) => bucketRank(a) - bucketRank(b))
+
     const total    = matching.length
     const pages    = Math.ceil(total / limit) || 1
     const pageRows = matching.slice(offset, offset + limit)
 
     return NextResponse.json({
-      rows:  attachClassifications(pageRows),
+      rows:  await attachCompanies(attachClassifications(pageRows)),
       total,
       page,
       pages,
@@ -297,7 +339,56 @@ export async function GET(req: Request) {
     })
   }
 
-  // ── 4b. Normal path — single query with server-side pagination ────────────────
+  // ── 4b. Signal-ranked path (sort=score) ───────────────────────────────────────
+  // PostgREST can't ORDER BY a computed bucket, so each bucket is its own query:
+  // exact counts for all buckets (in parallel), then fetch only the slice(s) of
+  // the bucket(s) that overlap this page.
+  if (sort === 'score') {
+    const bucketQuery = (b: Bucket, head: boolean) => {
+      const q = buildBaseQuery(false, head)
+      if (!q) return null
+      if ('unscored' in b) return q.or('conviction_score.is.null,classification.is.null')
+      const scored = q.eq('classification', b.cls)
+      return b.high ? scored.gte('conviction_score', 50) : scored.lt('conviction_score', 50)
+    }
+
+    const t0 = performance.now()
+    let counts: number[]
+    try {
+      counts = await Promise.all(SIGNAL_BUCKETS.map(async (b) => {
+        const q = bucketQuery(b, true)
+        if (!q) return 0
+        const { count, error } = await q
+        if (error) throw new Error(error.message)
+        return count ?? 0
+      }))
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 500 })
+    }
+
+    const rows: any[] = []
+    let skip = offset
+    for (let i = 0; i < SIGNAL_BUCKETS.length && rows.length < limit; i++) {
+      if (skip >= counts[i]) { skip -= counts[i]; continue }
+      const want = Math.min(limit - rows.length, counts[i] - skip)
+      const { data, error } = await bucketQuery(SIGNAL_BUCKETS[i], false)!.range(skip, skip + want - 1)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      rows.push(...(data ?? []))
+      skip = 0
+    }
+
+    const total = counts.reduce((a, c) => a + c, 0)
+    console.log(`[insider/fetch] sort=score buckets=[${counts.join(',')}] total=${total} rows=${rows.length} ${(performance.now() - t0).toFixed(0)}ms`)
+    return NextResponse.json({
+      rows:  await attachCompanies(attachClassifications(rows)),
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      clusterCounts,
+    })
+  }
+
+  // ── 4c. Normal path — single query with server-side pagination ────────────────
   const base = buildBaseQuery(true)
   if (!base) return NextResponse.json({ rows: [], total: 0, page, pages: 0, clusterCounts })
 
@@ -318,7 +409,7 @@ export async function GET(req: Request) {
   )
 
   return NextResponse.json({
-    rows:  classified,
+    rows:  await attachCompanies(classified),
     total: count ?? 0,
     page,
     pages: Math.ceil((count ?? 0) / limit),

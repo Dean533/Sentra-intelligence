@@ -29,6 +29,7 @@ import Link from 'next/link'
 import { getSupabase } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
 import { displayRole, formatInsiderName } from '@/lib/insider/format'
+import { decodeEntities } from '@/lib/text'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,13 +120,6 @@ function timeAgo(iso: string) {
   if (h < 1) return `${Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)}m ago`
   if (h < 24) return `${h}h ago`
   return `${Math.floor(h / 24)}d ago`
-}
-
-// Some feed titles arrive HTML-escaped ("S&amp;P 500").
-function decodeEntities(s: string) {
-  return s
-    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
 }
 
 // Up / down text color (same convention as the ticker page).
