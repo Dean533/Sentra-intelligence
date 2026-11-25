@@ -1,24 +1,14 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { scoreHeadline } from '@/lib/news/sentiment'
 
 // ── sentiment ──────────────────────────────────────────────────────────────────
 
-const BULLISH = [
-  'beat', 'beats', 'surge', 'surges', 'jump', 'jumps', 'raises', 'growth',
-  'strong', 'upgrade', 'upgraded', 'buy', 'profit', 'record', 'wins', 'win',
-  'expands', 'rally', 'rallies', 'gains', 'rises', 'soars', 'outperforms',
-]
-const BEARISH = [
-  'miss', 'misses', 'fall', 'falls', 'drop', 'drops', 'cut', 'cuts', 'loss',
-  'losses', 'weak', 'downgrade', 'downgraded', 'sell', 'layoffs', 'layoff',
-  'lawsuit', 'investigation', 'decline', 'declines', 'plunge', 'plunges',
-  'tumbles', 'slumps', 'warn', 'warning',
-]
-
+// Delegates to the weighted finance lexicon in lib/news/sentiment (whole-word
+// matching, phrases, negation, headline-position weighting). Labels keep the
+// bullish/bearish/neutral vocabulary stored in events.summary.
 export function sentimentLabel(title: string): 'bullish' | 'bearish' | 'neutral' {
-  const lower = title.toLowerCase()
-  const b = BULLISH.filter((w) => lower.includes(w)).length
-  const r = BEARISH.filter((w) => lower.includes(w)).length
-  return b > r ? 'bullish' : r > b ? 'bearish' : 'neutral'
+  const { label } = scoreHeadline(title)
+  return label === 'positive' ? 'bullish' : label === 'negative' ? 'bearish' : 'neutral'
 }
 
 // ── XML helpers ────────────────────────────────────────────────────────────────
