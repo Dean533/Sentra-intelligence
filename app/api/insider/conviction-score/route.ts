@@ -4,6 +4,7 @@
 // no per-row DB queries; only 3 bulk fetches (rows, classifications, market caps) + per-row updates.
 
 import { NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache'
 import { createClient } from '@supabase/supabase-js'
 import { authorizeCron } from '@/lib/cronAuth'
 import { computeConvictionScore, ConvictionTrade } from '@/lib/scoring/convictionScore'
@@ -43,7 +44,10 @@ export async function GET(req: Request) {
     .limit(500)
 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
-  if (!rows || rows.length === 0) return NextResponse.json({ total: 0, scored: 0, failed: 0 })
+  // Last step of the daily pipeline: expire the ticker pages' 1-hour insider
+  // cache (app/t/[ticker]/page.tsx) so today's trades and scores show at once.
+  // Also on this early return: ingest may have added rows that are never scored (sales).
+  if (!rows || rows.length === 0) { revalidateTag('insider', { expire: 0 }); return NextResponse.json({ total: 0, scored: 0, failed: 0 }) }
 
   // ── 2. Bulk-fetch classifications for unique CIKs in this batch ───────────
   const cikSet = [...new Set((rows as any[]).map((r) => r.insider_cik).filter(Boolean))]
@@ -115,5 +119,6 @@ export async function GET(req: Request) {
     }
   }
 
+  revalidateTag('insider', { expire: 0 }) // see note above: refresh ticker pages now
   return NextResponse.json({ total: rows.length, scored, failed })
 }
