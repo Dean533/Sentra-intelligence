@@ -162,7 +162,8 @@ export default function PriceChart({
                     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(m, { x: cx, y: cy }) }
                   }}
                 >
-                  <circle cx={cx} cy={cy} r={r + 5} fill="transparent" />
+                  {/* Invisible hit area: at least 28px across so dots are tappable on phones. */}
+                  <circle cx={cx} cy={cy} r={Math.max(r + 9, 14)} fill="transparent" />
                   {m.key === selectedKey && <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke={fill} strokeOpacity={0.5} strokeWidth={1.5} />}
                   <circle cx={cx} cy={cy} r={r} fill={fill} stroke={BG} strokeWidth={2} />
                 </g>

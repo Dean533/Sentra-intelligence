@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
-const linkCls = 'text-sm text-text-secondary no-underline transition-colors hover:text-white'
+// py-1.5 gives each link a ~32px tap target; the column gap is reduced to match.
+const linkCls = 'py-1.5 text-sm text-text-secondary no-underline transition-colors hover:text-white'
 
 export default function Footer() {
   return (
@@ -8,7 +9,7 @@ export default function Footer() {
       <div className="mx-auto flex max-w-[1400px] flex-col gap-10 px-4 pb-8 pt-14 md:px-8">
         <div className="flex flex-wrap justify-between gap-12">
           <div className="flex max-w-[380px] flex-col gap-3.5">
-            <Link href="/" className="font-mono text-[15px] font-semibold tracking-[0.12em] text-text no-underline hover:text-white">
+            <Link href="/" className="-my-2 self-start py-2 font-mono text-[15px] font-semibold tracking-[0.12em] text-text no-underline hover:text-white">
               SENTRA<span className="font-normal text-muted">/SIGNALS</span>
             </Link>
             <p className="m-0 text-sm leading-relaxed text-muted">
@@ -17,12 +18,12 @@ export default function Footer() {
           </div>
 
           <div className="flex flex-wrap gap-12 sm:gap-24">
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
               <div className="label-mono">COMMUNITY</div>
               <a href="https://x.com/deangans_" target="_blank" rel="noopener noreferrer" className={linkCls}>X / Twitter</a>
               <a href="https://www.linkedin.com/company/sentrasignals/" target="_blank" rel="noopener noreferrer" className={linkCls}>LinkedIn</a>
             </div>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
               <div className="label-mono">LEGAL</div>
               <Link href="/privacy" className={linkCls}>Privacy Policy</Link>
               <Link href="/terms" className={linkCls}>Terms of Service</Link>

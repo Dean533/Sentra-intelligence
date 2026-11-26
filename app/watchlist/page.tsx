@@ -265,7 +265,7 @@ function SignInPrompt() {
             <GoogleIcon />
             {loading ? 'Redirecting…' : 'Sign in with Google'}
           </button>
-          <Link href="/login" className="text-sm text-text-secondary underline underline-offset-2 hover:text-white">
+          <Link href="/login" className="py-3 text-sm text-text-secondary underline underline-offset-2 hover:text-white">
             Use email instead
           </Link>
         </div>

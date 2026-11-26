@@ -94,10 +94,6 @@
 }
 
 @media (max-width: 768px) {
-  html {
-    font-size: 14px;
-  }
-
   .shader-mobile-offset {
     transform: translateY(-25%);
   }
@@ -114,6 +110,14 @@
   /* About grids -> 1-col */
   .backtest-grid-3 { grid-template-columns: 1fr !important; }
   .trading-grid-3  { grid-template-columns: 1fr !important; }
+}
+
+/* iOS Safari zooms the page when a focused field's text is under 16px.
+   Unlayered, so it wins over Tailwind's text-* utilities (which live in a layer). */
+@media (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px;
+  }
 }
 
 /* Account for fixed navbar height */

@@ -10,7 +10,7 @@ export default function TickerSkeleton({ symbol }: { symbol: string }) {
     <div className="bg-background pt-16" aria-busy="true">
       <main className="mx-auto max-w-[1400px] px-4 pb-16 md:px-8">
         <section className="flex flex-col gap-[18px] pb-5 pt-7">
-          <Link href="/screener" className="self-start font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">
+          <Link href="/screener" className="-my-2.5 self-start py-2.5 font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">
             ← SCREENER
           </Link>
           <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">

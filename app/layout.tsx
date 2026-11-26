@@ -42,9 +42,11 @@ export const metadata = {
   manifest: "/site.webmanifest",
 };
 
+// Standard responsive viewport. (initialScale was 0.6, which made phones lay
+// every page out ~650px wide and render it zoomed out.)
 export const viewport = {
   width: "device-width",
-  initialScale: 0.6,
+  initialScale: 1,
 };
 
 export default function RootLayout({

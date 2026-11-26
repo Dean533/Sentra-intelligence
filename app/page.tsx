@@ -169,7 +169,8 @@ const btnPrimary =
   'inline-flex h-11 items-center rounded-sm bg-text px-5 text-sm font-semibold text-background no-underline transition-colors hover:bg-white hover:text-background'
 const btnSecondary =
   'inline-flex h-11 items-center rounded-sm border border-border-strong px-5 text-sm font-medium text-text no-underline transition-colors hover:border-muted hover:text-white'
-const textLink = 'text-sm text-text-secondary underline underline-offset-2 hover:text-white'
+// py-2/-my-2: taller tap area with no layout change.
+const textLink = '-my-2 py-2 text-sm text-text-secondary underline underline-offset-2 hover:text-white'
 const h2Cls = 'm-0 font-serif text-[28px] font-normal leading-tight text-heading md:text-[34px]'
 
 function Dot({ color }: { color: string }) {
@@ -208,8 +209,9 @@ function SignalCard({ row, eyebrow }: { row: TopBuy; eyebrow: string }) {
         </div>
         <div className="flex min-w-0 flex-col items-end gap-2">
           <div className="font-mono text-[52px] font-medium leading-none text-opportunistic">{row.score}</div>
-          <span className="inline-flex items-center gap-1.5 text-right text-xs text-opportunistic sm:whitespace-nowrap">
-            <Dot color="var(--color-opportunistic)" />
+          <span className="text-right text-xs text-opportunistic sm:whitespace-nowrap">
+            {/* Dot inline in the text so it stays next to "Opportunistic" when the label wraps. */}
+            <span className="mr-1.5 inline-block align-[1px]"><Dot color="var(--color-opportunistic)" /></span>
             Opportunistic · {convictionLabel('OPPORTUNISTIC', row.score)}
           </span>
         </div>
@@ -243,9 +245,43 @@ function SignalCard({ row, eyebrow }: { row: TopBuy; eyebrow: string }) {
 const th = 'px-4 py-3 font-mono text-[11px] font-medium tracking-[0.08em] text-muted'
 const td = 'px-4 py-[13px]'
 
+// Under 640px: one card per buy (ticker + score, insider · role, value + stake).
+function TopCards({ rows }: { rows: TopBuy[] }) {
+  return (
+    <ol className="m-0 flex list-none flex-col divide-y divide-row-border rounded-md border border-border p-0 sm:hidden">
+      {rows.map((r, i) => (
+        <li key={r.id}>
+          {/* The whole card is the tap target. */}
+          <Link href={`/t/${r.ticker}`} className="flex flex-col gap-2 px-4 py-3.5 no-underline active:bg-surface-hover">
+            <span className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-baseline gap-2.5">
+                <span className="font-mono text-xs text-muted">{i + 1}</span>
+                <span className="font-mono text-base font-semibold text-heading">{r.ticker}</span>
+                {r.company && <span className="min-w-0 truncate text-[13px] text-muted">{r.company}</span>}
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="font-mono font-semibold text-heading">{r.score}</span>
+                <Bar pct={r.score} width={48} />
+              </span>
+            </span>
+            <span className="truncate text-sm text-text-secondary">
+              {r.insider}
+              <span className="text-muted"> · {r.role}</span>
+            </span>
+            <span className="flex gap-5 font-mono text-[13px]">
+              <span><span className="label-mono">BOUGHT </span><span className="text-text">{fmtMoney(r.value)}</span></span>
+              <span><span className="label-mono">STAKE Δ </span><span className="text-text-secondary">{fmtStake(r.stake)}</span></span>
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function TopTable({ rows }: { rows: TopBuy[] }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
+    <div className="hidden overflow-x-auto rounded-md border border-border sm:block">
       <table className="w-full min-w-[880px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-border bg-surface text-left">
@@ -367,7 +403,10 @@ export default async function HomePage() {
             </Link>
           </div>
           {rows.length > 0 ? (
-            <TopTable rows={rows} />
+            <>
+              <TopCards rows={rows} />
+              <TopTable rows={rows} />
+            </>
           ) : (
             <div className="rounded-md border border-border px-6 py-10 text-center text-sm text-muted">
               No opportunistic buys filed in the last 90 days. Check back after the next trading day.
@@ -376,7 +415,7 @@ export default async function HomePage() {
         </section>
 
         {/* HOW TO READ */}
-        <section className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-12 border-b border-border py-12">
+        <section className="grid grid-cols-1 gap-12 border-b border-border py-12 md:grid-cols-2">
           <div className="flex flex-col gap-3">
             <div className="label-mono">STEP 1 · CLASSIFICATION</div>
             <div className="font-serif text-[26px] leading-snug text-heading">Is this insider trading out of habit?</div>

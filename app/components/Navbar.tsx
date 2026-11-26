@@ -76,7 +76,7 @@ export default function Navbar() {
           <div className="flex min-w-0 items-center gap-10">
             <Link
               href="/"
-              className="shrink-0 font-mono text-[15px] font-semibold tracking-[0.12em] text-text no-underline hover:text-white"
+              className="-my-2.5 shrink-0 py-2.5 font-mono text-[15px] font-semibold tracking-[0.12em] text-text no-underline hover:text-white"
             >
               SENTRA<span className="font-normal text-muted">/SIGNALS</span>
             </Link>
@@ -150,7 +150,7 @@ export default function Navbar() {
               onClick={() => setMobileOpen((v) => !v)}
               aria-label="Toggle menu"
               aria-expanded={mobileOpen}
-              className="flex cursor-pointer items-center justify-center border-none bg-transparent p-1 text-text-secondary md:hidden"
+              className="-mr-3 flex h-11 w-11 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-text-secondary md:hidden"
             >
               {mobileOpen ? (
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -191,7 +191,7 @@ export default function Navbar() {
                 </div>
                 <button
                   onClick={signOut}
-                  className="cursor-pointer border-none bg-transparent p-0 font-sans text-[15px] text-routine"
+                  className="-my-2.5 cursor-pointer border-none bg-transparent px-0 py-2.5 font-sans text-[15px] text-routine"
                 >
                   Sign out
                 </button>

@@ -167,7 +167,8 @@ const tradeMs = (d: string) => Date.parse(`${d}T20:00:00Z`)
 // ─── Small pieces ────────────────────────────────────────────────────────────
 
 const textLink = 'text-sm text-text-secondary underline underline-offset-2 hover:text-white'
-const linkBtn = 'cursor-pointer border-0 bg-transparent p-0 font-sans text-text-secondary underline underline-offset-2 hover:text-white'
+// py-2/-my-2: taller tap area with no layout change.
+const linkBtn = '-my-2 cursor-pointer border-0 bg-transparent px-0 py-2 font-sans text-text-secondary underline underline-offset-2 hover:text-white'
 
 // ─── Signal strip (only rendered when there is a recent opportunistic buy) ───
 
@@ -390,13 +391,24 @@ export default function TickerView({
     return () => ro.disconnect()
   }, [])
 
-  // Scroll the table to a trade chosen from the chart, a frame after commit
-  // (a smooth scroll started during the commit gets cancelled).
+  // Scroll the table to a trade chosen from the chart or deep-linked from the
+  // screener, starting a frame after commit (a smooth scroll started during the
+  // commit gets cancelled). The row may not be rendered yet on that frame (e.g.
+  // a deep link that just switched to "All trades" during hydration), so keep
+  // looking for up to ~1s.
   useEffect(() => {
     if (!focusId) return
-    const raf = requestAnimationFrame(() => {
-      document.getElementById(`trade-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
+    let raf = 0
+    let frames = 0
+    const tryScroll = () => {
+      // Table row (≥640px) or mobile card, whichever is displayed.
+      const el = [`trade-${focusId}`, `trade-m-${focusId}`]
+        .map((id) => document.getElementById(id))
+        .find((e) => e && e.offsetParent !== null)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      else if (frames++ < 60) raf = requestAnimationFrame(tryScroll)
+    }
+    raf = requestAnimationFrame(tryScroll)
     const t = setTimeout(() => setFocusId(null), 2400)
     return () => { cancelAnimationFrame(raf); clearTimeout(t) }
   }, [focusId])
@@ -540,7 +552,7 @@ export default function TickerView({
     {
       label: 'WEBSITE',
       value: website ? (
-        <a href={website} target="_blank" rel="noopener noreferrer" className="break-all text-text-secondary underline underline-offset-2 hover:text-white">
+        <a href={website} target="_blank" rel="noopener noreferrer" className="break-all py-2 text-text-secondary underline underline-offset-2 hover:text-white">
           {website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
         </a>
       ) : null,
@@ -555,7 +567,7 @@ export default function TickerView({
     return (
       <div className="bg-background pt-16">
         <main className="mx-auto flex max-w-[1400px] flex-col gap-4 px-4 py-24 md:px-8">
-          <Link href="/screener" className="self-start font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">← SCREENER</Link>
+          <Link href="/screener" className="-my-2.5 self-start py-2.5 font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">← SCREENER</Link>
           <h1 className="m-0 font-mono text-4xl font-semibold text-heading">{symbol}</h1>
           <p className="m-0 text-text-secondary">We couldn&apos;t find market or insider data for this ticker.</p>
         </main>
@@ -568,7 +580,7 @@ export default function TickerView({
       <main className="mx-auto max-w-[1400px] px-4 pb-16 md:px-8">
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <section className="flex flex-col gap-[18px] pb-5 pt-7">
-          <Link href="/screener" className="self-start font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">
+          <Link href="/screener" className="-my-2.5 self-start py-2.5 font-mono text-xs tracking-[0.08em] text-muted no-underline hover:text-white">
             ← SCREENER
           </Link>
 
@@ -735,7 +747,50 @@ export default function TickerView({
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-md border border-border">
+            <>
+            {/* Under 640px: one card per (grouped) trade. Ids are trade-m-<id> so the
+                table's trade-<id> stays unique; tradeEl() picks the visible one. */}
+            <ol className="m-0 flex list-none flex-col divide-y divide-row-border rounded-md border border-border p-0 sm:hidden">
+              {rows.slice(0, limit).map((t) => {
+                const c = t.cls ? CLS[t.cls] : null
+                const repId = t.ids[0]
+                const valueText = t.count > 1
+                  ? `${t.count} ${t.isBuy ? 'buys' : 'sales'} · ${fmtMoneyRange(t.valueMin, t.valueMax)} each`
+                  : fmtMoney(t.valueMax)
+                return (
+                  <li
+                    key={repId}
+                    id={`trade-m-${repId}`}
+                    className={`flex scroll-mt-24 flex-col gap-1.5 px-4 py-3.5 transition-colors duration-700 ${focusId === repId ? 'bg-[#13233A]' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col gap-0.5 font-mono">
+                        <span className="text-sm text-text">{fmtDate(t.date, true)}</span>
+                        <span className="text-[11px] text-muted">filed {fmtDate(t.filed, true)}</span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
+                        {mode === 'all' && (
+                          <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: t.isBuy ? BUY_COLOR : SALE_COLOR }}>
+                            <Dot color={t.isBuy ? BUY_COLOR : SALE_COLOR} />{t.isBuy ? 'Buy' : 'Sale'}
+                          </span>
+                        )}
+                        <span className="font-mono text-base font-semibold text-heading">{t.score ?? <span className="font-normal text-muted">—</span>}</span>
+                      </div>
+                    </div>
+                    <div className="text-sm text-text">
+                      {t.insider}
+                      <span className="text-muted"> · {t.role}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+                      {c && <span className="inline-flex items-center gap-1.5" style={{ color: c.color }}><Dot color={c.color} />{c.label}</span>}
+                      <span className="font-mono text-text">{valueText}</span>
+                      <span className="font-mono text-text-secondary">{fmtStake(t.stake, t.isBuy)}</span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+            <div className="hidden overflow-x-auto rounded-md border border-border sm:block">
               <table className="w-full min-w-[820px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border bg-surface text-left">
@@ -800,6 +855,7 @@ export default function TickerView({
                 </tbody>
               </table>
             </div>
+            </>
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 text-[13px] text-muted">

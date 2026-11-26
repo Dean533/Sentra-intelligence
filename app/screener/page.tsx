@@ -60,6 +60,18 @@ const RANGES: { label: string; days: number | null }[] = [
 type SortKey = 'signal' | 'filed' | 'value' | 'stake'
 type SortState = { key: SortKey; dir: 'asc' | 'desc' }
 
+// Phone sort menu: the same sorts the desktop column headers offer.
+const MOBILE_SORTS: { value: string; label: string }[] = [
+  { value: 'signal:desc', label: 'Signal, strongest' },
+  { value: 'signal:asc',  label: 'Signal, weakest' },
+  { value: 'filed:desc',  label: 'Filed, newest' },
+  { value: 'filed:asc',   label: 'Filed, oldest' },
+  { value: 'value:desc',  label: 'Value, largest' },
+  { value: 'value:asc',   label: 'Value, smallest' },
+  { value: 'stake:desc',  label: 'Stake Δ, biggest increase' },
+  { value: 'stake:asc',   label: 'Stake Δ, biggest cut' },
+]
+
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 }
@@ -514,8 +526,77 @@ function InsiderActivity({ ticker, search }: { ticker?: string; search: React.Re
         </div>
       </section>
 
-      {/* TABLE */}
-      <div className="overflow-x-auto rounded-md border border-border">
+      {/* MOBILE (< 640px): sort control + one card per trade. The table's sortable
+          headers would be off-screen at this width. */}
+      <div className="flex flex-col gap-3 sm:hidden">
+        <FilterSelect
+          label="Sort"
+          value={`${sort.key}:${sort.dir}`}
+          onChange={(v) => { const [key, dir] = v.split(':') as [SortKey, 'asc' | 'desc']; setSort({ key, dir }) }}
+          options={MOBILE_SORTS}
+        />
+        <ol className="m-0 flex list-none flex-col divide-y divide-row-border rounded-md border border-border p-0">
+          {loading && Array.from({ length: 6 }).map((_, i) => (
+            <li key={i} className="flex flex-col gap-2.5 px-4 py-4">
+              <span className="inline-block h-4 w-40 animate-pulse rounded-sm bg-track" />
+              <span className="inline-block h-3 w-56 animate-pulse rounded-sm bg-track" />
+              <span className="inline-block h-3 w-48 animate-pulse rounded-sm bg-track" />
+            </li>
+          ))}
+          {!loading && fetchError && (
+            <li className="px-5 py-12 text-center">
+              <div className="mb-1.5 text-sm text-routine">Failed to load transactions</div>
+              <div className="font-mono text-xs text-muted">{fetchError}</div>
+            </li>
+          )}
+          {!loading && !fetchError && displayRows.length === 0 && (
+            <li className="px-5 py-12 text-center text-sm text-muted">No {unit} match these filters.</li>
+          )}
+          {!loading && !fetchError && displayRows.map((row) => {
+            const isBuy = row.transaction_code?.toUpperCase() === 'P'
+            const cls   = CLS[row.classification ?? 'UNCLASSIFIABLE'] ?? CLS.UNCLASSIFIABLE
+            const score = isBuy ? row.conviction_score : null
+            return (
+              <li key={row.id} className={isBuy ? '' : 'opacity-75'}>
+                <Link
+                  href={`/t/${row.ticker}#trade-${row.id}`}
+                  className="flex flex-col gap-1.5 px-4 py-3.5 no-underline active:bg-surface-hover"
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="font-mono text-base font-semibold text-heading">{row.ticker}</span>
+                      {row.company && <span className="min-w-0 truncate text-[13px] text-muted">{row.company}</span>}
+                    </span>
+                    {score != null ? (
+                      <span className="flex shrink-0 items-center gap-2" title={convictionLabel(row.classification, score)}>
+                        <span className="font-mono font-semibold text-heading">{score}</span>
+                        <Bar pct={score} />
+                      </span>
+                    ) : !isBuy ? (
+                      <span className="shrink-0 rounded-xs border border-border-strong px-1.5 py-px font-mono text-[11px] text-muted">SALE</span>
+                    ) : (
+                      <span className="shrink-0 font-mono text-muted">—</span>
+                    )}
+                  </span>
+                  <span className="truncate text-sm text-text">
+                    {formatInsiderName(row.insider_name)}
+                    <span className="text-muted"> · {displayRole(row)}</span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+                    <span className="inline-flex items-center gap-1.5" style={{ color: cls.color }}><Dot color={cls.color} />{cls.label}</span>
+                    <span className="font-mono text-text">{fmtMoney(row.total_value)}</span>
+                    <span className="font-mono text-text-secondary">{fmtStake(holdingsDeltaPct(row), isBuy)}</span>
+                    <span className="ml-auto font-mono text-muted">{fmtDay(row.filed_date ?? row.transaction_date)}</span>
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
+        </ol>
+      </div>
+
+      {/* TABLE (640px and up) */}
+      <div className="hidden overflow-x-auto rounded-md border border-border sm:block">
         <table className="w-full min-w-[980px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border bg-surface">
